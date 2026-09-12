@@ -1,0 +1,6 @@
+matplotlib==3.11.1
+numpy==2.4.6
+pandas==3.0.5
+pyserial==3.5
+qiskit==2.5.1
+qiskit-aer==0.17.2

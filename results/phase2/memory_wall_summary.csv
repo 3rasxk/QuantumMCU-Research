@@ -1,0 +1,4 @@
+board,total_sram_bytes,theoretical_max_n,measured_max_n_safe,theoretical_bytes_at_max_n,first_failing_n
+esp32,327680,15,13,262144,14
+esp8266,81920,13,12,65536,13
+uno,2048,8,7,2048,8

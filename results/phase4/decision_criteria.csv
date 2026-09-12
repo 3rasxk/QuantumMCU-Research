@@ -1,0 +1,10 @@
+board_class,reference_board,word_size,has_fpu,clock_mhz,alloc_policy,memory_wall_formula,circuit,crossover_n_measured,memory_wall_n_measured
+Class A (8-bit, no FPU),Arduino Uno R3,8-bit,no,16,static only,floor(log2(SRAM_total/8)) - 1,h_all,5,7
+Class A (8-bit, no FPU),Arduino Uno R3,8-bit,no,16,static only,floor(log2(SRAM_total/8)) - 1,bell_ghz,6,7
+Class A (8-bit, no FPU),Arduino Uno R3,8-bit,no,16,static only,floor(log2(SRAM_total/8)) - 1,qft,4,7
+Class B (32-bit, no FPU),NodeMCU ESP8266,32-bit,no,80,dynamic (malloc),floor(log2(largest_free_block/8))  [fallback: total SRAM - 1],h_all,8,12
+Class B (32-bit, no FPU),NodeMCU ESP8266,32-bit,no,80,dynamic (malloc),floor(log2(largest_free_block/8))  [fallback: total SRAM - 1],bell_ghz,10,12
+Class B (32-bit, no FPU),NodeMCU ESP8266,32-bit,no,80,dynamic (malloc),floor(log2(largest_free_block/8))  [fallback: total SRAM - 1],qft,7,12
+Class C (32-bit, with FPU),ESP32 DevKit V1,32-bit,yes,240,dynamic (malloc),floor(log2(largest_free_block/8)),h_all,13,13
+Class C (32-bit, with FPU),ESP32 DevKit V1,32-bit,yes,240,dynamic (malloc),floor(log2(largest_free_block/8)),bell_ghz,13,13
+Class C (32-bit, with FPU),ESP32 DevKit V1,32-bit,yes,240,dynamic (malloc),floor(log2(largest_free_block/8)),qft,12,13
