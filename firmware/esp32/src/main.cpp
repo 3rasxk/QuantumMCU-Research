@@ -24,7 +24,7 @@
 #error "ต้องกำหนด CIRCUIT_ID ผ่าน build_flags (0=h_all, 1=bell_ghz, 2=qft)"
 #endif
 
-#define REPS 30
+#define REPS 100
 #define GPIO_TIMING_PIN 4  // สำรองไว้ต่อ Logic Analyzer ในอนาคต
 
 static Cplx* g_state = nullptr;

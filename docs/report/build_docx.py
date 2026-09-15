@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # build_docx.py
-# แปลง report/chapter4_results_th.md เป็น .docx รูปแบบวิทยานิพนธ์ระดับปริญญาเอก
-# (TH Sarabun New, ตาราง/ภาพครบ, สอดคล้องกับไฟล์ผลลัพธ์จริงใน results/)
+# แปลง docs/report/chapter4_results_th.md เป็น .docx รูปแบบวิทยานิพนธ์ระดับปริญญาเอก
+# (TH Sarabun New, ตาราง/ภาพครบ, สอดคล้องกับไฟล์ผลลัพธ์จริงใน data/)
 #
-# วิธีใช้: python3 report/build_docx.py
+# วิธีใช้: python3 docs/report/build_docx.py
 
 import re
 from pathlib import Path
@@ -14,9 +14,9 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Cm, Inches, Pt, RGBColor
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-MD_PATH = REPO_ROOT / "report" / "chapter4_results_th.md"
-OUT_PATH = REPO_ROOT / "report" / "บทที่4_ผลการทดลอง_PhD.docx"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+MD_PATH = REPO_ROOT / "docs" / "report" / "chapter4_results_th.md"
+OUT_PATH = REPO_ROOT / "docs" / "report" / "บทที่4_ผลการทดลอง_PhD.docx"
 
 FONT_NAME = "TH Sarabun New"
 BODY_SIZE = Pt(16)
@@ -28,7 +28,7 @@ H4_SIZE = Pt(16)
 ACCENT = RGBColor(0x1F, 0x3A, 0x5F)
 HEADER_FILL = "1F3A5F"
 
-# แผนที่ "ภาพที่ x.y ... (results/.../fig_....png)" -> path ไฟล์จริงบนดิสก์
+# แผนที่ "ภาพที่ x.y ... (data/figures/.../fig_....png)" -> path ไฟล์จริงบนดิสก์
 FIGURE_LINE_RE = re.compile(r"^\*\*ภาพที่\s+([\d.]+)\*\*\s*(.+)$")
 FIGURE_FILE_RE = re.compile(r"`([^`]+\.(?:png|jpg|jpeg))`")
 TABLE_CAPTION_RE = re.compile(r"^\*\*ตารางที่\s+([\d.]+)\*\*\s*(.+)$")
@@ -236,7 +236,7 @@ def add_cover_page(doc):
 
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    add_run(p, "สร้างจากข้อมูลผลการทดลองจริงใน results/ (Phase 1–4)", size=Pt(14), italic=True,
+    add_run(p, "สร้างจากข้อมูลผลการทดลองจริงใน data/ (Phase 1–4)", size=Pt(14), italic=True,
             color=RGBColor(0x60, 0x60, 0x60))
 
     doc.add_page_break()

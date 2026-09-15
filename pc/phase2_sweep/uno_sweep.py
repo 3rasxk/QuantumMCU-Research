@@ -5,10 +5,10 @@
 #   1. build + upload firmware ด้วย -D N_QUBITS=<n> -D CIRCUIT_ID=<id>
 #      (ถ้า build/upload ไม่ผ่าน = ล้มเหลวแบบ "link/upload fail" หยุดวงจรนี้ทันที)
 #   2. อ่านค่า RAM usage % ที่ avr-size รายงานตอน build (ค่าทางทฤษฎีเทียบค่าที่วัดจริง)
-#   3. เปิด serial อ่านผลจากบอร์ด 30 trial ต่อจุดข้อมูล จนกว่าจะเจอ "DONE"
+#   3. เปิด serial อ่านผลจากบอร์ด 100 trial ต่อจุดข้อมูล จนกว่าจะเจอ "DONE"
 #      ถ้าไม่มี "DONE" ภายใน timeout = บอร์ด hang/reset -> บันทึกเป็นความล้มเหลว
-#   4. เขียนทุกแถวลง results/phase2/uno_raw.csv (ไฟล์ดิบ ไม่ทับข้อมูลเดิม, append)
-#      และสรุป Memory Wall ต่อจุดข้อมูลลง results/phase2/uno_memory_wall.csv
+#   4. เขียนทุกแถวลง data/raw/phase2/uno_raw.csv (ไฟล์ดิบ ไม่ทับข้อมูลเดิม, append)
+#      และสรุป Memory Wall ต่อจุดข้อมูลลง data/raw/phase2/uno_memory_wall.csv
 #
 # การใช้งาน:
 #   .venv/bin/python pc/phase2_sweep/uno_sweep.py --port /dev/cu.usbmodemXXXX \
@@ -38,7 +38,7 @@ RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 PIO = os.environ.get("PIO_PATH") or shutil.which("pio")
 
 BAUD = 115200
-SERIAL_TIMEOUT_S = 20  # เวลารอสูงสุดต่อจุดข้อมูล (30 trial ควรเสร็จเร็วกว่านี้มาก)
+SERIAL_TIMEOUT_S = 70  # เวลารอสูงสุดต่อจุดข้อมูล (100 trial, scaled from 20s@REPS=30)
 TOTAL_SRAM_BYTES = 2048  # ATmega328P
 
 

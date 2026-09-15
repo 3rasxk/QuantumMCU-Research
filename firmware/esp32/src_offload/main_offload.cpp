@@ -17,7 +17,7 @@
 #error "ต้องกำหนด BAUD_RATE ผ่าน build_flags"
 #endif
 
-#define REPS 30
+#define REPS 100
 #define RESPONSE_TIMEOUT_MS 5000UL
 
 static unsigned long g_latency_us[REPS];

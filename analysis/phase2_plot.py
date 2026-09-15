@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # phase2_plot.py
 # สร้างกราฟ Phase 2 จากข้อมูลจริงเท่านั้น (ไม่คำนวณ/ประมาณค่าใหม่):
-#   1. Execution Time vs n (log-scale y) ต่อบอร์ด จาก results/phase2/summary.csv
+#   1. Execution Time vs n (log-scale y) ต่อบอร์ด จาก data/processed/phase2/summary.csv
 #   2. Bar chart Memory Wall: n สูงสุดตามทฤษฎี (2^n*8 <= SRAM) เทียบ n สูงสุดที่วัดได้จริง
-#      จาก results/phase2/*_memory_wall.csv
+#      จาก data/raw/phase2/*_memory_wall.csv
 #
 # สีวงจรใช้ palette เดียวกับ Phase 1 (dataviz skill, categorical slot 1-3)
 # เพื่อความสอดคล้องกันทั้งรายงาน: h_all=blue, bell_ghz=orange, qft=aqua
@@ -17,7 +17,9 @@ import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-RESULTS_DIR = REPO_ROOT / "results" / "phase2"
+RAW_DIR = REPO_ROOT / "data" / "raw" / "phase2"
+PROCESSED_DIR = REPO_ROOT / "data" / "processed" / "phase2"
+FIGURES_DIR = REPO_ROOT / "data" / "figures" / "phase2"
 FONT_PATH = Path.home() / "Library" / "Fonts" / "THSarabunNew.ttf"
 
 # SRAM รวมของแต่ละบอร์ด (bytes) — ใช้คำนวณ n สูงสุดตามทฤษฎี (2^n * 8 <= SRAM)
@@ -42,14 +44,14 @@ def load_font():
 
 
 def load_summary():
-    path = RESULTS_DIR / "summary.csv"
+    path = PROCESSED_DIR / "summary.csv"
     with open(path, newline="") as f:
         return list(csv.DictReader(f))
 
 
 def load_memory_wall():
     rows = []
-    for path in sorted(glob.glob(str(RESULTS_DIR / "*_memory_wall.csv"))):
+    for path in sorted(glob.glob(str(RAW_DIR / "*_memory_wall.csv"))):
         with open(path, newline="") as f:
             rows.extend(csv.DictReader(f))
     return rows
@@ -91,7 +93,8 @@ def plot_exec_time(summary_rows):
             ax.spines[spine].set_visible(False)
         ax.legend(fontsize=9.5, loc="upper left", frameon=False)
         fig.tight_layout()
-        out_path = RESULTS_DIR / f"fig_phase2_{board}_exectime.png"
+        FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = FIGURES_DIR / f"fig_phase2_{board}_exectime.png"
         fig.savefig(out_path, bbox_inches="tight")
         print(f"graph -> {out_path}")
 
@@ -134,12 +137,14 @@ def plot_memory_wall(wall_rows):
         ax.spines[spine].set_visible(False)
     ax.legend(fontsize=9.5, loc="upper left", frameon=False)
     fig.tight_layout()
-    out_path = RESULTS_DIR / "fig_phase2_memory_wall.png"
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = FIGURES_DIR / "fig_phase2_memory_wall.png"
     fig.savefig(out_path, bbox_inches="tight")
     print(f"graph -> {out_path}")
 
     # เขียนตารางสรุปเทียบทฤษฎีกับวัดจริงเป็น CSV แยกจากกราฟ
-    summary_path = RESULTS_DIR / "memory_wall_summary.csv"
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    summary_path = PROCESSED_DIR / "memory_wall_summary.csv"
     with open(summary_path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["board", "total_sram_bytes", "theoretical_max_n", "measured_max_n_safe",

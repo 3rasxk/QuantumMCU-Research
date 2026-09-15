@@ -3,9 +3,9 @@
 # Grouped bar chart: n สูงสุดตามทฤษฎี (2^n * 8 bytes <= SRAM รวม) เทียบ n สูงสุด
 # ที่วัดได้จริง (รันสำเร็จก่อนเจอ Memory Wall) แยกตามบอร์ด
 #
-# แหล่งข้อมูล: results/phase2/memory_wall_summary.csv — ไฟล์นี้ถูกสร้างโดย
+# แหล่งข้อมูล: data/processed/phase2/memory_wall_summary.csv — ไฟล์นี้ถูกสร้างโดย
 # analysis/phase2_plot.py::plot_memory_wall() อยู่แล้ว จากข้อมูลดิบ
-# results/phase2/*_memory_wall.csv (สถานะ ok/build_or_upload_fail/runtime_hang_or_reset
+# data/raw/phase2/*_memory_wall.csv (สถานะ ok/build_or_upload_fail/runtime_hang_or_reset
 # ต่อ n ต่อบอร์ด) รวมกับค่าคงที่ SRAM ของแต่ละบอร์ด — ใช้ไฟล์สรุปนี้ตรง ๆ แทนการ
 # คำนวณ theoretical_max_n ซ้ำเป็นครั้งที่สาม (ซ้ำกับ phase2_plot.py และรายงาน
 # บทที่ 4 §4.2.10 อยู่แล้ว) เพื่อไม่ให้ตัวเลขเพี้ยนกันระหว่างที่มา
@@ -13,7 +13,7 @@
 # หากต้องการรันใหม่จากข้อมูลดิบ: รัน analysis/phase2_plot.py ก่อน (มันเขียน
 # memory_wall_summary.csv ทับให้อัตโนมัติจาก *_memory_wall.csv ล่าสุด)
 #
-# ผลลัพธ์: results/phase2/memory_wall_comparison.png (300 DPI)
+# ผลลัพธ์: data/figures/phase2/memory_wall_comparison.png (300 DPI)
 
 import csv
 from pathlib import Path
@@ -23,9 +23,10 @@ import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-RESULTS_DIR = REPO_ROOT / "results" / "phase2"
-SUMMARY_PATH = RESULTS_DIR / "memory_wall_summary.csv"
-OUT_PATH = RESULTS_DIR / "memory_wall_comparison.png"
+PROCESSED_DIR = REPO_ROOT / "data" / "processed" / "phase2"
+FIGURES_DIR = REPO_ROOT / "data" / "figures" / "phase2"
+SUMMARY_PATH = PROCESSED_DIR / "memory_wall_summary.csv"
+OUT_PATH = FIGURES_DIR / "memory_wall_comparison.png"
 FONT_PATH = Path.home() / "Library" / "Fonts" / "THSarabunNew.ttf"
 
 # ลำดับการแสดงผลคงที่ (ไม่ใช้ sorted() เพราะ alphabetical จะได้ esp32,esp8266,uno
@@ -44,7 +45,7 @@ def load_summary():
     if not SUMMARY_PATH.exists():
         raise SystemExit(
             f"error: {SUMMARY_PATH} not found. รัน analysis/phase2_plot.py ก่อน "
-            "เพื่อสร้างไฟล์นี้จากข้อมูลดิบ results/phase2/*_memory_wall.csv"
+            "เพื่อสร้างไฟล์นี้จากข้อมูลดิบ data/raw/phase2/*_memory_wall.csv"
         )
     rows = {}
     with open(SUMMARY_PATH, newline="") as f:
@@ -88,6 +89,7 @@ def main():
     ax.legend(fontsize=10, loc="upper left", frameon=False)
     fig.tight_layout()
 
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     fig.savefig(OUT_PATH, bbox_inches="tight", dpi=300)
     print(f"graph -> {OUT_PATH}")
 

@@ -35,7 +35,13 @@ Three test circuits, built from three gates only (H, CNOT, Controlled-Phase):
 
 ## Headline results
 
-**Memory Wall** — largest `n` that runs reliably (`results/phase2/memory_wall_summary.csv`):
+> **Dataset reset in progress.** The n=30 tables below are the *previous* run and no
+> longer back any file in this working tree — see [`run_log.md`](run_log.md). A fresh
+> REPS=100 rerun (Phase 2 and Phase 3) is planned but not yet executed; these numbers
+> are kept here as the last-known result, recoverable from git history.
+
+**Memory Wall** — largest `n` that runs reliably
+(`data/processed/phase2/memory_wall_summary.csv`, once regenerated):
 
 | Board | Theoretical max `n` | Measured max safe `n` | First failing `n` |
 |---|---|---|---|
@@ -47,7 +53,7 @@ Every board falls 1–2 qubits short of theory; the network/RTOS stack takes the
 difference. ESP32, which carries both WiFi and Bluetooth stacks, loses the most.
 
 **Crossover Point** — first `n` at which offload beats local
-(`results/phase3/crossover_summary.csv`):
+(`data/processed/phase3/crossover_summary.csv`, once regenerated):
 
 | Circuit | Uno | ESP8266 | ESP32 |
 |---|---|---|---|
@@ -84,10 +90,21 @@ pc/
   phase1_validate/   C++ runner: prints a state vector for Qiskit to check
   phase2_sweep/      per-board sweep: build, flash, read serial, repeat for n+1
   phase3_offload/    serial server (answers frames with Qiskit) + orchestrator
+  shared/            circuit_ids.py — CIRCUIT_IDS/CIRCUIT_NAMES, single source
+                      of truth imported by every sweep script
 
 analysis/            validation, statistics, and figure generation
-results/             raw CSV measurements and generated figures, per phase
-report/              chapter4_results_th.md + build_docx.py -> .docx
+
+data/
+  raw/               per-repetition measurements straight off the board, per phase
+  processed/         aggregated summaries (memory wall, crossover) derived from raw/
+  figures/           generated PNGs, per phase
+
+docs/
+  proposal/          (placeholder — not yet populated)
+  report/            chapter4_results_th.md + build_docx.py -> .docx
+  poster/            science poster source + exported assets
+  diagrams/          (placeholder — not yet populated)
 ```
 
 The simulator core avoids `std::complex` and uses a plain `struct Cplx { float re, im; }`
@@ -115,12 +132,13 @@ pc/phase1_validate/build.sh
 Pass criterion: Infidelity ≤ 10⁻³ for every circuit and every `n`. Measured infidelity
 is ~10⁻⁷ across all 21 cases — the residual is the float32-vs-float64 difference, not an
 algorithmic error. Toolchain versions are logged automatically to
-`results/phase1/phase1_metadata.csv`.
+`data/raw/phase1/phase1_metadata.csv`. Deterministic per (circuit, n) pair — rerun once,
+no repetitions needed.
 
 ### Phase 2 — Edge Benchmark
 
 Sweeps `n` upward one qubit at a time until the board fails, recording execution time
-(30 repetitions per data point) and the exact failure mode.
+(REPS repetitions per data point, currently 100) and the exact failure mode.
 
 ```bash
 .venv/bin/python pc/phase2_sweep/uno_sweep.py     --port /dev/cu.usbmodemXXXX
@@ -195,7 +213,7 @@ Crossover:    n*(new board) ≈ n*(reference board, same class)
 
 Boards carrying a large network or RTOS stack should be derated by more than one qubit
 when `B` cannot be measured directly. The adjustment constants come from only two board
-pairs and are rough estimates, not physical laws — `report/chapter4_results_th.md` §4.4.7
+pairs and are rough estimates, not physical laws — `docs/report/chapter4_results_th.md` §4.4.7
 states the limits in full.
 
 ---
@@ -208,8 +226,8 @@ python3 -m venv .venv
 ```
 
 Requires [PlatformIO](https://platformio.org/) for the firmware. The sweep scripts
-currently hold an absolute path to the `pio` executable; adjust `PIO` at the top of each
-sweep script for your machine.
+resolve `pio` via `shutil.which("pio")`, or the `PIO_PATH` environment variable if set
+(e.g. `export PIO_PATH=/path/to/pio` when `pio` isn't on `PATH`).
 
 Pinned versions (`analysis/requirements.txt`): `qiskit==2.5.1`, `qiskit-aer==0.17.2`,
 `numpy==2.4.6`, `matplotlib==3.11.1`, `pandas==3.0.5`, `pyserial==3.5`.
@@ -221,7 +239,7 @@ falling back to the default font.
 ### Building the report
 
 ```bash
-.venv/bin/python report/build_docx.py    # -> report/บทที่4_ผลการทดลอง_PhD.docx
+.venv/bin/python docs/report/build_docx.py    # -> docs/report/บทที่4_ผลการทดลอง_PhD.docx
 ```
 
 ---
@@ -255,5 +273,8 @@ the actual runs, and are documented here so they are not mistaken for over-engin
 
 ## Status
 
-All four phases complete for all three boards. Results chapter written to
-`report/chapter4_results_th.md`.
+All four phases previously completed for all three boards at REPS=30; that dataset was
+deleted and superseded in preparation for a fresh REPS=100 rerun (`data/` is currently
+empty except for `.gitkeep` placeholders). See [`run_log.md`](run_log.md) for the run
+history and git history for the last-known n=30 numbers. Results chapter template lives
+at `docs/report/chapter4_results_th.md`, pending re-population once the rerun completes.

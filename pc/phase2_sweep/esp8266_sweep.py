@@ -10,10 +10,10 @@
 #
 # สำหรับแต่ละ (circuit, n):
 #   1. build + upload firmware ด้วย -D N_QUBITS=<n> -D CIRCUIT_ID=<id>
-#   2. เปิด serial อ่านผลจากบอร์ด 30 trial ต่อจุดข้อมูล จนกว่าจะเจอ "DONE"
+#   2. เปิด serial อ่านผลจากบอร์ด 100 trial ต่อจุดข้อมูล จนกว่าจะเจอ "DONE"
 #      (ข้ามข้อความขยะจาก ESP8266 ROM bootloader ที่พิมพ์ 74880 baud ตอน boot)
-#   3. เขียนทุกแถวลง results/phase2/esp8266_raw.csv (ไฟล์ดิบ, append)
-#      และสรุปลง results/phase2/esp8266_memory_wall.csv
+#   3. เขียนทุกแถวลง data/raw/phase2/esp8266_raw.csv (ไฟล์ดิบ, append)
+#      และสรุปลง data/raw/phase2/esp8266_memory_wall.csv
 #
 # การใช้งาน:
 #   .venv/bin/python pc/phase2_sweep/esp8266_sweep.py --port /dev/cu.usbserialXXXX \
@@ -42,7 +42,7 @@ RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 PIO = os.environ.get("PIO_PATH") or shutil.which("pio")
 
 BAUD = 115200
-SERIAL_TIMEOUT_S = 20
+SERIAL_TIMEOUT_S = 70  # scaled for REPS=100 (was 20 for REPS=30)
 
 
 def find_esp_port(hint: str) -> str:

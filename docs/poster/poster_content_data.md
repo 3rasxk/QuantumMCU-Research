@@ -3,7 +3,7 @@
 เอกสารนี้รวบรวมข้อความและกราฟทุกชิ้นที่ใส่ในโปสเตอร์ (Main.dc.html /
 quantum_mcu_science_poster.pdf) ตามลำดับที่ปรากฏจริงบนโปสเตอร์ ที่มา:
 proposal_advisor.pdf (ข้อเสนอโครงงานที่ยื่นจริง นอก repo นี้) และผลการทดลองใน
-results/phase1-4/ ของ repo นี้
+data/{raw,processed,figures}/phase1-4/ ของ repo นี้
 
 ---
 
@@ -119,10 +119,10 @@ Phase 4 Decision Framework: สังเคราะห์ผลจาก Phase 
 วงจร qft: Infidelity สูงสุด 2.43 คูณ 10 ยกกำลัง ลบ 7, TVD สูงสุด 1.22 คูณ
 10 ยกกำลัง ลบ 7, ผ่านทุกกรณีจาก 7 ค่า n
 
-ที่มาของตัวเลข: results/phase1/infidelity_tvd.csv รวม 21 กรณี คือ 3 วงจร
+ที่มาของตัวเลข: data/raw/phase1/infidelity_tvd.csv รวม 21 กรณี คือ 3 วงจร
 คูณ 7 ค่า n
 
-กราฟที่ใช้: infidelity.png ย่อขนาดจาก results/phase1/fig_infidelity_vs_depth.png
+กราฟที่ใช้: infidelity.png ย่อขนาดจาก data/figures/phase1/fig_infidelity_vs_depth.png
 
 คำอธิบายภาพที่ 1: Infidelity เทียบกับ Circuit Depth แกน y เป็น log scale
 รวม 21 กรณีทดสอบครบ 3 วงจร คูณ 7 ค่า n ค่าคลาดเคลื่อนอยู่ระดับ 10 ยกกำลัง
@@ -139,9 +139,9 @@ NodeMCU ESP8266: n ทฤษฎีเท่ากับ 13, n วัดจริ
 
 ESP32 DevKit V1: n ทฤษฎีเท่ากับ 15, n วัดจริงเท่ากับ 13, ส่วนต่างลบ 2
 
-ที่มาของตัวเลข: results/phase2/memory_wall_summary.csv
+ที่มาของตัวเลข: data/processed/phase2/memory_wall_summary.csv
 
-กราฟที่ใช้: memwall.png ย่อขนาดจาก results/phase2/memory_wall_comparison.png
+กราฟที่ใช้: memwall.png ย่อขนาดจาก data/figures/phase2/memory_wall_comparison.png
 
 คำอธิบายภาพที่ 2: Memory Wall คือ n สูงสุดตามทฤษฎีเทียบค่าที่วัดได้จริงของ
 ทั้ง 3 บอร์ด ทุกบอร์ดวัดได้ต่ำกว่าทฤษฎีเพราะต้องกันพื้นที่ให้ Stack และ
@@ -160,15 +160,15 @@ Bluetooth Stack พร้อมกัน ผลนี้สนับสนุน
 
 วงจร qft: Uno เท่ากับ 4, ESP8266 เท่ากับ 7, ESP32 เท่ากับ 12
 
-ที่มาของตัวเลข: results/phase3/crossover_summary.csv
+ที่มาของตัวเลข: data/processed/phase3/crossover_summary.csv
 
 กราฟที่ใช้ แยกไฟล์ต่อบอร์ด ไม่ใช่กราฟรวม:
 
-crossover_uno.png ย่อขนาดจาก results/phase3/fig_phase3_uno_crossover.png
+crossover_uno.png ย่อขนาดจาก data/figures/phase3/fig_phase3_uno_crossover.png
 
-crossover_esp8266.png ย่อขนาดจาก results/phase3/fig_phase3_esp8266_crossover.png
+crossover_esp8266.png ย่อขนาดจาก data/figures/phase3/fig_phase3_esp8266_crossover.png
 
-crossover_esp32.png ย่อขนาดจาก results/phase3/fig_phase3_esp32_crossover.png
+crossover_esp32.png ย่อขนาดจาก data/figures/phase3/fig_phase3_esp32_crossover.png
 
 แต่ละภาพแสดง Local เส้นทึบ และ Offload เส้นประ ของทั้ง 3 วงจรในบอร์ดเดียว
 วงกลมกลวงคือ Crossover Point ของวงจรนั้น
@@ -218,17 +218,17 @@ report/phase4_equations_summary_th.pdf ใน repo
 
 ## รายการไฟล์ภาพในโฟลเดอร์นี้
 
-infidelity.png มาจาก results/phase1/fig_infidelity_vs_depth.png ย่อขนาด
+infidelity.png มาจาก data/figures/phase1/fig_infidelity_vs_depth.png ย่อขนาด
 ใช้เป็นภาพที่ 1
 
-memwall.png มาจาก results/phase2/memory_wall_comparison.png ย่อขนาด
+memwall.png มาจาก data/figures/phase2/memory_wall_comparison.png ย่อขนาด
 ใช้เป็นภาพที่ 2
 
-crossover_uno.png มาจาก results/phase3/fig_phase3_uno_crossover.png
+crossover_uno.png มาจาก data/figures/phase3/fig_phase3_uno_crossover.png
 ย่อขนาด ใช้เป็นภาพที่ 3 แผงซ้าย
 
-crossover_esp8266.png มาจาก results/phase3/fig_phase3_esp8266_crossover.png
+crossover_esp8266.png มาจาก data/figures/phase3/fig_phase3_esp8266_crossover.png
 ย่อขนาด ใช้เป็นภาพที่ 3 แผงกลาง
 
-crossover_esp32.png มาจาก results/phase3/fig_phase3_esp32_crossover.png
+crossover_esp32.png มาจาก data/figures/phase3/fig_phase3_esp32_crossover.png
 ย่อขนาด ใช้เป็นภาพที่ 3 แผงขวา

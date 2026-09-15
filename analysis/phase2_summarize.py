@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # phase2_summarize.py
-# อ่านไฟล์ดิบ results/phase2/{board}_raw.csv (ทุกบอร์ดที่มีข้อมูลแล้ว)
+# อ่านไฟล์ดิบ data/raw/phase2/{board}_raw.csv (ทุกบอร์ดที่มีข้อมูลแล้ว)
 # แล้วสรุปเป็น Median ± IQR ของ exec_time_us จำแนกตาม board/circuit/n
 # (รายงานแบบ Median ± IQR ตามระเบียบวิธี ไม่ใช่ Mean ± SD เพราะข้อมูลเวลามักเบ้)
 #
@@ -13,12 +13,13 @@ from pathlib import Path
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-RESULTS_DIR = REPO_ROOT / "results" / "phase2"
+RAW_DIR = REPO_ROOT / "data" / "raw" / "phase2"
+PROCESSED_DIR = REPO_ROOT / "data" / "processed" / "phase2"
 
 
 def load_raw():
     rows = []
-    for path in sorted(glob.glob(str(RESULTS_DIR / "*_raw.csv"))):
+    for path in sorted(glob.glob(str(RAW_DIR / "*_raw.csv"))):
         with open(path, newline="") as f:
             for r in csv.DictReader(f):
                 rows.append(r)
@@ -28,7 +29,7 @@ def load_raw():
 def main():
     rows = load_raw()
     if not rows:
-        print("no *_raw.csv files found under results/phase2/")
+        print(f"no *_raw.csv files found under {RAW_DIR}/")
         return
 
     groups = {}
@@ -36,7 +37,8 @@ def main():
         key = (r["board"], r["circuit"], int(r["n"]))
         groups.setdefault(key, []).append(float(r["exec_time_us"]))
 
-    out_path = RESULTS_DIR / "summary.csv"
+    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = PROCESSED_DIR / "summary.csv"
     with open(out_path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["board", "circuit", "n", "n_trials", "median_exec_time_us",

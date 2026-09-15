@@ -13,13 +13,13 @@
 # ที่บอร์ดเดียวกัน — สองมุมมองคนละคำถาม ไม่ใช่กราฟซ้ำ
 #
 # จุดตัด (crossover point) ทำเครื่องหมายด้วยวงกลมกลวงสีเดียวกับเส้นบอร์ดนั้น
-# บวกเส้นประแนวตั้งบาง ๆ ลงแกน x — อ่านค่าจาก results/phase3/crossover_summary.csv
+# บวกเส้นประแนวตั้งบาง ๆ ลงแกน x — อ่านค่าจาก data/processed/phase3/crossover_summary.csv
 # ตรง ๆ (ไม่คำนวณซ้ำ) เพื่อให้ตรงกับตัวเลขที่รายงานบทที่ 4 ทุกประการ
 #
-# แหล่งข้อมูล: results/phase2/summary.csv (local), results/phase3/summary.csv
-# (offload), results/phase3/crossover_summary.csv (ตำแหน่งจุดตัดที่คำนวณไว้แล้ว)
+# แหล่งข้อมูล: data/processed/phase2/summary.csv (local), data/processed/phase3/summary.csv
+# (offload), data/processed/phase3/crossover_summary.csv (ตำแหน่งจุดตัดที่คำนวณไว้แล้ว)
 #
-# ผลลัพธ์: results/phase3/crossover_all_boards.png (300 DPI)
+# ผลลัพธ์: data/figures/phase3/crossover_all_boards.png (300 DPI)
 
 import csv
 from pathlib import Path
@@ -29,9 +29,10 @@ import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PHASE2_DIR = REPO_ROOT / "results" / "phase2"
-PHASE3_DIR = REPO_ROOT / "results" / "phase3"
-OUT_PATH = PHASE3_DIR / "crossover_all_boards.png"
+PHASE2_DIR = REPO_ROOT / "data" / "processed" / "phase2"
+PHASE3_DIR = REPO_ROOT / "data" / "processed" / "phase3"
+FIGURES_DIR = REPO_ROOT / "data" / "figures" / "phase3"
+OUT_PATH = FIGURES_DIR / "crossover_all_boards.png"
 FONT_PATH = Path.home() / "Library" / "Fonts" / "THSarabunNew.ttf"
 
 CIRCUIT_ORDER = ["h_all", "bell_ghz", "qft"]
@@ -160,6 +161,7 @@ def main():
                  fontsize=13.5, y=1.02)
     fig.tight_layout()
 
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     fig.savefig(OUT_PATH, bbox_inches="tight", dpi=300)
     print(f"graph -> {OUT_PATH}")
 

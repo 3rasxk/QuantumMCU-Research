@@ -4,7 +4,7 @@
 การวัดจริงใน Phase 2 (Memory Wall) และ Phase 3 (Crossover Point) ของ 3 บอร์ดทดสอบ
 (Arduino Uno R3, NodeMCU ESP8266, ESP32 DevKit V1)
 
-ที่มา: `report/chapter4_results_th.md` §4.4.2–4.4.3, `results/phase4/decision_criteria.csv`,
+ที่มา: `docs/report/chapter4_results_th.md` §4.4.2–4.4.3, `data/processed/phase4/decision_criteria.csv`,
 `analysis/phase4_flowchart.py`
 
 มีสมการทั้งหมด **2 สมการ** ใช้ต่อกันเป็น 2 ขั้นตอนตัดสินใจ
@@ -100,7 +100,7 @@ n*(บอร์ดใหม่) ≈ n*(บอร์ดอ้างอิง ค�
 
 ## หมายเหตุความไม่ตรงกันที่ตรวจพบ (ยังไม่แก้ ณ ตอนเขียนเอกสารนี้)
 
-ตัวเลขตัวปรับ FPU ที่แสดงในกล่องข้อความของภาพ `results/phase4/fig_phase4_decision_flowchart.png`
+ตัวเลขตัวปรับ FPU ที่แสดงในกล่องข้อความของภาพ `data/figures/phase4/fig_phase4_decision_flowchart.png`
 (สร้างจาก `analysis/phase4_flowchart.py:79-83`) เขียนว่า **"+3 ถึง +5 คิวบิต"** ซึ่ง
 เป็นเลข Δn\* ดิบที่ยังไม่หัก log2(clock ratio) ออก — ต่างจากตัวปรับที่ถูกต้องตามการ
 คำนวณข้างต้น (+2 ถึง +3 คิวบิต) ถ้านำสูตรในภาพไปใช้ตรง ๆ จะนับผลของ clock ratio

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # phase1_plot.py
 # สร้างกราฟ Infidelity vs Circuit Depth (แกน y เป็น log-scale) จาก
-# results/phase1/infidelity_tvd.csv — ห้ามคำนวณค่าใหม่ในไฟล์นี้ อ่านค่าที่วัดจริงเท่านั้น
+# data/raw/phase1/infidelity_tvd.csv — ห้ามคำนวณค่าใหม่ในไฟล์นี้ อ่านค่าที่วัดจริงเท่านั้น
 #
 # สีที่ใช้เลือกตามลำดับ categorical แบบตายตัว (ไม่สุ่ม/ไม่หมุนเวียน) จาก
 # palette ที่ผ่านการตรวจสอบ colorblind-safe แล้ว (dataviz skill, slot 1-3):
@@ -15,8 +15,9 @@ import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-RESULTS_DIR = REPO_ROOT / "results" / "phase1"
-CSV_PATH = RESULTS_DIR / "infidelity_tvd.csv"
+RAW_DIR = REPO_ROOT / "data" / "raw" / "phase1"
+FIGURES_DIR = REPO_ROOT / "data" / "figures" / "phase1"
+CSV_PATH = RAW_DIR / "infidelity_tvd.csv"
 FONT_PATH = Path.home() / "Library" / "Fonts" / "THSarabunNew.ttf"
 THRESHOLD = 1e-3
 
@@ -81,7 +82,8 @@ def main():
     ax.legend(fontsize=9.5, loc="upper left", frameon=False)
 
     fig.tight_layout()
-    out_path = RESULTS_DIR / "fig_infidelity_vs_depth.png"
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = FIGURES_DIR / "fig_infidelity_vs_depth.png"
     fig.savefig(out_path, bbox_inches="tight")
     print(f"graph -> {out_path}")
 

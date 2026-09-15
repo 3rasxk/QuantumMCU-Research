@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-OUT_DIR = REPO_ROOT / "results" / "phase4"
+OUT_DIR = REPO_ROOT / "data" / "figures" / "phase4"
 FONT_PATH = Path.home() / "Library" / "Fonts" / "THSarabunNew.ttf"
 
 COLOR_DECISION = "#767676"
@@ -106,6 +106,7 @@ def main():
 
     fig.suptitle("ภาพที่ 4.10  Decision Flowchart: Local vs Offload", fontsize=13, y=0.98)
     fig.tight_layout(rect=[0, 0, 1, 0.97])
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
     out_path = OUT_DIR / "fig_phase4_decision_flowchart.png"
     fig.savefig(out_path)
     print(f"flowchart -> {out_path}")

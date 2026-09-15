@@ -23,7 +23,7 @@
 #endif
 
 #define STATE_COUNT ((qsize_t)1 << N_QUBITS)
-#define REPS 30
+#define REPS 100
 #define GPIO_TIMING_PIN 7  // สำรองไว้ต่อ Logic Analyzer ในอนาคต (toggle รอบการรันวงจร)
 
 // จอง static array ขนาดคงที่ตอนคอมไพล์ — จุดที่ Uno ต่างจาก ESP8266/ESP32

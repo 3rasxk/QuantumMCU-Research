@@ -22,7 +22,7 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BINARY = REPO_ROOT / "pc" / "phase1_validate" / "phase1_validate"
-RESULTS_DIR = REPO_ROOT / "results" / "phase1"
+RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase1"
 CXXFLAGS = "-O2 -std=c++11 -Wall -Wextra"  # ต้องตรงกับ pc/phase1_validate/build.sh
 
 CIRCUITS = ["h_all", "bell_ghz", "qft"]

@@ -13,8 +13,9 @@ import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PHASE2_DIR = REPO_ROOT / "results" / "phase2"
-PHASE3_DIR = REPO_ROOT / "results" / "phase3"
+PHASE2_PROCESSED_DIR = REPO_ROOT / "data" / "processed" / "phase2"
+PHASE3_PROCESSED_DIR = REPO_ROOT / "data" / "processed" / "phase3"
+PHASE3_FIGURES_DIR = REPO_ROOT / "data" / "figures" / "phase3"
 FONT_PATH = Path.home() / "Library" / "Fonts" / "THSarabunNew.ttf"
 
 COLOR_BY_CIRCUIT = {"h_all": "#2a78d6", "bell_ghz": "#eb6834", "qft": "#159873"}
@@ -28,7 +29,7 @@ def load_font():
 
 
 def load_local():
-    path = PHASE2_DIR / "summary.csv"
+    path = PHASE2_PROCESSED_DIR / "summary.csv"
     local = {}
     with open(path, newline="") as f:
         for r in csv.DictReader(f):
@@ -37,7 +38,7 @@ def load_local():
 
 
 def load_offload():
-    path = PHASE3_DIR / "summary.csv"
+    path = PHASE3_PROCESSED_DIR / "summary.csv"
     rows = list(csv.DictReader(open(path, newline="")))
     return rows
 
@@ -116,12 +117,14 @@ def main():
             ax.spines[spine].set_visible(False)
         ax.legend(fontsize=8.5, loc="lower right", ncol=1, frameon=False)
         fig.tight_layout()
-        out_path = PHASE3_DIR / f"fig_phase3_{board}_crossover.png"
+        PHASE3_FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = PHASE3_FIGURES_DIR / f"fig_phase3_{board}_crossover.png"
         fig.savefig(out_path, bbox_inches="tight")
         print(f"graph -> {out_path}")
 
     # เขียนตารางสรุป Crossover Point
-    summary_path = PHASE3_DIR / "crossover_summary.csv"
+    PHASE3_PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    summary_path = PHASE3_PROCESSED_DIR / "crossover_summary.csv"
     with open(summary_path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["board", "circuit", "baud_used", "crossover_n", "n_tested_max"])

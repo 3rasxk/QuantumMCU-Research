@@ -17,7 +17,7 @@ Qiskit Aer ก่อนนำไปใช้วัดประสิทธิภ
 
 ### 4.1.2 ตัวแปรควบคุม (Control Variables)
 
-บันทึกอัตโนมัติจากการรันจริงในไฟล์ `results/phase1/phase1_metadata.csv`:
+บันทึกอัตโนมัติจากการรันจริงในไฟล์ `data/raw/phase1/phase1_metadata.csv`:
 
 | ตัวแปร | ค่า |
 |---|---|
@@ -67,7 +67,7 @@ Infidelity ≤ 10⁻³ ทุกวงจร ทุกค่า n
 
 ### 4.1.5 ผลการทดลอง (ค่าที่วัดจริง — measured values)
 
-ที่มา: `results/phase1/infidelity_tvd.csv` (ไฟล์ดิบ ไม่มีการปรับแต่งค่า)
+ที่มา: `data/raw/phase1/infidelity_tvd.csv` (ไฟล์ดิบ ไม่มีการปรับแต่งค่า)
 
 **ตารางที่ 4.1** Infidelity และ TVD จำแนกตามวงจรและจำนวนคิวบิต
 
@@ -102,7 +102,7 @@ float (~7 หลักนัยสำคัญ) ไม่ใช่ความ�
 ตัวจำลองถูกออกแบบให้ใช้ float ตั้งแต่ต้นเพื่อให้ตรงกับสภาพแวดล้อมที่จะพอร์ตลง MCU
 
 **ภาพที่ 4.1** กราฟ Infidelity เทียบกับ Circuit Depth (แกน y เป็น log scale)
-ไฟล์: `results/phase1/fig_infidelity_vs_depth.png`
+ไฟล์: `data/figures/phase1/fig_infidelity_vs_depth.png`
 
 เส้นประสีเทาคือเกณฑ์ผ่าน (Infidelity = 10⁻³) จุดข้อมูลทั้งหมดอยู่ต่ำกว่าเส้นเกณฑ์
 มากกว่า 3 อันดับ (order of magnitude)
@@ -177,7 +177,7 @@ Uno) ไล่ค่า n = 2, 3, 4, … เพิ่มทีละ 1 ต่อ
 
 ### 4.2.5 ผลการทดลอง — Memory Wall (Uno)
 
-ที่มา: `results/phase2/uno_memory_wall.csv`, สรุปที่ `results/phase2/memory_wall_summary.csv`
+ที่มา: `data/raw/phase2/uno_memory_wall.csv`, สรุปที่ `data/processed/phase2/memory_wall_summary.csv`
 
 **ตารางที่ 4.2** Memory Wall ของ Uno: ค่าทางทฤษฎี เทียบ ค่าที่วัดจริง
 
@@ -195,12 +195,12 @@ state array อย่างเดียว ไม่ได้รวมพื้�
 (2250–2254 bytes) เกิน SRAM ทั้งหมด (2048 bytes) ไปแล้วตั้งแต่ก่อนพิจารณา stack ด้วยซ้ำ
 จึงชนกับ stack ทันทีเมื่อมีการเรียกฟังก์ชัน ทำให้โปรแกรม hang
 
-**ภาพที่ 4.2** Memory Wall — ทฤษฎี vs วัดจริง (`results/phase2/fig_phase2_memory_wall.png`)
+**ภาพที่ 4.2** Memory Wall — ทฤษฎี vs วัดจริง (`data/figures/phase2/fig_phase2_memory_wall.png`)
 
 ### 4.2.6 ผลการทดลอง — Execution Time (Uno)
 
-ที่มา: `results/phase2/uno_raw.csv` (ดิบ, 540 trial: 3 วงจร × 6 ค่า n (2–7) × 30 trial),
-สรุปที่ `results/phase2/summary.csv` — รายงานแบบ **Median ± IQR**, n_trials=30 ทุกจุด
+ที่มา: `data/raw/phase2/uno_raw.csv` (ดิบ, 540 trial: 3 วงจร × 6 ค่า n (2–7) × 30 trial),
+สรุปที่ `data/processed/phase2/summary.csv` — รายงานแบบ **Median ± IQR**, n_trials=30 ทุกจุด
 
 **ตารางที่ 4.3** Execution Time (µs) — Median [IQR] จำแนกตามวงจรและ n
 
@@ -221,7 +221,7 @@ qft ใช้เวลานานกว่า h_all และ bell_ghz อย�
 vs h_all 26.3ms vs bell_ghz 7.6ms) สอดคล้องกับจำนวนเกทที่ต่างกัน: qft มีเกท CPhase
 เพิ่มแบบ O(n²) ในขณะที่ h_all และ bell_ghz มีเกทแบบ O(n) เท่านั้น
 
-**ภาพที่ 4.3** Execution Time vs n (log scale) — Uno (`results/phase2/fig_phase2_uno_exectime.png`)
+**ภาพที่ 4.3** Execution Time vs n (log scale) — Uno (`data/figures/phase2/fig_phase2_uno_exectime.png`)
 
 ### 4.2.7 สรุปผล Phase 2 (Uno)
 
@@ -293,10 +293,10 @@ dynamic allocation ที่มีกลไกตรวจสอบในตั�
 | 11 | 61760 [61760, 61760] | 8707 [8707, 8710] | 187237 [187237, 187245] |
 | 12 | 134233 [134233, 134234] | 18054 [18054, 18055] | 432274 [432274, 432274] |
 
-ที่มา: `results/phase2/esp8266_raw.csv` (ดิบ, 990 trial: 3 วงจร × 11 ค่า n (2–12) × 30
-trial), สรุปที่ `results/phase2/summary.csv`
+ที่มา: `data/raw/phase2/esp8266_raw.csv` (ดิบ, 990 trial: 3 วงจร × 11 ค่า n (2–12) × 30
+trial), สรุปที่ `data/processed/phase2/summary.csv`
 
-**ภาพที่ 4.4** Execution Time vs n (log scale) — ESP8266 (`results/phase2/fig_phase2_esp8266_exectime.png`)
+**ภาพที่ 4.4** Execution Time vs n (log scale) — ESP8266 (`data/figures/phase2/fig_phase2_esp8266_exectime.png`)
 
 **เทียบกับ Uno ที่ n เดียวกัน (n=7, จุดสูงสุดที่ Uno รันได้):**
 
@@ -365,7 +365,7 @@ FreeRTOS ที่จองพื้นที่แบบกระจายเ�
 Decision Framework: **สูตรทฤษฎีอย่างง่าย (2ⁿ×8 ≤ SRAM) ใช้ประมาณการคร่าว ๆ ได้ แต่
 ประเมิน "สูงเกินจริง" มากขึ้นเรื่อย ๆ ตามความซับซ้อนของ network stack บนบอร์ด**
 
-**ภาพที่ 4.6** Execution Time vs n (log scale) — ESP32 (`results/phase2/fig_phase2_esp32_exectime.png`)
+**ภาพที่ 4.6** Execution Time vs n (log scale) — ESP32 (`data/figures/phase2/fig_phase2_esp32_exectime.png`)
 
 **ตารางที่ 4.7** Execution Time (µs) — Median [IQR], ESP32
 
@@ -384,8 +384,8 @@ Decision Framework: **สูตรทฤษฎีอย่างง่าย (2�
 | 12 | 3872 [3872, 3872] | 4988 [4988, 4988] | 15609 [15601, 15609] |
 | 13 | 8374 [8374, 8381] | 10818 [10818, 10819] | 38003 [38003, 38003] |
 
-ที่มา: `results/phase2/esp32_raw.csv` (ดิบ, 1170 trial: 3 วงจร × 13 ค่า n (2–13) ×
-30 trial), สรุปที่ `results/phase2/summary.csv`
+ที่มา: `data/raw/phase2/esp32_raw.csv` (ดิบ, 1170 trial: 3 วงจร × 13 ค่า n (2–13) ×
+30 trial), สรุปที่ `data/processed/phase2/summary.csv`
 
 **เทียบทั้ง 3 บอร์ดที่ n=7 (จุดสูงสุดที่ Uno รันได้ — จุดร่วมเดียวที่ทั้ง 3 บอร์ดมีข้อมูล):**
 
@@ -403,7 +403,7 @@ clock มาก เพราะ ESP32 มี FPU ฮาร์ดแวร์ป�
 
 ### 4.2.10 สรุปเปรียบเทียบ Memory Wall ระหว่างบอร์ด (ครบทั้ง 3 บอร์ด)
 
-**ภาพที่ 4.5** Memory Wall เทียบระหว่างบอร์ด (`results/phase2/fig_phase2_memory_wall.png`)
+**ภาพที่ 4.5** Memory Wall เทียบระหว่างบอร์ด (`data/figures/phase2/fig_phase2_memory_wall.png`)
 
 | บอร์ด | SRAM รวม | n ตามทฤษฎี (SRAM รวม) | n ตามทฤษฎีปรับปรุง (largest block) | n วัดจริง | รูปแบบความล้มเหลว |
 |---|---|---|---|---|---|
@@ -486,11 +486,11 @@ ESP32 DevKit V1 ตัวนี้ผ่านสาย USB-to-serial แบบ 
 
 **2) ผลการทดลอง Crossover Point**
 
-ที่มา: `results/phase3/esp32_raw.csv` (ดิบ, 2159 trial ที่ใช้งานได้ + 1 trial ถูกตัด
-ทิ้งเพราะข้อมูลเสีย), สรุปที่ `results/phase3/summary.csv` และ
-`results/phase3/crossover_summary.csv` — รายงานแบบ **Median ± IQR**
+ที่มา: `data/raw/phase3/esp32_raw.csv` (ดิบ, 2159 trial ที่ใช้งานได้ + 1 trial ถูกตัด
+ทิ้งเพราะข้อมูลเสีย), สรุปที่ `data/processed/phase3/summary.csv` และ
+`data/processed/phase3/crossover_summary.csv` — รายงานแบบ **Median ± IQR**
 
-**ภาพที่ 4.7** Local vs Offload E2E Latency — ESP32 (`results/phase3/fig_phase3_esp32_crossover.png`)
+**ภาพที่ 4.7** Local vs Offload E2E Latency — ESP32 (`data/figures/phase3/fig_phase3_esp32_crossover.png`)
 เส้นทึบ=local (จาก Phase 2), เส้นประ=offload (baud=460800)
 
 **ตารางที่ 4.8** Crossover Point ของ ESP32 (n แรกที่ offload latency < local execution time)
@@ -555,10 +555,10 @@ baud 115200 และ 460800, 30 trial ต่อจุดข้อมูล) **�
 
 **2) ผลการทดลอง Crossover Point**
 
-ที่มา: `results/phase3/esp8266_raw.csv` (ดิบ, 1980 trial ครบทุกจุด ไม่มีข้อมูลเสีย),
-สรุปที่ `results/phase3/summary.csv`
+ที่มา: `data/raw/phase3/esp8266_raw.csv` (ดิบ, 1980 trial ครบทุกจุด ไม่มีข้อมูลเสีย),
+สรุปที่ `data/processed/phase3/summary.csv`
 
-**ภาพที่ 4.8** Local vs Offload E2E Latency — ESP8266 (`results/phase3/fig_phase3_esp8266_crossover.png`)
+**ภาพที่ 4.8** Local vs Offload E2E Latency — ESP8266 (`data/figures/phase3/fig_phase3_esp8266_crossover.png`)
 
 **ตารางที่ 4.9** Crossover Point ของ ESP8266 (baud=460800)
 
@@ -617,13 +617,13 @@ USART ในโหมด double-speed (U2X) ได้สูงสุดตาม
 
 **2) ผลการทดลอง Crossover Point**
 
-ที่มา: `results/phase3/uno_raw.csv` (ดิบ, 1080 trial ครบทุกจุด), สรุปที่
-`results/phase3/summary.csv` — พบ error 1 ครั้งจาก 1080 trial (bell_ghz, n=2,
+ที่มา: `data/raw/phase3/uno_raw.csv` (ดิบ, 1080 trial ครบทุกจุด), สรุปที่
+`data/processed/phase3/summary.csv` — พบ error 1 ครั้งจาก 1080 trial (bell_ghz, n=2,
 baud=2000000, error_rate=3.3% ของจุดข้อมูลนั้น) ซึ่งต่ำกว่าเกณฑ์ที่ถือว่าไม่เสถียร
 (>50%) มาก จึงยังนับเป็นข้อมูลที่ใช้ได้ตามปกติ ถือเป็นความแปรปรวนเล็กน้อยที่คาดว่าจะ
 พบได้จริงเมื่อทำงานที่ขอบบนของขีดจำกัดฮาร์ดแวร์
 
-**ภาพที่ 4.9** Local vs Offload E2E Latency — Uno (`results/phase3/fig_phase3_uno_crossover.png`)
+**ภาพที่ 4.9** Local vs Offload E2E Latency — Uno (`data/figures/phase3/fig_phase3_uno_crossover.png`)
 
 **ตารางที่ 4.10** Crossover Point ของ Uno (baud=2000000)
 
@@ -751,7 +751,7 @@ n*(บอร์ดใหม่) ≈ n*(บอร์ดอ้างอิงค�
 
 ### 4.4.4 ตารางเกณฑ์ (ข้อมูลอ้างอิงจาก 3 บอร์ดที่ทดสอบจริง)
 
-ที่มา: `results/phase4/decision_criteria.csv`
+ที่มา: `data/processed/phase4/decision_criteria.csv`
 
 **ตารางที่ 4.12** เกณฑ์ Local vs Offload จำแนกตามคลาสบอร์ดและวงจร
 
@@ -770,7 +770,7 @@ crossover จริงก่อนหน่วยความจำหมด)
 ### 4.4.5 Decision Flowchart
 
 **ภาพที่ 4.10** Decision Flowchart: Local vs Offload
-(`results/phase4/fig_phase4_decision_flowchart.png`)
+(`data/figures/phase4/fig_phase4_decision_flowchart.png`)
 
 ขั้นตอน: (1) คำนวณ n_max ของบอร์ด → ถ้า n เกิน ต้อง offload เท่านั้น (2) ถ้ายังไม่เกิน
 ประมาณ crossover point n\* จากคลาสบอร์ดและชนิดวงจร → เทียบ n กับ n\* เพื่อเลือก local

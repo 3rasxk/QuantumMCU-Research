@@ -33,7 +33,7 @@ RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 PIO = os.environ.get("PIO_PATH") or shutil.which("pio")
 
 BAUD = 115200
-SERIAL_TIMEOUT_S = 20
+SERIAL_TIMEOUT_S = 70  # scaled for REPS=100 (was 20 for REPS=30)
 
 
 def find_esp_port(hint: str) -> str:
