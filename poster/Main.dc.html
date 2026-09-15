@@ -1,0 +1,296 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Sarabun', sans-serif; color: #1a1a1a; background: #ffffff; }
+    a { color: #1F3A5F; } a:hover { color: #142942; }
+    h1, h2, h3, p, ul, ol { margin: 0; }
+    table { border-collapse: collapse; width: 100%; }
+    .sec-title {
+      font-size: 26px; font-weight: 700; color: #1F3A5F;
+      padding-bottom: 8px; border-bottom: 3px solid #1F3A5F; margin-bottom: 14px;
+    }
+    .sub-title {
+      font-size: 19px; font-weight: 700; color: #1F3A5F; margin: 18px 0 8px 0;
+    }
+    .body-text { font-size: 17px; line-height: 1.6; color: #2a2a2a; text-align: left; }
+    .bullet-list { padding-left: 22px; margin: 0; }
+    .bullet-list li { font-size: 17px; line-height: 1.55; color: #2a2a2a; margin-bottom: 9px; text-align: left; }
+    .var-label {
+      display: inline-block; font-size: 14px; font-weight: 700; color: #ffffff;
+      background: #1F3A5F; padding: 3px 12px; border-radius: 3px; margin-bottom: 6px;
+    }
+    .data-table th {
+      background: #1F3A5F; color: #ffffff; font-size: 14.5px; font-weight: 700;
+      padding: 8px 10px; text-align: left; border: 1px solid #16293f;
+    }
+    .data-table td {
+      font-size: 14.5px; padding: 7px 10px; border: 1px solid #c9d2dc; color: #2a2a2a;
+    }
+    .data-table tr:nth-child(even) td { background: #f2f5f9; }
+    .caption {
+      font-size: 14.5px; line-height: 1.5; color: #444; background: #f2f5f9;
+      border-left: 3px solid #1F3A5F; padding: 10px 14px; margin-top: 10px;
+    }
+    .fig-num { font-weight: 700; color: #1F3A5F; }
+    .eqn-box {
+      background: #f8f3e8; border: 1px solid #d8c9a0; border-radius: 6px;
+      padding: 18px 22px; flex: 1;
+    }
+    .eqn-title { font-size: 17px; font-weight: 700; color: #6b4f1a; margin-bottom: 8px; }
+    .eqn-formula {
+      font-family: 'Courier New', monospace; font-size: 15.5px; background: #fffdf7;
+      border: 1px solid #e5d8b8; border-radius: 4px; padding: 10px 12px; margin: 8px 0;
+      white-space: pre-wrap; line-height: 1.5; color: #1a1a1a;
+    }
+    .eqn-note { font-size: 13.5px; line-height: 1.5; color: #5a4a2a; }
+    code { font-family: 'Courier New', monospace; background: #eef0f3; padding: 1px 5px; border-radius: 3px; font-size: 0.92em; }
+  </style>
+</helmet>
+
+<div style="width:1800px; background:#ffffff; padding:0 0 48px 0;">
+
+  <!-- ============ HEADER ============ -->
+  <div style="display:flex; align-items:center; gap:32px; background:#1F3A5F; padding:34px 48px; color:#ffffff;">
+    <div style="flex:0 0 130px; width:130px; height:130px; border:2px dashed #ffffffaa; border-radius:50%; display:flex; align-items:center; justify-content:center; text-align:center; font-size:13px; line-height:1.4; color:#ffffffcc; background:#ffffff14;">
+      ตราโรงเรียน<br>บางละมุง<br>(วางไฟล์โลโก้)
+    </div>
+    <div style="flex:1; text-align:center;">
+      <div style="font-size:32px; font-weight:700; line-height:1.35;">
+        การประเมินประสิทธิภาพเชิงเปรียบเทียบของระบบจำลองคอมพิวเตอร์ควอนตัมขนาดเล็ก<br>
+        บนสถาปัตยกรรมไมโครคอนโทรลเลอร์ที่หลากหลาย สำหรับการประมวลผลที่ขอบข่าย
+      </div>
+      <div style="font-size:18px; font-style:italic; font-weight:500; margin-top:10px; color:#dbe6f2;">
+        Comparative Performance Benchmarking of Quantum Micro-Simulators Across Diverse<br>
+        Microcontroller Architectures for Edge Computing
+      </div>
+    </div>
+    <div style="flex:0 0 260px; width:260px; font-size:15.5px; line-height:1.6; text-align:left; border-left:1px solid #ffffff33; padding-left:24px;">
+      <div style="font-weight:700; color:#a8c4e0;">ผู้จัดทำโครงงาน</div>
+      <div>นายธีรศักดิ์ รักความสุข</div>
+      <div style="color:#c8d8e8; font-size:14px;">ชั้นมัธยมศึกษาปีที่ 6<br>โรงเรียนบางละมุง จังหวัดชลบุรี</div>
+      <div style="font-weight:700; color:#a8c4e0; margin-top:12px;">ครูที่ปรึกษาโครงงาน</div>
+      <div>ผู้ช่วยศาสตราจารย์ ดร.วัชรพัฐ เมตตานันท์</div>
+      <div style="color:#c8d8e8; font-size:14px;">ภาควิชาวิศวกรรมคอมพิวเตอร์ คณะวิศวกรรมศาสตร์<br>มหาวิทยาลัยเกษตรศาสตร์ วิทยาเขตศรีราชา</div>
+    </div>
+  </div>
+
+  <!-- ============ BODY: 3 COLUMNS ============ -->
+  <div style="display:flex; gap:36px; padding:36px 48px 0 48px; align-items:flex-start;">
+
+    <!-- COLUMN 1 -->
+    <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+
+      <div class="sec-title">บทนำ (ที่มาและความสำคัญ)</div>
+      <div class="body-text">
+        ระบบ IoT กำลังเปลี่ยนจากการพึ่งพาคลาวด์ไปสู่การประมวลผลที่ขอบข่าย (Edge Computing)
+        เพื่อลด Latency แต่ไมโครคอนโทรลเลอร์แต่ละสถาปัตยกรรมมีข้อจำกัดด้านหน่วยความจำต่างกัน
+        การจำลองวงจรควอนตัมซึ่งต้องการหน่วยความจำเพิ่มแบบเอ็กซ์โพเนนเชียล (2<sup>n</sup> ตาม
+        จำนวน Qubit) จึงเหมาะเป็นภาระงานตัวแทนสำหรับศึกษาขีดจำกัดฮาร์ดแวร์ขอบข่าย งานวิจัยนี้
+        พัฒนา C++ Quantum Circuit Micro-Simulator ขึ้นเอง แล้วนำไปทดสอบบนไมโครคอนโทรลเลอร์
+        3 สถาปัตยกรรมที่ต่างกัน เพื่อสร้างกรอบการตัดสินใจว่าควรประมวลผลภายในเครื่อง (Local)
+        หรือส่งไปประมวลผลภายนอก (Offload) เมื่อใด
+      </div>
+
+      <div class="sec-title" style="margin-top:22px;">วัตถุประสงค์</div>
+      <ol class="bullet-list">
+        <li>ออกแบบและพัฒนา C++ Quantum Circuit Micro-Simulator ที่ปรับให้เหมาะกับข้อจำกัด SRAM
+          ของ MCU พร้อมตรวจสอบความถูกต้องเทียบกับ Qiskit Aer ด้วย Infidelity (1−F) และ Total
+          Variation Distance (TVD)</li>
+        <li>ศึกษา Memory Wall เปรียบเทียบ Execution Latency ระหว่าง Local กับ Offload และหา
+          Crossover Point ที่การ Offload คุ้มค่ากว่า พร้อมวิเคราะห์ผลของสถาปัตยกรรมที่มีและไม่มี FPU</li>
+        <li>สังเคราะห์ผลทั้งหมดเป็น Decision Framework รูปแบบ Flowchart และสมการ สำหรับวิศวกร
+          เลือกวิธีประมวลผลบนระบบ Edge Computing</li>
+      </ol>
+
+      <div class="sec-title" style="margin-top:22px;">สมมติฐาน</div>
+      <ol class="bullet-list">
+        <li>Arduino Uno R3 (8-bit) จะถึง Memory Wall ที่จำนวน Qubit น้อยกว่า MCU 32-bit และต่ำกว่า
+          ค่าทางทฤษฎี (2<sup>n</sup>×8 Bytes) เนื่องจาก SRAM ต้องแบ่งให้ Stack และตัวแปรอื่นด้วย</li>
+        <li>เนื่องจาก Uno ไม่มี FPU Crossover Point จะเกิดขึ้นเร็วในช่วง Qubit ที่บอร์ดยังรันได้
+          ตรงข้ามกับ ESP32 ที่มี FPU และ Clock สูงกว่า ซึ่ง Crossover Point จะเลื่อนออกไปใกล้ Memory Wall</li>
+        <li>วงจร QFT ซึ่งมีจำนวนเกทมากกว่าวงจรพื้นฐาน (Hadamard, Bell/GHZ) จะคุ้มค่ากับการ Offload
+          เร็วที่สุดในทุกบอร์ด</li>
+      </ol>
+
+      <div class="sec-title" style="margin-top:22px;">ตัวแปร</div>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div>
+          <span class="var-label">ตัวแปรต้น</span>
+          <div class="body-text">สถาปัตยกรรม MCU (Uno / ESP8266 / ESP32), จำนวน Qubit, รูปแบบ
+            การประมวลผล (Local / Offload)</div>
+        </div>
+        <div>
+          <span class="var-label">ตัวแปรตาม</span>
+          <div class="body-text">Execution Time และ End-to-End Latency (µs), Free Heap, ค่า
+            Infidelity (1−F) และ TVD</div>
+        </div>
+        <div>
+          <span class="var-label">ตัวแปรควบคุม</span>
+          <div class="body-text">ชนิดวงจร (Hadamard ทุกคิวบิต, Bell/GHZ state, QFT), Baud Rate
+            สูงสุดที่เสถียรของแต่ละบอร์ด, Compiler Optimization และเวอร์ชันเครื่องมือ</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- COLUMN 2 -->
+    <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+
+      <div class="sec-title">วิธีทำการทดลอง</div>
+
+      <div class="sub-title">Phase 1 — System Validation</div>
+      <div class="body-text">เทียบ State Vector จาก C++ Simulator กับ Qiskit Aer ด้วยลำดับเกท
+        เดียวกันทุกประการ วัด Infidelity (1−F) และ TVD ที่ n = 2, 3, 4, 6, 8, 10, 12 เกณฑ์ผ่าน
+        Infidelity ≤ 10⁻³</div>
+
+      <div class="sub-title">Phase 2 — Edge Benchmark</div>
+      <div class="body-text">อัปโหลดและรันบน MCU ทั้ง 3 บอร์ด เพิ่มจำนวน Qubit ทีละ 1 จนถึง
+        Memory Wall บันทึก Execution Time ด้วย Logic Analyzer 24 MHz และ Free Heap ซ้ำอย่างน้อย
+        30 รอบต่อจุดข้อมูล รายงานผลเป็น Median ± IQR</div>
+
+      <div class="sub-title">Phase 3 — Offload Benchmark</div>
+      <div class="body-text">ส่งคำขอผ่านโปรโตคอลเฟรม Serial USB ให้ PC จำลองวงจรด้วย Qiskit Aer
+        สดใหม่ทุกครั้งแล้วส่งผลกลับ วัด End-to-End Latency ซ้ำ 30 รอบต่อจุดข้อมูล ที่ Baud Rate
+        สูงสุดที่ระบบยังทำงานได้เสถียร</div>
+
+      <div class="sub-title">Phase 4 — Decision Framework</div>
+      <div class="body-text">สังเคราะห์ผลจาก Phase 2–3 เป็น Flowchart 2 ขั้นตอน (ตรวจ Memory
+        Wall ก่อน แล้วเทียบ Crossover Point) พร้อมสมการทำนายสำหรับบอร์ดที่ยังไม่ได้ทดสอบ</div>
+
+      <div class="body-text" style="margin-top:6px; font-size:15px; color:#555;">
+        <b>ฮาร์ดแวร์:</b> Arduino Uno R3, ESP8266 V2, ESP32 DevKit V1, Logic Analyzer 24 MHz 8CH,
+        MacBook Pro M1 &nbsp;•&nbsp; <b>ซอฟต์แวร์:</b> PlatformIO, Qiskit Aer, PySerial, NumPy,
+        Matplotlib
+      </div>
+
+      <!-- ===== ผลการทดลอง: Phase 1 ===== -->
+      <div class="sec-title" style="margin-top:26px;">ผลการทดลอง — Phase 1</div>
+      <table class="data-table">
+        <tr><th>วงจร</th><th>Infidelity (1−F) สูงสุด</th><th>TVD สูงสุด</th><th>ผลตรวจ (7 ค่า n)</th></tr>
+        <tr><td>h_all</td><td>2.43 × 10⁻⁷</td><td>1.22 × 10⁻⁷</td><td>ผ่านทุกกรณี</td></tr>
+        <tr><td>bell_ghz</td><td>3.45 × 10⁻⁸</td><td>1.72 × 10⁻⁸</td><td>ผ่านทุกกรณี</td></tr>
+        <tr><td>qft</td><td>2.43 × 10⁻⁷</td><td>1.22 × 10⁻⁷</td><td>ผ่านทุกกรณี</td></tr>
+      </table>
+      <img src="infidelity.png" style="width:100%; margin-top:12px; border:1px solid #dde3ea; border-radius:4px;">
+      <div class="caption">
+        <span class="fig-num">ภาพที่ 1</span> Infidelity เทียบกับ Circuit Depth (log scale, 21
+        กรณีทดสอบ ครบ 3 วงจร × 7 ค่า n) — ค่าคลาดเคลื่อนอยู่ระดับ 10⁻⁷ ถึง 10⁻⁸ ต่ำกว่าเกณฑ์ผ่าน
+        (10⁻³) มากกว่า 4 อันดับ (order of magnitude) ยืนยันว่า C++ Simulator ที่พัฒนาขึ้นให้ผล
+        ตรงกับ Qiskit Aer
+      </div>
+
+    </div>
+
+    <!-- COLUMN 3 -->
+    <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+
+      <div class="sec-title">ผลการทดลอง — Phase 2</div>
+      <table class="data-table">
+        <tr><th>บอร์ด</th><th>n ทฤษฎี</th><th>n วัดจริง</th><th>ส่วนต่าง</th></tr>
+        <tr><td>Arduino Uno R3</td><td>8</td><td>7</td><td>−1</td></tr>
+        <tr><td>NodeMCU ESP8266</td><td>13</td><td>12</td><td>−1</td></tr>
+        <tr><td>ESP32 DevKit V1</td><td>15</td><td>13</td><td>−2</td></tr>
+      </table>
+      <img src="memwall.png" style="width:100%; margin-top:12px; border:1px solid #dde3ea; border-radius:4px;">
+      <div class="caption">
+        <span class="fig-num">ภาพที่ 2</span> Memory Wall: n สูงสุดตามทฤษฎีเทียบค่าที่วัดได้จริง
+        3 บอร์ด — ทุกบอร์ดวัดได้ต่ำกว่าทฤษฎีเพราะต้องกันพื้นที่ให้ Stack/Global Variables โดย
+        ESP32 เสียมากที่สุด (2 Qubit) เนื่องจากมี WiFi และ Bluetooth Stack พร้อมกัน สนับสนุน
+        สมมติฐานข้อ 1
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- ============ ผลการทดลอง — Phase 3 (เต็มความกว้าง, กราฟแยกต่อบอร์ด) ============ -->
+  <div style="margin:26px 48px 0 48px; padding-top:22px; border-top:1px solid #d7dde5;">
+    <div class="sec-title">ผลการทดลอง — Phase 3 (Offload Benchmark)</div>
+
+    <div style="display:flex; gap:32px; align-items:flex-start;">
+      <div style="flex:0 0 300px;">
+        <table class="data-table">
+          <tr><th>วงจร</th><th>Uno</th><th>ESP8266</th><th>ESP32</th></tr>
+          <tr><td>h_all</td><td>5</td><td>8</td><td>13</td></tr>
+          <tr><td>bell_ghz</td><td>6</td><td>10</td><td>13</td></tr>
+          <tr><td>qft</td><td>4</td><td>7</td><td>12</td></tr>
+        </table>
+        <div class="body-text" style="font-size:14px; color:#666; margin-top:6px;">
+          ตัวเลข = Crossover Point (n ที่ Offload เริ่มเร็วกว่า Local)
+        </div>
+        <div class="caption" style="margin-top:14px;">
+          <span class="fig-num">ภาพที่ 3</span> Local Execution Time เทียบ Offload E2E Latency
+          แยกกราฟต่อบอร์ด แต่ละกราฟแสดง 3 วงจร (วงกลมกลวง = Crossover Point) — Offload Latency
+          เกือบคงที่ทุกบอร์ด (~1.6–14 ms) เพราะเฟรมข้อมูลมีขนาดคงที่ 4–6 bytes ทำให้ Crossover
+          Point ขึ้นกับความเร็วคำนวณภายในเครื่องเป็นหลัก สนับสนุนสมมติฐานข้อ 2 และ 3
+        </div>
+      </div>
+      <div style="flex:1; display:flex; gap:16px;">
+        <img src="crossover_uno.png" style="flex:1; width:0; min-width:0; border:1px solid #dde3ea; border-radius:4px;">
+        <img src="crossover_esp8266.png" style="flex:1; width:0; min-width:0; border:1px solid #dde3ea; border-radius:4px;">
+        <img src="crossover_esp32.png" style="flex:1; width:0; min-width:0; border:1px solid #dde3ea; border-radius:4px;">
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ FOOTER: สรุปและอภิปรายผล ============ -->
+  <div style="margin:38px 48px 0 48px; padding-top:28px; border-top:3px solid #1F3A5F;">
+    <div class="sec-title">สรุปและอภิปรายผลการทดลอง</div>
+
+    <div style="display:flex; gap:40px; align-items:flex-start;">
+      <div style="flex:1.15;">
+        <ul class="bullet-list">
+          <li><b>Offload Latency แทบคงที่</b> อยู่ในช่วง ~1.6–14 ms ไม่ขึ้นกับบอร์ด, Baud Rate
+            หรือจำนวน Qubit เพราะเฟรมโปรโตคอลมีขนาดคงที่ (4–6 bytes) ต้นทุนส่วนใหญ่จึงเป็น fixed
+            overhead ของ PC/OS/Driver</li>
+          <li><b>Crossover Point แปรผกผันกับความเร็วคำนวณของบอร์ดและความซับซ้อนของวงจร</b> —
+            บอร์ดที่ไม่มี FPU (Uno) คุ้มกับ Offload ตั้งแต่ Qubit ต่ำ ในขณะที่ ESP32 ที่มี FPU
+            ต้องรอถึง Qubit สูงใกล้ Memory Wall จึงเริ่มคุ้ม; วงจร QFT (เกทมากสุด) คุ้มกับ Offload
+            เร็วที่สุดเสมอทุกบอร์ด</li>
+          <li><b>ทุกบอร์ดถึง Memory Wall ก่อนค่าทฤษฎี 1–2 Qubit</b> จากพื้นที่ที่ต้องกันไว้ให้
+            Stack และ Network/RTOS Stack — ยืนยันสมมติฐานข้อ 1 ทั้ง 3 บอร์ด</li>
+          <li>ผลการทดลองสนับสนุนสมมติฐานทั้ง 3 ข้อที่ตั้งไว้ และนำไปสังเคราะห์เป็น Decision
+            Framework 2 ขั้นตอนที่ใช้กับบอร์ดอื่นที่ยังไม่ได้ทดสอบได้ โดยมีสมการประมาณค่าดังนี้</li>
+        </ul>
+      </div>
+
+      <div style="flex:1.85; display:flex; gap:22px;">
+        <div class="eqn-box">
+          <div class="eqn-title">สมการที่ 1 — Memory Wall</div>
+          <div class="eqn-formula">n_max = floor( log2( B / 8 ) )</div>
+          <div class="eqn-note">
+            B = largest contiguous free block ที่วัดได้จริง หากวัดไม่ได้ (บอร์ด static-allocation
+            เช่น Uno) ประมาณด้วย <b>B ≈ SRAM รวม ÷ 2</b>
+          </div>
+        </div>
+        <div class="eqn-box">
+          <div class="eqn-title">สมการที่ 2 — Crossover Point</div>
+          <div class="eqn-formula">n* ≈ n*_อ้างอิง + log2(clock ใหม่/clock อ้างอิง)
+              + ตัวปรับสถาปัตยกรรม</div>
+          <div class="eqn-note">
+            ตัวปรับ: <b>+1 คิวบิต</b> เมื่อเปลี่ยน 8-bit → 32-bit (ไม่มี FPU ทั้งคู่),
+            <b>+2 ถึง +3 คิวบิต</b> เมื่อเพิ่ม FPU ฮาร์ดแวร์ (สถาปัตยกรรม 32-bit เดิม)
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>
