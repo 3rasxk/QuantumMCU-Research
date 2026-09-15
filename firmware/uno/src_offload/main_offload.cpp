@@ -26,7 +26,7 @@
 
 static unsigned long g_latency_us[REPS];
 static uint8_t g_crc_error[REPS];       // 1 = timeout หรือ CRC ของ response ผิด
-static long g_timed_out[REPS];          // 1 = timeout (ไม่ได้รับ response เลย)
+static uint8_t g_timed_out[REPS];       // 1 = timeout (ไม่ได้รับ response เลย)
 
 static const char* circuit_name() {
     switch (CIRCUIT_ID) {

@@ -19,6 +19,7 @@ import csv
 import glob
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -29,11 +30,13 @@ from pathlib import Path
 import serial
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-FW_DIR = REPO_ROOT / "firmware" / "uno"
-RESULTS_DIR = REPO_ROOT / "results" / "phase2"
-PIO = "/Users/thirasak/.platformio/penv/bin/pio"
+sys.path.insert(0, str(REPO_ROOT / "pc"))
+from shared.circuit_ids import CIRCUIT_IDS  # noqa: E402
 
-CIRCUIT_IDS = {"h_all": 0, "bell_ghz": 1, "qft": 2}
+FW_DIR = REPO_ROOT / "firmware" / "uno"
+RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase2"
+PIO = os.environ.get("PIO_PATH") or shutil.which("pio")
+
 BAUD = 115200
 SERIAL_TIMEOUT_S = 20  # เวลารอสูงสุดต่อจุดข้อมูล (30 trial ควรเสร็จเร็วกว่านี้มาก)
 TOTAL_SRAM_BYTES = 2048  # ATmega328P

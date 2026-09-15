@@ -17,6 +17,7 @@
 import argparse
 import glob
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -28,16 +29,15 @@ import numpy as np
 import serial
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-RESULTS_DIR = REPO_ROOT / "results" / "phase3"
-PIO = "/Users/thirasak/.platformio/penv/bin/pio"
+RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase3"
+PIO = os.environ.get("PIO_PATH") or shutil.which("pio")
 
 sys.path.insert(0, str(REPO_ROOT / "analysis"))
+sys.path.insert(0, str(REPO_ROOT / "pc"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from protocol import FRAME_REQ_START, parse_request, pack_response  # noqa: E402
 from phase1_compare import build_qiskit_circuit  # noqa: E402
-
-CIRCUIT_IDS = {"h_all": 0, "bell_ghz": 1, "qft": 2}
-CIRCUIT_NAMES = {v: k for k, v in CIRCUIT_IDS.items()}
+from shared.circuit_ids import CIRCUIT_IDS, CIRCUIT_NAMES  # noqa: E402
 
 BOARDS = {
     "uno": {

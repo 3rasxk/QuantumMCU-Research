@@ -3,8 +3,7 @@
 เรื่อง: Comparative Performance Benchmarking of Quantum Micro-Simulators Across
 Diverse Microcontroller Architectures for Edge Computing
 
-เอกสารนี้รวบรวมผลการทดลองตามลำดับ 3 ระยะ (Phase) ของงานวิจัย โดยจะทยอยเพิ่มเนื้อหา
-ทีละระยะเมื่อการทดลองในระยะนั้นผ่านเกณฑ์ที่กำหนดไว้แล้วเท่านั้น ปัจจุบันมีผลของ **Phase 1**
+เอกสารนี้รวบรวมผลการทดลองครบทั้ง 4 ระยะ (Phase) ของงานวิจัย ตามหัวข้อ 4.1–4.4
 
 ---
 
