@@ -93,13 +93,15 @@ pc/
   phase3_offload/    serial server (answers frames with Qiskit) + orchestrator
   shared/            circuit_ids.py — CIRCUIT_IDS/CIRCUIT_NAMES, single source
                       of truth imported by every sweep script
+                     plot_style.py — board palette/markers/labels + figure
+                      save helper, imported by every plotting script
 
 analysis/            validation, statistics, and figure generation
 
 data/
   raw/               per-repetition measurements straight off the board, per phase
   processed/         aggregated summaries (memory wall, crossover) derived from raw/
-  figures/           generated PNGs, per phase
+  figures/           generated figures (300 DPI PNG + SVG), per phase
 
 docs/
   proposal/          (empty — to be rewritten from the REPS=100 data)
@@ -233,9 +235,10 @@ resolve `pio` via `shutil.which("pio")`, or the `PIO_PATH` environment variable 
 Pinned versions (`analysis/requirements.txt`): `qiskit==2.5.1`, `qiskit-aer==0.17.2`,
 `numpy==2.4.6`, `matplotlib==3.11.1`, `pandas==3.0.5`, `pyserial==3.5`.
 
-Figures use TH Sarabun New for Thai labels, loaded from
-`~/Library/Fonts/THSarabunNew.ttf`. The plots still render without it, with Thai text
-falling back to the default font.
+Figures are labelled in English (the written report stays in Thai) and use matplotlib's
+bundled DejaVu Sans, so no extra font is needed. Board colours, markers, labels and the
+save helper (300 DPI PNG + SVG per figure) are defined once in `pc/shared/plot_style.py`;
+every script under `analysis/` imports them instead of hardcoding colours.
 
 ---
 

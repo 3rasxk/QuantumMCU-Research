@@ -1,80 +1,43 @@
 #!/usr/bin/env python3
-# appendix_c_crossover_subplots.py — ภาคผนวก ค, ภาพที่ ค-12
+# appendix_c_crossover_subplots.py — ภาคผนวก ค
 # กราฟเส้น 3 subplot — 1 algorithm (วงจร) ต่อ subplot: h_all, bell_ghz, qft
 # แกน x = จำนวนคิวบิต (n), แกน y = เวลา (µs, log scale)
 # แต่ละ subplot มี 6 เส้น = 3 บอร์ด (Uno/ESP8266/ESP32) × 2 เส้นทาง (local ทึบ,
-# offload ประ) — ครบทั้ง Local Execution Time (Phase 2) และ Offload E2E Latency
-# (Phase 3) อยู่ในกราฟเดียวกัน ไม่ต้องแยกไฟล์ offload ต่างหาก เพราะเส้นประ *คือ*
-# ข้อมูล offload อยู่แล้ว
+# offload ประ) พร้อมแถบ IQR — ครบทั้ง Local Execution Time (Phase 2) และ Offload E2E
+# Latency (Phase 3) อยู่ในกราฟเดียวกัน
 #
-# จัดกลุ่มตาม "algorithm" (วงจร) แทนที่จะจัดตามบอร์ดเหมือนกราฟเดิมใน
-# fig_phase3_{board}_crossover.png — เพื่อให้เทียบ "บอร์ดไหนเร็วกว่ากัน" ที่วงจร
-# เดียวกันได้ในหน้าเดียว ตรงข้ามกับกราฟเดิมที่เทียบ "วงจรไหนคุ้ม offload ก่อน"
-# ที่บอร์ดเดียวกัน — สองมุมมองคนละคำถาม ไม่ใช่กราฟซ้ำ
+# จัดกลุ่มตาม "algorithm" (วงจร) แทนที่จะจัดตามบอร์ดเหมือน crossover_{board}.png —
+# เพื่อให้เทียบ "บอร์ดไหนเร็วกว่ากัน" ที่วงจรเดียวกันได้ในหน้าเดียว ตรงข้ามกับกราฟ
+# รายบอร์ดที่เทียบ "วงจรไหนคุ้ม offload ก่อน" — สองมุมมองคนละคำถาม ไม่ใช่กราฟซ้ำ
 #
 # จุดตัด (crossover point) ทำเครื่องหมายด้วยวงกลมกลวงสีเดียวกับเส้นบอร์ดนั้น
 # บวกเส้นประแนวตั้งบาง ๆ ลงแกน x — อ่านค่าจาก data/processed/phase3/crossover_summary.csv
-# ตรง ๆ (ไม่คำนวณซ้ำ) เพื่อให้ตรงกับตัวเลขที่รายงานบทที่ 4 ทุกประการ
+# ตรง ๆ (ไม่คำนวณซ้ำ) เพื่อให้ตรงกับตารางสรุปทุกประการ
+# ดึงข้อมูล/วาดเส้นด้วยฟังก์ชันเดียวกับ phase3_crossover_plot.py (ไม่เขียนซ้ำ)
 #
 # แหล่งข้อมูล: data/processed/phase2/summary.csv (local), data/processed/phase3/summary.csv
 # (offload), data/processed/phase3/crossover_summary.csv (ตำแหน่งจุดตัดที่คำนวณไว้แล้ว)
 #
-# ผลลัพธ์: data/figures/phase3/crossover_all_boards.png (300 DPI)
+# ผลลัพธ์: data/figures/phase3/crossover_all_boards.{png,svg}
 
 import csv
+import sys
 from pathlib import Path
 
-import matplotlib
-import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PHASE2_DIR = REPO_ROOT / "data" / "processed" / "phase2"
-PHASE3_DIR = REPO_ROOT / "data" / "processed" / "phase3"
-FIGURES_DIR = REPO_ROOT / "data" / "figures" / "phase3"
-OUT_PATH = FIGURES_DIR / "crossover_all_boards.png"
-FONT_PATH = Path.home() / "Library" / "Fonts" / "THSarabunNew.ttf"
-
-CIRCUIT_ORDER = ["h_all", "bell_ghz", "qft"]
-CIRCUIT_TITLE = {
-    "h_all": "h_all (Hadamard ทุกคิวบิต)",
-    "bell_ghz": "bell_ghz (Bell/GHZ state)",
-    "qft": "qft (Quantum Fourier Transform)",
-}
-BOARD_ORDER = ["uno", "esp8266", "esp32"]
-BOARD_LABEL = {"uno": "Uno", "esp8266": "ESP8266", "esp32": "ESP32"}
-# สีต่อบอร์ด (เดิมใน fig_phase3_{board}_crossover.png ใช้ 3 สีนี้แทนวงจร — กราฟนี้
-# สลับแกนกลุ่ม จึงสลับความหมายสีมาเป็นบอร์ดแทน ยังอยู่ใน categorical slot 1-3 เดิม)
-COLOR_BY_BOARD = {"uno": "#2a78d6", "esp8266": "#eb6834", "esp32": "#159873"}
-
-
-def load_font():
-    if FONT_PATH.exists():
-        fm.fontManager.addfont(str(FONT_PATH))
-        matplotlib.rcParams["font.family"] = fm.FontProperties(fname=str(FONT_PATH)).get_name()
-
-
-def load_local():
-    path = PHASE2_DIR / "summary.csv"
-    if not path.exists():
-        raise SystemExit(f"error: {path} not found. รัน analysis/phase2_summarize.py ก่อน")
-    local = {}
-    with open(path, newline="") as f:
-        for r in csv.DictReader(f):
-            local[(r["board"], r["circuit"], int(r["n"]))] = float(r["median_exec_time_us"])
-    return local
-
-
-def load_offload():
-    path = PHASE3_DIR / "summary.csv"
-    if not path.exists():
-        raise SystemExit(f"error: {path} not found. รัน analysis/phase3_summarize.py ก่อน")
-    with open(path, newline="") as f:
-        return list(csv.DictReader(f))
+sys.path.insert(0, str(REPO_ROOT / "pc"))
+from shared import plot_style as ps  # noqa: E402
+from phase3_crossover_plot import (  # noqa: E402
+    PHASE3_FIGURES_DIR, PHASE3_PROCESSED_DIR, best_baud_per_board, draw_series,
+    load_local, load_offload, series_for,
+)
 
 
 def load_crossover():
-    path = PHASE3_DIR / "crossover_summary.csv"
+    path = PHASE3_PROCESSED_DIR / "crossover_summary.csv"
     if not path.exists():
         raise SystemExit(f"error: {path} not found. รัน analysis/phase3_crossover_plot.py ก่อน")
     out = {}
@@ -85,85 +48,69 @@ def load_crossover():
     return out
 
 
-def best_baud_per_board(rows):
-    best = {}
-    for r in rows:
-        board, baud = r["board"], int(r["baud_rate"])
-        if board not in best or baud > best[board]:
-            best[board] = baud
-    return best
-
-
 def main():
-    load_font()
     local = load_local()
     offload_rows = load_offload()
     crossover = load_crossover()
     best_baud = best_baud_per_board(offload_rows)
-    circuits = [c for c in CIRCUIT_ORDER if any(r["circuit"] == c for r in offload_rows)]
+    circuits = [c for c in ps.CIRCUIT_ORDER if any(r["circuit"] == c for r in offload_rows)]
     if not circuits:
         raise SystemExit("error: ไม่มีข้อมูล Phase 3 ที่ตรงกับวงจรใน CIRCUIT_ORDER")
+    ps.apply_style()
 
-    fig, axes = plt.subplots(1, len(circuits), figsize=(6.2 * len(circuits), 5.6), dpi=300, sharey=True)
-    if len(circuits) == 1:
-        axes = [axes]
+    fig, axes = plt.subplots(1, len(circuits), figsize=(4.8 * len(circuits), 5.0),
+                             sharey=True, squeeze=False, layout="constrained")
+    axes = axes[0]
+    loc_trials, off_trials = [], []
+    legend = {}
+    any_crossover = False
 
     for ax, circuit in zip(axes, circuits):
-        ax.set_facecolor("#fcfcfb")
-
-        for board in BOARD_ORDER:
+        for board in ps.BOARD_ORDER:
             baud = best_baud.get(board)
             if baud is None:
                 continue
-            pts = sorted(
-                (int(r["n"]), float(r["median_e2e_latency_us"]))
-                for r in offload_rows
-                if r["board"] == board and r["circuit"] == circuit and int(r["baud_rate"]) == baud
-            )
-            if not pts:
+            s = series_for(board, circuit, baud, local, offload_rows)
+            if s is None:
                 continue
-            ns = [p[0] for p in pts]
-            offload_t = [p[1] for p in pts]
-            local_t = [local.get((board, circuit, n)) for n in ns]
-            color = COLOR_BY_BOARD[board]
+            loc_trials += s["loc_trials"]
+            off_trials += s["off_trials"]
+            # 6 เส้นซ้อนกัน จึงลดความทึบแถบ IQR ลงครึ่งหนึ่งไม่ให้กลบกัน
+            draw_series(ax, board, circuit, s, band_alpha=ps.IQR_ALPHA / 2)
 
-            ax.plot(ns, local_t, marker="o", markersize=6, markeredgewidth=1.0,
-                     markeredgecolor="white", linewidth=2.2, linestyle="-",
-                     color=color, label=f"{BOARD_LABEL[board]} — Local", zorder=3)
-            ax.plot(ns, offload_t, marker="s", markersize=5.5, markeredgewidth=1.0,
-                     markeredgecolor="white", linewidth=1.8, linestyle="--",
-                     color=color, alpha=0.8, label=f"{BOARD_LABEL[board]} — Offload", zorder=3)
-
-            # จุดตัด: อ่านจาก crossover_summary.csv ตรง ๆ (n แรกที่ offload < local)
             cn = crossover.get((board, circuit))
-            if cn is not None and cn in ns:
-                idx = ns.index(cn)
-                if local_t[idx] is not None:
-                    ax.scatter([cn], [offload_t[idx]], s=130, facecolors="none",
-                               edgecolors=color, linewidths=2.2, zorder=5)
-                    ax.axvline(x=cn, color=color, linestyle=":", linewidth=1.1, alpha=0.5, zorder=1)
+            if cn is not None and cn in s["ns"]:
+                any_crossover = True
+                color = ps.BOARD_COLOR[board]
+                ax.scatter([cn], [s["off_med"][s["ns"].index(cn)]], s=130, facecolors="none",
+                           edgecolors=color, linewidths=1.8, zorder=5)
+                ax.axvline(x=cn, color=color, linestyle=":", linewidth=1.0, alpha=0.6, zorder=1)
 
-        ax.set_yscale("log")
-        ax.set_xlabel("จำนวนคิวบิต (n)", fontsize=11.5)
-        ax.set_title(CIRCUIT_TITLE[circuit], fontsize=13, pad=10)
-        ax.grid(True, which="major", axis="y", alpha=0.3, linewidth=0.8, zorder=0)
-        ax.grid(True, which="minor", axis="y", alpha=0.12, linewidth=0.6, zorder=0)
-        ax.grid(True, which="major", axis="x", alpha=0.15, linewidth=0.6, zorder=0)
-        for spine in ("top", "right"):
-            ax.spines[spine].set_visible(False)
+        for h, lab in zip(*ax.get_legend_handles_labels()):
+            legend.setdefault(lab, h)
+        ps.style_axes(ax, log_y=True)
+        ax.set_title(ps.CIRCUIT_LABEL[circuit])
+        ax.set_xlabel("Number of qubits, n (qubits)")
+    axes[0].set_ylabel("Time per run (µs, log scale)")
 
-    axes[0].set_ylabel("เวลา (µs, log scale)", fontsize=12)
+    # เรียง legend ตามบอร์ดคงที่ (local, offload) แล้วต่อด้วยสัญลักษณ์จุดตัด
+    labels = [f"{ps.BOARD_SHORT[b]} — {kind}" for b in ps.BOARD_ORDER for kind in ("local", "offload")]
+    labels = [lab for lab in labels if lab in legend]
+    handles = [legend[lab] for lab in labels]
+    if any_crossover:
+        handles.append(Line2D([], [], linestyle="none", marker="o", markersize=9,
+                              markerfacecolor="none", markeredgecolor=ps.INK_SECONDARY))
+        labels.append("Crossover point (board colour)")
+    fig.legend(handles, labels, loc="outside lower center", ncol=4)
 
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=6, fontsize=8.8,
-               frameon=False, bbox_to_anchor=(0.5, -0.06))
-    fig.suptitle("Local Execution Time เทียบ Offload E2E Latency ต่อ Algorithm — วงกลมกลวง = จุดตัด (Crossover Point)",
-                 fontsize=13.5, y=1.02)
-    fig.tight_layout()
-
-    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUT_PATH, bbox_inches="tight", dpi=300)
-    print(f"graph -> {OUT_PATH}")
+    bauds = ", ".join(f"{ps.BOARD_SHORT[b]} {best_baud[b]}" for b in ps.BOARD_ORDER if b in best_baud)
+    fig.suptitle("Local execution time vs offload end-to-end latency, by circuit — all boards")
+    ps.add_footnote(
+        fig,
+        f"Line = median, band = IQR (25th–75th percentile); {ps.reps_phrase(loc_trials, 'local')}; "
+        f"{ps.reps_phrase(off_trials, 'offload')}. Offload baud: {bauds}.",
+    )
+    ps.save_figure(fig, PHASE3_FIGURES_DIR, "crossover_all_boards")
 
 
 if __name__ == "__main__":

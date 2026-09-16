@@ -1,26 +1,34 @@
 #!/usr/bin/env python3
 # phase2_plot.py
 # สร้างกราฟ Phase 2 จากข้อมูลจริงเท่านั้น (ไม่คำนวณ/ประมาณค่าใหม่):
-#   1. Execution Time vs n (log-scale y) ต่อบอร์ด จาก data/processed/phase2/summary.csv
-#   2. Bar chart Memory Wall: n สูงสุดตามทฤษฎี (2^n*8 <= SRAM) เทียบ n สูงสุดที่วัดได้จริง
+#   1. Execution Time vs n (log-scale y) — 1 subplot ต่อวงจร, 1 เส้นต่อบอร์ด
+#      Median + แถบ IQR จาก data/processed/phase2/summary.csv
+#      -> data/figures/phase2/exec_time_vs_n.{png,svg}
+#   2. Memory Wall: n สูงสุดตามทฤษฎี (2^n*8 <= SRAM) เทียบ n สูงสุดที่วัดได้จริง
 #      จาก data/raw/phase2/*_memory_wall.csv
+#      -> data/processed/phase2/memory_wall_summary.csv
+#      -> data/figures/phase2/memory_wall_comparison.{png,svg}
 #
-# สีวงจรใช้ palette เดียวกับ Phase 1 (dataviz skill, categorical slot 1-3)
-# เพื่อความสอดคล้องกันทั้งรายงาน: h_all=blue, bell_ghz=orange, qft=aqua
+# จัดกลุ่มกราฟ exec time ตามวงจร (ไม่ใช่ตามบอร์ดเหมือนเดิม) เพื่อให้สีคงความหมาย
+# "บอร์ด" เหมือนทุกกราฟอื่นในโปรเจกต์ — สี/marker/ป้ายชื่อมาจาก pc/shared/plot_style.py
 
 import csv
 import glob
+import sys
 from pathlib import Path
 
-import matplotlib
-import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "pc"))
+from shared import plot_style as ps  # noqa: E402
+
 RAW_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 PROCESSED_DIR = REPO_ROOT / "data" / "processed" / "phase2"
 FIGURES_DIR = REPO_ROOT / "data" / "figures" / "phase2"
-FONT_PATH = Path.home() / "Library" / "Fonts" / "THSarabunNew.ttf"
+SUMMARY_PATH = PROCESSED_DIR / "summary.csv"
+MEMORY_WALL_SUMMARY_PATH = PROCESSED_DIR / "memory_wall_summary.csv"
 
 # SRAM รวมของแต่ละบอร์ด (bytes) — ใช้คำนวณ n สูงสุดตามทฤษฎี (2^n * 8 <= SRAM)
 BOARD_SRAM_BYTES = {
@@ -29,23 +37,23 @@ BOARD_SRAM_BYTES = {
     "esp32": 327680,    # ESP32 DevKit V1 (~320KB usable heap โดยประมาณ)
 }
 
-COLOR_BY_CIRCUIT = {"h_all": "#2a78d6", "bell_ghz": "#eb6834", "qft": "#159873"}
-LABEL_BY_CIRCUIT = {
-    "h_all": "Hadamard ทุกคิวบิต",
-    "bell_ghz": "Bell/GHZ state",
-    "qft": "Quantum Fourier Transform",
+# ค่า status ใน *_memory_wall.csv -> ข้อความสั้นบนกราฟ
+FAILURE_LABEL = {
+    "build_or_upload_fail": "build/upload failure",
+    "malloc_failed": "malloc() returned NULL",
 }
 
 
-def load_font():
-    if FONT_PATH.exists():
-        fm.fontManager.addfont(str(FONT_PATH))
-        matplotlib.rcParams["font.family"] = fm.FontProperties(fname=str(FONT_PATH)).get_name()
+def failure_label(status: str) -> str:
+    if status.startswith("runtime_hang_or_reset"):
+        return "runtime hang/reset"
+    return FAILURE_LABEL.get(status, status)
 
 
 def load_summary():
-    path = PROCESSED_DIR / "summary.csv"
-    with open(path, newline="") as f:
+    if not SUMMARY_PATH.exists():
+        return []
+    with open(SUMMARY_PATH, newline="") as f:
         return list(csv.DictReader(f))
 
 
@@ -57,46 +65,54 @@ def load_memory_wall():
     return rows
 
 
+def reps_by_board(summary_rows):
+    out = {}
+    for r in summary_rows:
+        out.setdefault(r["board"], []).append(int(r["n_trials"]))
+    return out
+
+
 def plot_exec_time(summary_rows):
-    boards = sorted(set(r["board"] for r in summary_rows))
-    for board in boards:
-        fig, ax = plt.subplots(figsize=(8, 5), dpi=220)
-        ax.set_facecolor("#fcfcfb")
-        for circuit in ["h_all", "bell_ghz", "qft"]:
+    circuits = [c for c in ps.CIRCUIT_ORDER if any(r["circuit"] == c for r in summary_rows)]
+    fig, axes = plt.subplots(1, len(circuits), figsize=(4.6 * len(circuits), 4.6),
+                             sharey=True, squeeze=False, layout="constrained")
+    axes = axes[0]
+
+    for ax, circuit in zip(axes, circuits):
+        for board in ps.BOARD_ORDER:
             pts = sorted(
-                (
-                    (int(r["n"]), float(r["median_exec_time_us"]), float(r["iqr_low_us"]), float(r["iqr_high_us"]))
-                    for r in summary_rows if r["board"] == board and r["circuit"] == circuit
-                ),
-                key=lambda p: p[0],
+                (int(r["n"]), float(r["median_exec_time_us"]), float(r["iqr_low_us"]), float(r["iqr_high_us"]))
+                for r in summary_rows if r["board"] == board and r["circuit"] == circuit
             )
             if not pts:
                 continue
             ns = [p[0] for p in pts]
             medians = [p[1] for p in pts]
-            lo = [p[1] - p[2] for p in pts]
-            hi = [p[3] - p[1] for p in pts]
-            ax.errorbar(
-                ns, medians, yerr=[lo, hi],
-                marker="o", markersize=7, markeredgewidth=1.2, markeredgecolor="white",
-                linewidth=2.4, capsize=4, capthick=1.4, elinewidth=1.4,
-                color=COLOR_BY_CIRCUIT[circuit], label=LABEL_BY_CIRCUIT[circuit], zorder=3,
-            )
-        ax.set_yscale("log")
-        ax.set_xlabel("จำนวนคิวบิต (n)", fontsize=11)
-        ax.set_ylabel("Execution Time (µs, log scale, Median ± IQR)", fontsize=11)
-        ax.set_title(f"Phase 2: Execution Time vs n — {board.upper()}", fontsize=13, pad=12)
-        ax.grid(True, which="major", axis="y", alpha=0.3, linewidth=0.8, zorder=0)
-        ax.grid(True, which="minor", axis="y", alpha=0.12, linewidth=0.6, zorder=0)
-        ax.grid(True, which="major", axis="x", alpha=0.15, linewidth=0.6, zorder=0)
-        for spine in ("top", "right"):
-            ax.spines[spine].set_visible(False)
-        ax.legend(fontsize=9.5, loc="upper left", frameon=False)
-        fig.tight_layout()
-        FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-        out_path = FIGURES_DIR / f"fig_phase2_{board}_exectime.png"
-        fig.savefig(out_path, bbox_inches="tight")
-        print(f"graph -> {out_path}")
+            color = ps.BOARD_COLOR[board]
+            ax.fill_between(ns, [p[2] for p in pts], [p[3] for p in pts],
+                            color=color, alpha=ps.IQR_ALPHA, linewidth=0, zorder=2)
+            ax.plot(ns, medians, color=color, marker=ps.BOARD_MARKER[board], markersize=5,
+                    markeredgecolor="white", markeredgewidth=0.7, linewidth=1.8,
+                    label=ps.BOARD_LABEL[board], zorder=3)
+            for n in ps.resolve_anomalies(board, circuit, ns, medians, "local", "local"):
+                ps.mark_anomaly(ax, n, medians[ns.index(n)], "anomaly (also flagged in n=30 run)")
+
+        ps.style_axes(ax, log_y=True)
+        ax.set_title(ps.CIRCUIT_LABEL[circuit])
+        ax.set_xlabel("Number of qubits, n (qubits)")
+    axes[0].set_ylabel("Execution time (µs, log scale)")
+
+    # legend รวมทุก subplot (บอร์ดเดียวกันสีเดียวกันทุก subplot) วางนอกพื้นที่พล็อต
+    handles = {}
+    for ax in axes:
+        for h, lab in zip(*ax.get_legend_handles_labels()):
+            handles.setdefault(lab, h)
+    fig.legend(list(handles.values()), list(handles.keys()), loc="outside lower center", ncol=3)
+    fig.suptitle("Phase 2 — Local execution time vs number of qubits")
+
+    reps = [int(r["n_trials"]) for r in summary_rows]
+    ps.add_footnote(fig, f"Line = median, band = IQR (25th–75th percentile); {ps.reps_phrase(reps)}.")
+    ps.save_figure(fig, FIGURES_DIR, "exec_time_vs_n")
 
 
 def theoretical_max_n(sram_bytes: int) -> int:
@@ -106,63 +122,115 @@ def theoretical_max_n(sram_bytes: int) -> int:
     return n
 
 
-def plot_memory_wall(wall_rows):
-    boards = sorted(set(r["board"] for r in wall_rows))
-    theo_ns, meas_ns = [], []
-    for board in boards:
+def summarize_memory_wall(wall_rows):
+    """สรุปต่อบอร์ดจากสถานะดิบ ต่างจากเดิมที่ first_failing_n = measured+1 เสมอ:
+    ตอนนี้อ่าน n ที่ล้มเหลวจริงจากไฟล์ (ว่างถ้า sweep ไม่เจอความล้มเหลวเลย)"""
+    summary = []
+    for board in ps.BOARD_ORDER:
         rows = [r for r in wall_rows if r["board"] == board]
+        if not rows:
+            continue
         ok_ns = [int(r["n"]) for r in rows if r["status"] == "ok"]
+        fails = sorted((int(r["n"]), r["status"]) for r in rows if r["status"] != "ok")
         measured_max = max(ok_ns) if ok_ns else 0
-        theo_max = theoretical_max_n(BOARD_SRAM_BYTES.get(board, 0))
-        theo_ns.append(theo_max)
-        meas_ns.append(measured_max)
+        first_fail_n, first_fail_status = fails[0] if fails else ("", "")
+        if fails and ok_ns and measured_max > first_fail_n:
+            # *_memory_wall.csv เป็น append-only: ถ้ารันซ้ำหลายรอบ อาจมี ok ที่ n สูงกว่า
+            # จุดล้มเหลวรอบก่อน (เช่นล้มเพราะสายหลุดชั่วคราว) — ไม่ตัดสินแทน ให้คนดู
+            print(f"warning: {board}: ok at n={measured_max} but a failure at n={first_fail_n} "
+                  f"({first_fail_status}) — check for repeated/transient sweeps in the raw CSV")
+        sram = BOARD_SRAM_BYTES.get(board, 0)
+        theo = theoretical_max_n(sram)
+        summary.append({
+            "board": board,
+            "total_sram_bytes": sram,
+            "theoretical_max_n": theo,
+            "measured_max_n_safe": measured_max,
+            "theoretical_bytes_at_max_n": (1 << theo) * 8,
+            "first_failing_n": first_fail_n,
+            "first_failure_status": first_fail_status,
+        })
+    return summary
 
-    x = range(len(boards))
-    width = 0.34
-    fig, ax = plt.subplots(figsize=(7, 5), dpi=220)
-    ax.set_facecolor("#fcfcfb")
-    bars_theo = ax.bar([i - width / 2 for i in x], theo_ns, width,
-                        label="ทฤษฎี (2^n × 8 ≤ SRAM รวม)", color="#9a9a9a", zorder=3)
-    bars_meas = ax.bar([i + width / 2 for i in x], meas_ns, width,
-                        label="วัดจริง (n สูงสุดที่รันสำเร็จ)", color="#2a78d6", zorder=3)
-    for bars in (bars_theo, bars_meas):
-        ax.bar_label(bars, fontsize=9.5, padding=2, color="#2a2a2a")
-    ax.set_xticks(list(x))
-    ax.set_xticklabels([b.upper() for b in boards], fontsize=11)
-    ax.set_ylabel("จำนวนคิวบิตสูงสุด (n)", fontsize=11)
-    ax.set_title("Phase 2: Memory Wall — ทฤษฎี vs วัดจริง", fontsize=13, pad=12)
-    ax.set_ylim(0, max(theo_ns + meas_ns) * 1.18)
-    ax.grid(True, which="major", axis="y", alpha=0.3, linewidth=0.8, zorder=0)
-    for spine in ("top", "right"):
-        ax.spines[spine].set_visible(False)
-    ax.legend(fontsize=9.5, loc="upper left", frameon=False)
-    fig.tight_layout()
-    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = FIGURES_DIR / "fig_phase2_memory_wall.png"
-    fig.savefig(out_path, bbox_inches="tight")
-    print(f"graph -> {out_path}")
 
-    # เขียนตารางสรุปเทียบทฤษฎีกับวัดจริงเป็น CSV แยกจากกราฟ
+def write_memory_wall_summary(summary):
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    summary_path = PROCESSED_DIR / "memory_wall_summary.csv"
-    with open(summary_path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["board", "total_sram_bytes", "theoretical_max_n", "measured_max_n_safe",
-                    "theoretical_bytes_at_max_n", "first_failing_n"])
-        for board, theo_n, meas_n in zip(boards, theo_ns, meas_ns):
-            sram = BOARD_SRAM_BYTES.get(board, 0)
-            w.writerow([board, sram, theo_n, meas_n, (1 << theo_n) * 8, meas_n + 1])
-    print(f"table -> {summary_path}")
+    fields = ["board", "total_sram_bytes", "theoretical_max_n", "measured_max_n_safe",
+              "theoretical_bytes_at_max_n", "first_failing_n", "first_failure_status"]
+    with open(MEMORY_WALL_SUMMARY_PATH, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        w.writerows(summary)
+    print(f"table -> {MEMORY_WALL_SUMMARY_PATH}")
+
+
+def draw_memory_wall(summary, reps):
+    """วาด Memory Wall จากแถวสรุป (dict ที่มี key ตาม memory_wall_summary.csv)
+    ใช้ร่วมกับ appendix_c_memory_wall_bar.py — reps = {board: [n_trials, ...]}"""
+    rows = {r["board"]: r for r in summary}
+    boards = [b for b in ps.BOARD_ORDER if b in rows]
+    theo_ns = [int(rows[b]["theoretical_max_n"]) for b in boards]
+    meas_ns = [int(rows[b]["measured_max_n_safe"]) for b in boards]
+
+    fig, ax = plt.subplots(figsize=(7.5, 5), layout="constrained")
+    width = 0.36
+    for i, b in enumerate(boards):
+        color = ps.BOARD_COLOR[b]
+        # ทฤษฎี = กรอบสีบอร์ด + ลายเส้นทแยง, วัดจริง = ทึบสีบอร์ด (legend ใช้ตัวแทนสีกลาง)
+        theo = ax.bar(i - width / 2, theo_ns[i], width, facecolor="white", edgecolor=color,
+                      hatch="///", linewidth=1.2, zorder=3)
+        meas = ax.bar(i + width / 2, meas_ns[i], width, color=color, edgecolor="white",
+                      linewidth=1.0, zorder=3)
+        ax.bar_label(theo, padding=2, fontsize=9, color=ps.INK_PRIMARY)
+        ax.bar_label(meas, padding=2, fontsize=9, color=ps.INK_PRIMARY)
+
+    ticklabels = []
+    for b in boards:
+        fail_n = rows[b].get("first_failing_n", "")
+        status = rows[b].get("first_failure_status", "")
+        if str(fail_n).strip():
+            detail = f"first failure: n = {fail_n}" + (f"\n({failure_label(status)})" if status else "")
+        else:
+            detail = "no failure within sweep range"
+        ticklabels.append(f"{ps.BOARD_LABEL[b]}\n{detail}")
+    ax.set_xticks(range(len(boards)))
+    ax.set_xticklabels(ticklabels, fontsize=9)
+    ax.tick_params(axis="x", length=0)
+
+    ps.style_axes(ax, integer_x=False)
+    ax.grid(False, axis="x")
+    ax.set_ylim(0, max(theo_ns + meas_ns + [1]) * 1.18)
+    ax.set_ylabel("Maximum number of qubits, n (qubits)")
+    ax.set_title("Phase 2 — Memory Wall: theoretical vs measured maximum qubits")
+
+    proxies = [
+        Patch(facecolor="white", edgecolor=ps.INK_SECONDARY, hatch="///",
+              label="Theoretical: largest n with 2ⁿ × 8 bytes ≤ total SRAM"),
+        Patch(facecolor=ps.INK_SECONDARY, label="Measured: largest n that ran to completion (status ok)"),
+    ]
+    fig.legend(handles=proxies, loc="outside lower center", ncol=1)
+
+    all_reps = [c for b in boards for c in reps.get(b, [])]
+    ps.add_footnote(fig, f"Bar colour identifies the board. Each measured point: {ps.reps_phrase(all_reps)}.")
+    ps.save_figure(fig, FIGURES_DIR, "memory_wall_comparison")
+
+    for b, t, m in zip(boards, theo_ns, meas_ns):
+        print(f"  {b:8s} theoretical={t:2d}  measured={m:2d}  gap={t - m} qubit(s)")
 
 
 def main():
-    load_font()
     summary_rows = load_summary()
     wall_rows = load_memory_wall()
+    if not summary_rows and not wall_rows:
+        raise SystemExit(f"error: no data. ต้องมี {SUMMARY_PATH} (รัน analysis/phase2_summarize.py) "
+                         f"หรือ {RAW_DIR}/*_memory_wall.csv")
+    ps.apply_style()
     if summary_rows:
         plot_exec_time(summary_rows)
     if wall_rows:
-        plot_memory_wall(wall_rows)
+        summary = summarize_memory_wall(wall_rows)
+        write_memory_wall_summary(summary)
+        draw_memory_wall(summary, reps_by_board(summary_rows))
 
 
 if __name__ == "__main__":
