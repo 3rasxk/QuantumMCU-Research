@@ -149,6 +149,7 @@ Sweeps `n` upward one qubit at a time until the board fails, recording execution
 .venv/bin/python pc/phase2_sweep/esp32_sweep.py   --port /dev/cu.usbserialXXXX
 .venv/bin/python analysis/phase2_summarize.py
 .venv/bin/python analysis/phase2_plot.py
+.venv/bin/python analysis/phase2_fpu_ratio_plot.py
 ```
 
 Each data point is a fresh `pio run -t upload`, because `N_QUBITS` is a compile-time

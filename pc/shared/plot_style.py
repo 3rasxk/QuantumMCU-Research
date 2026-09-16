@@ -30,6 +30,9 @@ CIRCUIT_LABEL = {
 CIRCUIT_INK = {"h_all": "#1a1a1a", "bell_ghz": "#555555", "qft": "#8c8c8c"}
 CIRCUIT_MARKER = {"h_all": "o", "bell_ghz": "s", "qft": "D"}
 CIRCUIT_LINESTYLE = {"h_all": "-", "bell_ghz": "--", "qft": ":"}
+# hatch คนละแบบต่อวงจร สำหรับกราฟแท่ง (encoding รองเสริมจากหมึกเทา — ดูออกแม้พิมพ์
+# ขาวดำ/ไม่แยกสี) ใช้คู่กับ CIRCUIT_INK เป็น facecolor
+CIRCUIT_HATCH = {"h_all": None, "bell_ghz": "///", "qft": "..."}
 
 # --- หมึกกลาง (ข้อความ, เส้นอ้างอิง, ค่าทฤษฎี) ---
 INK_PRIMARY = "#1a1a1a"
