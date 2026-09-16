@@ -6,6 +6,13 @@
 # เพราะ heap ของ ESP32 แบ่งเป็นหลาย region — free heap รวมพอ ไม่ได้แปลว่าจองก้อนใหญ่
 # ต่อเนื่องได้เสมอไป (fragmentation)
 #
+# runtime_hang_or_reset (ไม่ใช่ malloc_failed, ไม่ใช่ build/upload fail — ทั้งคู่
+# deterministic) ถือเป็นความล้มเหลวชั่วคราวได้ จึง retry ที่ n เดิมอีก 1 ครั้งก่อนสรุปว่า
+# เป็น Memory Wall จริง
+# *** ข้อแตกต่างจากวิธีวัดของ dataset n=30: รอบนั้นไม่มี retry เลย รอบ n=100 นี้ผ่อนเกณฑ์
+# ให้ทนความล้มเหลวชั่วคราวได้ 1 ครั้ง — Memory Wall ของสอง dataset จึง "ไม่ได้เปรียบเทียบ
+# กันตรง ๆ ได้ทันที" ต้องดูคอลัมน์ retry_count ใน esp32_memory_wall.csv ประกอบ (run_log.md) ***
+#
 # การใช้งาน:
 #   .venv/bin/python pc/phase2_sweep/esp32_sweep.py --port /dev/cu.usbserialXXXX \
 #       --circuits h_all bell_ghz qft --n-start 2 --n-max 18
@@ -140,49 +147,75 @@ def main():
     if wall_is_new:
         wall_w.writerow([
             "board", "circuit", "n", "theoretical_bytes", "compile_ram_used_bytes",
-            "compile_ram_pct", "status", "timestamp_utc",
+            "compile_ram_pct", "status", "timestamp_utc", "retry_count",
         ])
 
     for circuit in args.circuits:
         print(f"\n=== circuit={circuit} ===")
         for n in range(args.n_start, args.n_max + 1):
             theoretical_bytes = (1 << n) * 8
-            print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  ", end="", flush=True)
+            wall_found = False
+            retry_used = 0
 
-            ok, log, used_port = build_and_upload(circuit, n, args.port)
-            ts = datetime.now(timezone.utc).isoformat()
-            args.port = used_port
+            # attempt 0 = ครั้งแรก, attempt 1 = retry เดียว — เฉพาะ runtime_hang_or_reset
+            # เท่านั้นที่ retry ได้ (อาจเป็นสายหลุด/USB glitch ชั่วคราว) build/upload fail
+            # และ malloc_failed ไม่ retry เพราะเป็น deterministic
+            for attempt in range(2):
+                print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  ", end="", flush=True)
+                if attempt == 1:
+                    print("(retry) ", end="", flush=True)
 
-            if not ok:
-                print("UPLOAD/BUILD FAIL")
-                wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None, "build_or_upload_fail", ts])
-                wall_f.flush()
-                print(log[-800:])
-                break
+                ok, log, used_port = build_and_upload(circuit, n, args.port)
+                ts = datetime.now(timezone.utc).isoformat()
+                args.port = used_port
 
-            time.sleep(1.5)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
-            done, rows, malloc_failed, note = read_serial_trials(find_esp_port(args.port))
+                if not ok:
+                    print("UPLOAD/BUILD FAIL")
+                    wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None,
+                                      "build_or_upload_fail", ts, retry_used])
+                    wall_f.flush()
+                    print(log[-800:])
+                    wall_found = True
+                    break
 
-            if malloc_failed:
-                print(f"MALLOC_FAILED -> Memory Wall found (n={n})")
-                wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None, "malloc_failed", ts])
-                wall_f.flush()
-                break
+                time.sleep(1.5)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
+                done, rows, malloc_failed, note = read_serial_trials(find_esp_port(args.port))
 
-            if not done:
+                if malloc_failed:
+                    print(f"MALLOC_FAILED -> Memory Wall found (n={n})")
+                    wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None,
+                                      "malloc_failed", ts, retry_used])
+                    wall_f.flush()
+                    wall_found = True
+                    break
+
+                if done:
+                    for line in rows:
+                        raw_w.writerow(line.split(","))
+                    raw_f.flush()
+                    wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None,
+                                      "ok", ts, retry_used])
+                    wall_f.flush()
+                    suffix = f"  (succeeded after {retry_used} retry)" if retry_used else ""
+                    print(f"OK  trials_captured={len(rows)}{suffix}")
+                    break
+
                 status = f"runtime_hang_or_reset({note})"
-                print(f"NO 'DONE' within {SERIAL_TIMEOUT_S}s -> {status}")
-                wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None, status, ts])
+                if attempt == 0:
+                    retry_used = 1
+                    print(f"NO 'DONE' within {SERIAL_TIMEOUT_S}s -> {status}  "
+                          "-- transient failure, retrying once at same n before declaring "
+                          "Memory Wall (deviation from n=30 methodology, see run_log.md)")
+                    continue
+
+                print(f"NO 'DONE' within {SERIAL_TIMEOUT_S}s -> {status} (after retry)")
+                wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None,
+                                  status, ts, retry_used])
                 wall_f.flush()
+                wall_found = True
+
+            if wall_found:
                 break
-
-            for line in rows:
-                raw_w.writerow(line.split(","))
-            raw_f.flush()
-
-            wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None, "ok", ts])
-            wall_f.flush()
-            print(f"OK  trials_captured={len(rows)}")
 
     raw_f.close()
     wall_f.close()

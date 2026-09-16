@@ -3,12 +3,20 @@
 #
 # สำหรับแต่ละ (circuit, n):
 #   1. build + upload firmware ด้วย -D N_QUBITS=<n> -D CIRCUIT_ID=<id>
-#      (ถ้า build/upload ไม่ผ่าน = ล้มเหลวแบบ "link/upload fail" หยุดวงจรนี้ทันที)
+#      (ถ้า build/upload ไม่ผ่าน = ล้มเหลวแบบ "link/upload fail" หยุดวงจรนี้ทันที ไม่ retry
+#      เพราะเป็นผลลัพธ์ deterministic — retry ก็ได้ผลเดิม)
 #   2. อ่านค่า RAM usage % ที่ avr-size รายงานตอน build (ค่าทางทฤษฎีเทียบค่าที่วัดจริง)
 #   3. เปิด serial อ่านผลจากบอร์ด 100 trial ต่อจุดข้อมูล จนกว่าจะเจอ "DONE"
-#      ถ้าไม่มี "DONE" ภายใน timeout = บอร์ด hang/reset -> บันทึกเป็นความล้มเหลว
+#      ถ้าไม่มี "DONE" ภายใน timeout = บอร์ด hang/reset -> ถือเป็นความล้มเหลวชั่วคราวได้
+#      (สายหลุด, USB glitch) จึง retry ที่ n เดิมอีก 1 ครั้งก่อนสรุปว่าเป็น Memory Wall จริง
+#      *** ข้อแตกต่างจากวิธีวัดของ dataset n=30: รอบนั้นไม่มี retry เลย ล้มเหลวครั้งแรก
+#      ที่ n ไหนก็ถือเป็นกำแพงทันที รอบ n=100 นี้ผ่อนเกณฑ์ให้ทนความล้มเหลวชั่วคราวได้ 1
+#      ครั้ง — ทำให้ตัวเลข Memory Wall ระหว่างสอง dataset "ไม่ได้เปรียบเทียบกันตรง ๆ
+#      ได้ทันที" ต้องดูคอลัมน์ retry_count ใน *_memory_wall.csv ประกอบ (ดู run_log.md) ***
 #   4. เขียนทุกแถวลง data/raw/phase2/uno_raw.csv (ไฟล์ดิบ ไม่ทับข้อมูลเดิม, append)
 #      และสรุป Memory Wall ต่อจุดข้อมูลลง data/raw/phase2/uno_memory_wall.csv
+#      (คอลัมน์ retry_count: 0 = สำเร็จ/ล้มเหลวตั้งแต่ครั้งแรก, 1 = ต้อง retry ก่อนได้
+#      ผลลัพธ์นี้ — ไม่ว่าผลจะเป็น ok หรือ wall จริงก็ตาม)
 #
 # การใช้งาน:
 #   .venv/bin/python pc/phase2_sweep/uno_sweep.py --port /dev/cu.usbmodemXXXX \
@@ -150,43 +158,67 @@ def main():
     if wall_is_new:
         wall_w.writerow([
             "board", "circuit", "n", "theoretical_bytes", "compile_ram_used_bytes",
-            "compile_ram_pct", "status", "timestamp_utc",
+            "compile_ram_pct", "status", "timestamp_utc", "retry_count",
         ])
 
     for circuit in args.circuits:
         print(f"\n=== circuit={circuit} ===")
         for n in range(args.n_start, args.n_max + 1):
             theoretical_bytes = (1 << n) * 8
-            print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  ", end="", flush=True)
+            wall_found = False
+            retry_used = 0
 
-            ok, ram_pct, ram_bytes, log, used_port = build_and_upload(circuit, n, args.port)
-            ts = datetime.now(timezone.utc).isoformat()
-            args.port = used_port  # จำ port ล่าสุดที่ใช้สำเร็จ ไว้เป็น hint รอบถัดไป
+            # attempt 0 = ครั้งแรก, attempt 1 = retry เดียว — เฉพาะความล้มเหลวแบบ
+            # runtime hang/reset/serial error เท่านั้นที่ retry ได้ (อาจเป็นสายหลุด/USB
+            # glitch ชั่วคราว) build/upload fail ไม่ retry เพราะ deterministic
+            for attempt in range(2):
+                print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  ", end="", flush=True)
+                if attempt == 1:
+                    print("(retry) ", end="", flush=True)
 
-            if not ok:
-                print("UPLOAD/BUILD FAIL -> Memory Wall found (link/flash stage)")
-                wall_w.writerow(["uno", circuit, n, theoretical_bytes, ram_bytes, ram_pct, "build_or_upload_fail", ts])
-                wall_f.flush()
-                print(log[-800:])
-                break
+                ok, ram_pct, ram_bytes, log, used_port = build_and_upload(circuit, n, args.port)
+                ts = datetime.now(timezone.utc).isoformat()
+                args.port = used_port  # จำ port ล่าสุดที่ใช้สำเร็จ ไว้เป็น hint รอบถัดไป
 
-            time.sleep(1.0)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
-            done, rows, note = read_serial_trials(find_uno_port(args.port), circuit, n)
+                if not ok:
+                    print("UPLOAD/BUILD FAIL -> Memory Wall found (link/flash stage)")
+                    wall_w.writerow(["uno", circuit, n, theoretical_bytes, ram_bytes, ram_pct,
+                                      "build_or_upload_fail", ts, retry_used])
+                    wall_f.flush()
+                    print(log[-800:])
+                    wall_found = True
+                    break
 
-            if not done:
+                time.sleep(1.0)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
+                done, rows, note = read_serial_trials(find_uno_port(args.port), circuit, n)
+
+                if done:
+                    for line in rows:
+                        raw_w.writerow(line.split(","))
+                    raw_f.flush()
+                    wall_w.writerow(["uno", circuit, n, theoretical_bytes, ram_bytes, ram_pct,
+                                      "ok", ts, retry_used])
+                    wall_f.flush()
+                    suffix = f"  (succeeded after {retry_used} retry)" if retry_used else ""
+                    print(f"OK  compile_ram={ram_pct}%  trials_captured={len(rows)}{suffix}")
+                    break
+
                 status = f"runtime_hang_or_reset({note})"
-                print(f"NO 'DONE' within {SERIAL_TIMEOUT_S}s -> {status}")
-                wall_w.writerow(["uno", circuit, n, theoretical_bytes, ram_bytes, ram_pct, status, ts])
+                if attempt == 0:
+                    retry_used = 1
+                    print(f"NO 'DONE' within {SERIAL_TIMEOUT_S}s -> {status}  "
+                          "-- transient failure, retrying once at same n before declaring "
+                          "Memory Wall (deviation from n=30 methodology, see run_log.md)")
+                    continue
+
+                print(f"NO 'DONE' within {SERIAL_TIMEOUT_S}s -> {status} (after retry)")
+                wall_w.writerow(["uno", circuit, n, theoretical_bytes, ram_bytes, ram_pct,
+                                  status, ts, retry_used])
                 wall_f.flush()
+                wall_found = True
+
+            if wall_found:
                 break
-
-            for line in rows:
-                raw_w.writerow(line.split(","))
-            raw_f.flush()
-
-            wall_w.writerow(["uno", circuit, n, theoretical_bytes, ram_bytes, ram_pct, "ok", ts])
-            wall_f.flush()
-            print(f"OK  compile_ram={ram_pct}%  trials_captured={len(rows)}")
 
     raw_f.close()
     wall_f.close()

@@ -124,16 +124,24 @@ def theoretical_max_n(sram_bytes: int) -> int:
 
 def summarize_memory_wall(wall_rows):
     """สรุปต่อบอร์ดจากสถานะดิบ ต่างจากเดิมที่ first_failing_n = measured+1 เสมอ:
-    ตอนนี้อ่าน n ที่ล้มเหลวจริงจากไฟล์ (ว่างถ้า sweep ไม่เจอความล้มเหลวเลย)"""
+    ตอนนี้อ่าน n ที่ล้มเหลวจริงจากไฟล์ (ว่างถ้า sweep ไม่เจอความล้มเหลวเลย)
+
+    retry_count (คอลัมน์ใหม่จาก pc/phase2_sweep/*.py, deviation จาก n=30 methodology
+    — ดู run_log.md): sweep ปัจจุบัน retry ความล้มเหลวชั่วคราว (hang/reset/serial error)
+    1 ครั้งก่อนสรุปว่าเป็น Memory Wall จริง ไฟล์เก่าที่ไม่มีคอลัมน์นี้ (ก่อน deviation)
+    ยังอ่านได้ — .get() คืน "" แทน"""
     summary = []
     for board in ps.BOARD_ORDER:
         rows = [r for r in wall_rows if r["board"] == board]
         if not rows:
             continue
         ok_ns = [int(r["n"]) for r in rows if r["status"] == "ok"]
-        fails = sorted((int(r["n"]), r["status"]) for r in rows if r["status"] != "ok")
+        fails = sorted(
+            (int(r["n"]), r["status"], r.get("retry_count", ""))
+            for r in rows if r["status"] != "ok"
+        )
         measured_max = max(ok_ns) if ok_ns else 0
-        first_fail_n, first_fail_status = fails[0] if fails else ("", "")
+        first_fail_n, first_fail_status, first_fail_retry = fails[0] if fails else ("", "", "")
         if fails and ok_ns and measured_max > first_fail_n:
             # *_memory_wall.csv เป็น append-only: ถ้ารันซ้ำหลายรอบ อาจมี ok ที่ n สูงกว่า
             # จุดล้มเหลวรอบก่อน (เช่นล้มเพราะสายหลุดชั่วคราว) — ไม่ตัดสินแทน ให้คนดู
@@ -149,6 +157,7 @@ def summarize_memory_wall(wall_rows):
             "theoretical_bytes_at_max_n": (1 << theo) * 8,
             "first_failing_n": first_fail_n,
             "first_failure_status": first_fail_status,
+            "first_failure_after_retry": first_fail_retry,
         })
     return summary
 
@@ -156,7 +165,8 @@ def summarize_memory_wall(wall_rows):
 def write_memory_wall_summary(summary):
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     fields = ["board", "total_sram_bytes", "theoretical_max_n", "measured_max_n_safe",
-              "theoretical_bytes_at_max_n", "first_failing_n", "first_failure_status"]
+              "theoretical_bytes_at_max_n", "first_failing_n", "first_failure_status",
+              "first_failure_after_retry"]
     with open(MEMORY_WALL_SUMMARY_PATH, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
