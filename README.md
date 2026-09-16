@@ -9,8 +9,9 @@ simulate the quantum circuit *locally*, or *offload* it to a PC running Qiskit A
 The answer is two numbers per board: the **Memory Wall** (largest `n` the board can run
 at all) and the **Crossover Point** (the `n` above which offloading is faster than
 computing locally). This repository contains the simulator, the firmware, the automated
-sweep harness that measures both, the raw measurements, and the Thai-language results
-chapter written from them.
+sweep harness that measures both, and the analysis scripts that turn raw measurements
+into summaries and figures. Written documents (report, proposal, poster, diagrams) are
+being rewritten from scratch once the REPS=100 dataset exists.
 
 Report text and source comments are in Thai; identifiers, protocol names, and CLI
 commands are in English.
@@ -101,10 +102,10 @@ data/
   figures/           generated PNGs, per phase
 
 docs/
-  proposal/          (placeholder — not yet populated)
-  report/            chapter4_results_th.md + build_docx.py -> .docx
-  poster/            science poster source + exported assets
-  diagrams/          (placeholder — not yet populated)
+  proposal/          (empty — to be rewritten from the REPS=100 data)
+  report/            (empty — to be rewritten from the REPS=100 data)
+  poster/            (empty — to be rewritten from the REPS=100 data)
+  diagrams/          (empty — to be rewritten from the REPS=100 data)
 ```
 
 The simulator core avoids `std::complex` and uses a plain `struct Cplx { float re, im; }`
@@ -213,8 +214,8 @@ Crossover:    n*(new board) ≈ n*(reference board, same class)
 
 Boards carrying a large network or RTOS stack should be derated by more than one qubit
 when `B` cannot be measured directly. The adjustment constants come from only two board
-pairs and are rough estimates, not physical laws — `docs/report/chapter4_results_th.md` §4.4.7
-states the limits in full.
+pairs and are rough estimates, not physical laws. They were derived from the superseded
+n=30 dataset and must be re-derived from the REPS=100 rerun before being cited.
 
 ---
 
@@ -235,12 +236,6 @@ Pinned versions (`analysis/requirements.txt`): `qiskit==2.5.1`, `qiskit-aer==0.1
 Figures use TH Sarabun New for Thai labels, loaded from
 `~/Library/Fonts/THSarabunNew.ttf`. The plots still render without it, with Thai text
 falling back to the default font.
-
-### Building the report
-
-```bash
-.venv/bin/python docs/report/build_docx.py    # -> docs/report/บทที่4_ผลการทดลอง_PhD.docx
-```
 
 ---
 
@@ -276,5 +271,6 @@ the actual runs, and are documented here so they are not mistaken for over-engin
 All four phases previously completed for all three boards at REPS=30; that dataset was
 deleted and superseded in preparation for a fresh REPS=100 rerun (`data/` is currently
 empty except for `.gitkeep` placeholders). See [`run_log.md`](run_log.md) for the run
-history and git history for the last-known n=30 numbers. Results chapter template lives
-at `docs/report/chapter4_results_th.md`, pending re-population once the rerun completes.
+history and git history for the last-known n=30 numbers. All prior documents under
+`docs/` (report, proposal, poster, diagrams) were deleted as stale; they will be written
+from scratch once the rerun completes.
