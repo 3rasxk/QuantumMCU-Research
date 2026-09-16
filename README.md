@@ -150,6 +150,7 @@ Sweeps `n` upward one qubit at a time until the board fails, recording execution
 .venv/bin/python analysis/phase2_summarize.py
 .venv/bin/python analysis/phase2_plot.py
 .venv/bin/python analysis/phase2_fpu_ratio_plot.py
+.venv/bin/python analysis/phase2_fpu_ratio_own_n_plot.py
 ```
 
 Each data point is a fresh `pio run -t upload`, because `N_QUBITS` is a compile-time
