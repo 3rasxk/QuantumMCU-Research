@@ -19,7 +19,7 @@
 #error "ต้องกำหนด N_QUBITS ผ่าน build_flags เช่น N_QUBITS=6"
 #endif
 #ifndef CIRCUIT_ID
-#error "ต้องกำหนด CIRCUIT_ID ผ่าน build_flags (0=h_all, 1=bell_ghz, 2=qft)"
+#error "ต้องกำหนด CIRCUIT_ID ผ่าน build_flags (0=h_all,1=bell_ghz,2=qft,3=grover,4=qpe,5=steane_encode)"
 #endif
 
 #define STATE_COUNT ((qsize_t)1 << N_QUBITS)
@@ -52,6 +52,9 @@ static const char* circuit_name() {
         case 0: return "h_all";
         case 1: return "bell_ghz";
         case 2: return "qft";
+        case 3: return "grover";
+        case 4: return "qpe";
+        case 5: return "steane_encode";
         default: return "unknown";
     }
 }
@@ -61,6 +64,9 @@ static void run_circuit() {
         case 0: circuit_h_all(g_state, STATE_COUNT, N_QUBITS); break;
         case 1: circuit_bell_ghz(g_state, STATE_COUNT, N_QUBITS); break;
         case 2: circuit_qft(g_state, STATE_COUNT, N_QUBITS); break;
+        case 3: circuit_grover(g_state, STATE_COUNT, N_QUBITS); break;
+        case 4: circuit_qpe(g_state, STATE_COUNT, N_QUBITS); break;
+        case 5: circuit_steane_encode(g_state, STATE_COUNT, N_QUBITS); break;
     }
 }
 

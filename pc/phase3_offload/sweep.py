@@ -12,7 +12,11 @@
 #
 # การใช้งาน:
 #   .venv/bin/python pc/phase3_offload/sweep.py --board uno --port /dev/cu.usbmodemXXXX \
-#       --circuits h_all bell_ghz qft --n-start 2 --n-max 7 --bauds 115200 250000
+#       --circuits h_all bell_ghz qft grover qpe steane_encode --n-start 2 --n-max 7 \
+#       --bauds 115200 250000
+#
+# steane_encode คงที่ที่ n=7 เสมอ (pc/shared/circuit_ids.n_values_for_sweep จัดการให้
+# อัตโนมัติ) — ถ้า n=7 ไม่อยู่ใน [n-start, n-max] ที่ขอ จะข้ามวงจรนี้ไปเฉย ๆ
 
 import argparse
 import glob
@@ -37,7 +41,7 @@ sys.path.insert(0, str(REPO_ROOT / "pc"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from protocol import FRAME_REQ_START, parse_request, pack_response  # noqa: E402
 from phase1_compare import build_qiskit_circuit  # noqa: E402
-from shared.circuit_ids import CIRCUIT_IDS, CIRCUIT_NAMES  # noqa: E402
+from shared.circuit_ids import CIRCUIT_IDS, CIRCUIT_NAMES, n_values_for_sweep  # noqa: E402
 
 BOARDS = {
     "uno": {
@@ -188,7 +192,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--board", required=True, choices=list(BOARDS.keys()))
     ap.add_argument("--port", required=True)
-    ap.add_argument("--circuits", nargs="+", default=["h_all", "bell_ghz", "qft"])
+    ap.add_argument("--circuits", nargs="+",
+                     default=["h_all", "bell_ghz", "qft", "grover", "qpe", "steane_encode"])
     ap.add_argument("--n-start", type=int, default=2)
     ap.add_argument("--n-max", type=int, default=None,
                      help="ถ้าไม่ระบุ จะไล่ n ขึ้นเรื่อย ๆ จนกว่าจะพบ error จริง "
@@ -224,7 +229,11 @@ def main():
                 continue
             print(f"\n=== circuit={circuit} ===")
             n_succeeded = 0
-            for n in range(args.n_start, n_max + 1):
+            n_values = n_values_for_sweep(circuit, args.n_start, n_max)
+            if not n_values:
+                print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {n_max}]")
+                continue
+            for n in n_values:
                 print(f"n={n:2d}  ", end="", flush=True)
 
                 ok, log, used_port = build_and_upload(args.board, circuit, n, baud, args.port)

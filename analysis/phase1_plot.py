@@ -62,7 +62,7 @@ def main():
     ax.set_xlabel("Circuit depth (gate layers)")
     ax.set_ylabel("Infidelity, 1 − F (dimensionless, log scale)")
     ax.set_title("Phase 1 — C++ simulator vs Qiskit Aer: infidelity by circuit depth")
-    fig.legend(loc="outside lower center", ncol=2)
+    fig.legend(loc="outside lower center", ncol=3)
 
     note = "Deterministic simulation: one run per (circuit, n), no repetitions."
     if omitted:

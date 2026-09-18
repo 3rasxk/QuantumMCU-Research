@@ -24,7 +24,10 @@
 #
 # การใช้งาน:
 #   .venv/bin/python pc/phase2_sweep/esp8266_sweep.py --port /dev/cu.usbserialXXXX \
-#       --circuits h_all bell_ghz qft --n-start 2 --n-max 16
+#       --circuits h_all bell_ghz qft grover qpe steane_encode --n-start 2 --n-max 16
+#
+# steane_encode คงที่ที่ n=7 เสมอ (pc/shared/circuit_ids.n_values_for_sweep จัดการให้
+# อัตโนมัติ) — ถ้า n=7 ไม่อยู่ใน [n-start, n-max] ที่ขอ จะข้ามวงจรนี้ไปเฉย ๆ
 
 import argparse
 import csv
@@ -42,7 +45,7 @@ import serial
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
-from shared.circuit_ids import CIRCUIT_IDS  # noqa: E402
+from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep  # noqa: E402
 
 FW_DIR = REPO_ROOT / "firmware" / "esp8266"
 RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase2"
@@ -136,7 +139,8 @@ def read_serial_trials(port: str):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", required=True)
-    ap.add_argument("--circuits", nargs="+", default=["h_all", "bell_ghz", "qft"])
+    ap.add_argument("--circuits", nargs="+",
+                     default=["h_all", "bell_ghz", "qft", "grover", "qpe", "steane_encode"])
     ap.add_argument("--n-start", type=int, default=2)
     ap.add_argument("--n-max", type=int, default=16)
     args = ap.parse_args()
@@ -161,7 +165,11 @@ def main():
 
     for circuit in args.circuits:
         print(f"\n=== circuit={circuit} ===")
-        for n in range(args.n_start, args.n_max + 1):
+        n_values = n_values_for_sweep(circuit, args.n_start, args.n_max)
+        if not n_values:
+            print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {args.n_max}]")
+            continue
+        for n in n_values:
             theoretical_bytes = (1 << n) * 8
             wall_found = False
             retry_used = 0

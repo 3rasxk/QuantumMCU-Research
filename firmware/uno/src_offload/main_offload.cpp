@@ -15,7 +15,7 @@
 #error "ต้องกำหนด N_QUBITS ผ่าน build_flags"
 #endif
 #ifndef CIRCUIT_ID
-#error "ต้องกำหนด CIRCUIT_ID ผ่าน build_flags (0=h_all, 1=bell_ghz, 2=qft)"
+#error "ต้องกำหนด CIRCUIT_ID ผ่าน build_flags (0=h_all,1=bell_ghz,2=qft,3=grover,4=qpe,5=steane_encode)"
 #endif
 #ifndef BAUD_RATE
 #error "ต้องกำหนด BAUD_RATE ผ่าน build_flags"
@@ -33,6 +33,9 @@ static const char* circuit_name() {
         case 0: return "h_all";
         case 1: return "bell_ghz";
         case 2: return "qft";
+        case 3: return "grover";
+        case 4: return "qpe";
+        case 5: return "steane_encode";
         default: return "unknown";
     }
 }

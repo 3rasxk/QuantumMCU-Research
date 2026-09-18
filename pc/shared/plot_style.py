@@ -21,18 +21,44 @@ BOARD_COLOR = {"uno": "#0072B2", "esp8266": "#E69F00", "esp32": "#009E73"}
 BOARD_MARKER = {"uno": "o", "esp8266": "s", "esp32": "^"}
 
 # --- วงจร: ไม่ยืมสีบอร์ด (สีมีไว้บอกบอร์ดเท่านั้น) ใช้หมึกเทา + marker + linestyle ---
-CIRCUIT_ORDER = ("h_all", "bell_ghz", "qft")
+# 6 วงจร: 3 ตัวเดิม (h_all, bell_ghz, qft) + grover/qpe/steane_encode ที่เพิ่มมาให้ครอบคลุม
+# สเปกตรัม compute-bound <-> memory-bound <-> depth-scaling กว้างขึ้น (ดู run_log.md)
+# ไล่หมึกเทาจากเข้มสุด (h_all) ไปอ่อนสุด (steane_encode) ทุกคู่ห่างกันพอแยกด้วยตาเปล่าได้
+# บนพื้นขาว และยังต่างจากโทนสีบอร์ด (Okabe-Ito, สี ไม่ใช่หมึกเทา) อย่างชัดเจนเสมอ
+CIRCUIT_ORDER = ("h_all", "bell_ghz", "qft", "grover", "qpe", "steane_encode")
 CIRCUIT_LABEL = {
     "h_all": "h_all (Hadamard on every qubit)",
     "bell_ghz": "bell_ghz (Bell / GHZ state)",
     "qft": "qft (Quantum Fourier Transform)",
+    "grover": "grover (Grover search, |1...1> marked)",
+    "qpe": "qpe (Phase Estimation of P(pi/2))",
+    "steane_encode": "steane_encode (Steane [[7,1,3]] encoding, n=7 fixed)",
 }
-CIRCUIT_INK = {"h_all": "#1a1a1a", "bell_ghz": "#555555", "qft": "#8c8c8c"}
-CIRCUIT_MARKER = {"h_all": "o", "bell_ghz": "s", "qft": "D"}
-CIRCUIT_LINESTYLE = {"h_all": "-", "bell_ghz": "--", "qft": ":"}
+CIRCUIT_INK = {
+    "h_all": "#1a1a1a",
+    "bell_ghz": "#3d3d3d",
+    "qft": "#5e5e5e",
+    "grover": "#7d7d7d",
+    "qpe": "#9c9c9c",
+    "steane_encode": "#b8b8b8",
+}
+CIRCUIT_MARKER = {
+    "h_all": "o", "bell_ghz": "s", "qft": "D", "grover": "^", "qpe": "v", "steane_encode": "P",
+}
+CIRCUIT_LINESTYLE = {
+    "h_all": "-", "bell_ghz": "--", "qft": ":", "grover": "-.", "qpe": (0, (3, 1, 1, 1)),
+    "steane_encode": "none",  # จุดเดียว (n=7 คงที่) ไม่มีเส้นให้ลาก
+}
 # hatch คนละแบบต่อวงจร สำหรับกราฟแท่ง (encoding รองเสริมจากหมึกเทา — ดูออกแม้พิมพ์
 # ขาวดำ/ไม่แยกสี) ใช้คู่กับ CIRCUIT_INK เป็น facecolor
-CIRCUIT_HATCH = {"h_all": None, "bell_ghz": "///", "qft": "..."}
+CIRCUIT_HATCH = {
+    "h_all": None, "bell_ghz": "///", "qft": "...", "grover": "xxx", "qpe": "\\\\\\", "steane_encode": "+++",
+}
+# วงจรที่ "ไม่" scale ตาม n (คงที่ที่ n เดียวเสมอ) — กราฟที่ลาก exec-time-vs-n ต้องรู้ว่า
+# วงจรไหนควรมีจุดเดียวโดด ๆ ไม่ใช่เส้น (ดู pc/shared/circuit_ids.FIXED_N_CIRCUITS
+# ที่เป็นแหล่งความจริงของค่า n จริง — ตัวนี้ในนี้มีไว้ให้กราฟใช้ได้โดยไม่ต้อง import ข้าม
+# module ไปยัง pc/shared/circuit_ids)
+FIXED_N_CIRCUITS = {"steane_encode": 7}
 
 # --- หมึกกลาง (ข้อความ, เส้นอ้างอิง, ค่าทฤษฎี) ---
 INK_PRIMARY = "#1a1a1a"
