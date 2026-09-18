@@ -19,6 +19,24 @@
 #      *** ข้อแตกต่างจากวิธีวัดของ dataset n=30: รอบนั้นไม่มี retry เลย รอบ n=100 นี้
 #      ผ่อนเกณฑ์ให้ทนความล้มเหลวชั่วคราวได้ 1 ครั้ง — Memory Wall ของสอง dataset จึง
 #      "ไม่ได้เปรียบเทียบกันตรง ๆ ได้ทันที" ต้องดูคอลัมน์ retry_count ประกอบ (run_log.md) ***
+#
+# *** timeout ต่อจุดข้อมูล (รอบ 6 วงจร): ไม่ใช่ค่าคงที่ค่าเดียวทั้งสวีปแล้ว คำนวณต่อ
+# (circuit, n) จาก pc/shared/timing_model.py = จำนวนเกท x ค่าคงที่เวลาต่อเกทของบอร์ด
+# x safety 2.5 หนีบด้วยพื้น 90 วินาที / เพดาน 4 ชั่วโมง เหตุผล: grover ที่ n สูงใช้เวลา
+# ต่อจุดมากกว่า h_all หลักพันเท่า ถ้าใช้ค่าคงที่เดียวกันหมด จุด grover จะถูกบันทึกเป็น
+# Memory Wall ทั้งที่บอร์ดแค่ยังคำนวณไม่เสร็จ ค่าที่ใช้จริงบันทึกลงคอลัมน์
+# timeout_budget_s ทั้งใน *_raw.csv และ *_memory_wall.csv (อ่านย้อนหลังต้องแยกออกว่า
+# "ชน 90 วินาที" กับ "ชน 4 ชั่วโมง" คนละความหมาย) ***
+#
+# *** นโยบาย retry เพิ่มเติม: retry เฉพาะจุดที่ timeout budget <= 600 วินาที จุดที่แพง
+# กว่านั้น (grover n สูง) ไม่ retry เพราะต้นทุนของ retry แปรผันตาม budget แต่ประโยชน์
+# คงที่ — ที่ 70 วินาทีคุ้ม แต่จ่ายเพิ่มอีก 4 ชั่วโมงเพื่อทดสอบซ้ำสมมติฐานเดิมไม่คุ้ม
+# และรันซ้ำเฉพาะจุดนั้นทีหลังก็ได้ (ไฟล์เป็น append-only) จุดที่ถูกข้าม retry บันทึกไว้
+# ที่คอลัมน์ retry_policy = skipped_high_budget ไม่ปนกับจุดที่สำเร็จตั้งแต่ครั้งแรก ***
+#
+# *** จุดที่ timing_model ประเมินว่าเกินเพดาน (เช่น ESP8266 grover n=12 ~95 วันต่อจุด)
+# จะถูกข้ามพร้อม status=skipped_compute_infeasible + คอลัมน์ expected_point_s —
+# ไม่ใช่ Memory Wall แต่เป็น compute wall ที่มาถึงก่อน (--force-infeasible เพื่อดันทุรัง) ***
 #   3. เขียนทุกแถวลง data/raw/phase2/esp8266_raw.csv (ไฟล์ดิบ, append)
 #      และสรุปลง data/raw/phase2/esp8266_memory_wall.csv (คอลัมน์ retry_count: 0/1)
 #
@@ -46,13 +64,15 @@ import serial
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep  # noqa: E402
+from shared import timing_model as tm  # noqa: E402
 
 FW_DIR = REPO_ROOT / "firmware" / "esp8266"
 RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 PIO = os.environ.get("PIO_PATH") or shutil.which("pio")
 
 BAUD = 115200
-SERIAL_TIMEOUT_S = 70  # scaled for REPS=100 (was 20 for REPS=30)
+# เวลารอสูงสุดต่อจุดข้อมูลไม่ใช่ค่าคงที่อีกต่อไป — คำนวณต่อ (circuit, n) จาก
+# pc/shared/timing_model.timeout_budget_s() ดูเหตุผลใน header ของไฟล์นี้
 
 
 def find_esp_port(hint: str) -> str:
@@ -93,19 +113,19 @@ def _alarm_handler(signum, frame):
     raise HardTimeout()
 
 
-def read_serial_trials(port: str):
+def read_serial_trials(port: str, timeout_s: int):
     """เปิด serial อ่านจนเจอ DONE / MALLOC_FAILED / timeout
     ใช้ hard deadline ผ่าน signal.alarm เหมือน uno_sweep.py (บทเรียนจากที่เจอค้างจริง)"""
     rows = []
     malloc_failed = False
     reset_count = 0
     old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
-    signal.alarm(SERIAL_TIMEOUT_S + 10)
+    signal.alarm(timeout_s + 10)
     try:
         with serial.Serial(port, BAUD, timeout=2) as ser:
             ser.dtr = False
             ser.rts = False
-            deadline = time.time() + SERIAL_TIMEOUT_S
+            deadline = time.time() + timeout_s
             done = False
             while time.time() < deadline:
                 raw = ser.readline()
@@ -143,6 +163,9 @@ def main():
                      default=["h_all", "bell_ghz", "qft", "grover", "qpe", "steane_encode"])
     ap.add_argument("--n-start", type=int, default=2)
     ap.add_argument("--n-max", type=int, default=16)
+    ap.add_argument("--force-infeasible", action="store_true",
+                     help="พยายามรันจุดที่ timing_model บอกว่าเกินเพดานเวลาไปแล้วด้วย "
+                          "(ปกติจะข้ามพร้อมบันทึกเหตุผล เพราะได้แค่ timeout เปล่า ๆ)")
     args = ap.parse_args()
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -156,12 +179,24 @@ def main():
     raw_w = csv.writer(raw_f)
     wall_w = csv.writer(wall_f)
     if raw_is_new:
-        raw_w.writerow(["board", "circuit", "n", "rep", "exec_time_us", "free_heap_before", "free_heap_after"])
+        raw_w.writerow(["board", "circuit", "n", "rep", "exec_time_us",
+                        "free_heap_before", "free_heap_after",
+                        "timeout_budget_s"])
     if wall_is_new:
         wall_w.writerow([
             "board", "circuit", "n", "theoretical_bytes", "compile_ram_used_bytes",
             "compile_ram_pct", "status", "timestamp_utc", "retry_count",
+            "timeout_budget_s", "expected_point_s", "retry_policy",
         ])
+
+    # preflight: โชว์ budget ของทุกจุดก่อนเริ่ม ให้คนกดรันเห็นว่าจุดไหนแพง/จุดไหนทำไม่ได้
+    # ตั้งแต่ก่อนเริ่ม ไม่ใช่ไปเจอตอนชั่วโมงที่หก
+    planned = [(c, n) for c in args.circuits
+               for n in n_values_for_sweep(c, args.n_start, args.n_max)]
+    infeasible = tm.print_budget_plan("esp8266", planned, phase=2)
+    if args.force_infeasible:
+        print("--force-infeasible: จะพยายามรันจุดที่เกินเพดานด้วย\n")
+        infeasible = set()
 
     for circuit in args.circuits:
         print(f"\n=== circuit={circuit} ===")
@@ -171,14 +206,38 @@ def main():
             continue
         for n in n_values:
             theoretical_bytes = (1 << n) * 8
+            budget_s = tm.timeout_budget_s("esp8266", circuit, n)
+            expected_s = tm.expected_point_time_s("esp8266", circuit, n)
+            may_retry = tm.retry_allowed(budget_s)
+            retry_policy = "allowed" if may_retry else "skipped_high_budget"
+            ts = datetime.now(timezone.utc).isoformat()
+
+            if (circuit, n) in infeasible:
+                # ไม่ใช่ Memory Wall และไม่ใช่ hang — เป็นขีดจำกัดเชิงเวลาคำนวณล้วน ๆ
+                # บันทึกค่าประมาณไว้ด้วย เพื่อให้แถวนี้อ่านเป็น "ผลการทดลอง" ได้จริง
+                print(f"n={n:2d}  SKIP compute-infeasible: expected "
+                      f"{tm.human_duration(expected_s)} > ceiling {tm.CEILING_S}s")
+                wall_w.writerow(["esp8266", circuit, n, theoretical_bytes, None, None,
+                                  "skipped_compute_infeasible", ts, 0,
+                                  budget_s, round(expected_s, 1), "n/a"])
+                wall_f.flush()
+                continue
+
             wall_found = False
             retry_used = 0
 
             # attempt 0 = ครั้งแรก, attempt 1 = retry เดียว — เฉพาะ runtime_hang_or_reset
             # เท่านั้นที่ retry ได้ (อาจเป็นสายหลุด/USB glitch ชั่วคราว) build/upload fail
             # และ malloc_failed ไม่ retry เพราะเป็น deterministic
-            for attempt in range(2):
-                print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  ", end="", flush=True)
+            # ข้อยกเว้นใหม่ (REPS=100 + 6 วงจร): จุดที่ budget สูงกว่า
+            # RETRY_MAX_BUDGET_S จะไม่ retry เพราะต้นทุน retry แปรผันตาม budget
+            # แต่ประโยชน์คงที่ — รันซ้ำเฉพาะจุดนั้นทีหลังถูกกว่ามาก (ไฟล์เป็น
+            # append-only) ดู timing_model.retry_allowed()
+            max_attempts = 2 if may_retry else 1
+            for attempt in range(max_attempts):
+                print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  "
+                      f"budget={budget_s}s (expected {tm.human_duration(expected_s)})  ",
+                      end="", flush=True)
                 if attempt == 1:
                     print("(retry) ", end="", flush=True)
 
@@ -189,45 +248,50 @@ def main():
                 if not ok:
                     print("UPLOAD/BUILD FAIL")
                     wall_w.writerow(["esp8266", circuit, n, theoretical_bytes, None, None,
-                                      "build_or_upload_fail", ts, retry_used])
+                                      "build_or_upload_fail", ts, retry_used,
+                                      budget_s, round(expected_s, 1), retry_policy])
                     wall_f.flush()
                     print(log[-800:])
                     wall_found = True
                     break
 
                 time.sleep(1.5)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
-                done, rows, malloc_failed, note = read_serial_trials(find_esp_port(args.port))
+                done, rows, malloc_failed, note = read_serial_trials(find_esp_port(args.port), budget_s)
 
                 if malloc_failed:
                     print(f"MALLOC_FAILED -> Memory Wall found (n={n})")
                     wall_w.writerow(["esp8266", circuit, n, theoretical_bytes, None, None,
-                                      "malloc_failed", ts, retry_used])
+                                      "malloc_failed", ts, retry_used,
+                                      budget_s, round(expected_s, 1), retry_policy])
                     wall_f.flush()
                     wall_found = True
                     break
 
                 if done:
                     for line in rows:
-                        raw_w.writerow(line.split(","))
+                        raw_w.writerow(line.split(",") + [budget_s])
                     raw_f.flush()
                     wall_w.writerow(["esp8266", circuit, n, theoretical_bytes, None, None,
-                                      "ok", ts, retry_used])
+                                      "ok", ts, retry_used,
+                                      budget_s, round(expected_s, 1), retry_policy])
                     wall_f.flush()
                     suffix = f"  (succeeded after {retry_used} retry)" if retry_used else ""
                     print(f"OK  trials_captured={len(rows)}{suffix}")
                     break
 
                 status = f"runtime_hang_or_reset({note})"
-                if attempt == 0:
+                if attempt == 0 and may_retry:
                     retry_used = 1
-                    print(f"NO 'DONE' within {SERIAL_TIMEOUT_S}s -> {status}  "
+                    print(f"NO 'DONE' within {budget_s}s -> {status}  "
                           "-- transient failure, retrying once at same n before declaring "
                           "Memory Wall (deviation from n=30 methodology, see run_log.md)")
                     continue
 
-                print(f"NO 'DONE' within {SERIAL_TIMEOUT_S}s -> {status} (after retry)")
+                tail = "(after retry)" if retry_used else f"(no retry: {retry_policy})"
+                print(f"NO 'DONE' within {budget_s}s -> {status} {tail}")
                 wall_w.writerow(["esp8266", circuit, n, theoretical_bytes, None, None,
-                                  status, ts, retry_used])
+                                  status, ts, retry_used,
+                                      budget_s, round(expected_s, 1), retry_policy])
                 wall_f.flush()
                 wall_found = True
 

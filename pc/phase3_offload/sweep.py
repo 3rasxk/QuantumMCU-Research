@@ -17,6 +17,24 @@
 #
 # steane_encode คงที่ที่ n=7 เสมอ (pc/shared/circuit_ids.n_values_for_sweep จัดการให้
 # อัตโนมัติ) — ถ้า n=7 ไม่อยู่ใน [n-start, n-max] ที่ขอ จะข้ามวงจรนี้ไปเฉย ๆ
+#
+# *** ต้นทุนการจำลองฝั่ง PC (สำคัญมากสำหรับ grover) ***
+# simulate_and_sample() จำลองวงจรใหม่หมดทุกคำขอ ไม่ cache — เป็นการตัดสินใจเชิงระเบียบวิธี
+# ที่ตั้งใจ (ดู docstring ของฟังก์ชัน) เพราะบริการ offload จริงก็ต้องแบกต้นทุนนี้เหมือนกัน
+# ผลคือต้นทุนต่อคำขอแปรผันตามจำนวนเกท ไม่ใช่ตามความเร็วบอร์ด ตัวเลขที่วัดจริงในรอบ
+# Phase 1 ของเครื่องนี้:
+#   qft n=12    ~0.05 วินาที/คำขอ -> 100 reps = ~5 วินาทีต่อจุด      (สบาย)
+#   grover n=8  ~2.2  วินาที/คำขอ -> 100 reps = ~3.7 นาทีต่อจุด      (ไหว)
+#   grover n=10 ~40   วินาที/คำขอ -> 100 reps = ~1.1 ชั่วโมงต่อจุด   (ไหวแต่หนัก)
+#   grover n=12 ~725  วินาที/คำขอ -> 100 reps = ~20 ชั่วโมงต่อจุด    (ไม่ไหว -> ข้าม)
+# grover n=12 จึงถูกข้ามด้วย status=skipped_sim_cost_infeasible แทนที่จะเปิด cache
+# ให้ตัวเลขดูดีขึ้น — การ cache จะเปลี่ยนความหมายของสิ่งที่ Phase 3 วัด (กลายเป็นวัดแค่
+# ต้นทุนการสื่อสาร ไม่รวมต้นทุนการคำนวณ) และข้อสรุปเรื่อง Crossover Point ทั้งหมด
+# ขึ้นอยู่กับความซื่อตรงของเส้นทางนี้ ถ้าจะเปิด cache ต้องเป็นการตัดสินใจที่บันทึกไว้
+# ชัดเจนว่าเปลี่ยนนิยามของการวัด ไม่ใช่การปรับแต่งเงียบ ๆ เพื่อให้รันทัน
+#
+# ข้อสังเกตที่ตัวเลขชุดนี้เปิดเผย: grover n=10 บน ESP8266 รัน local ไม่ไหวเลย (ประเมิน
+# ~1.3 วันต่อจุด) แต่ offload ได้ใน ~1.1 ชั่วโมง — เป็น crossover ที่ชัดที่สุดในชุดข้อมูล
 
 import argparse
 import glob
@@ -42,6 +60,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from protocol import FRAME_REQ_START, parse_request, pack_response  # noqa: E402
 from phase1_compare import build_qiskit_circuit  # noqa: E402
 from shared.circuit_ids import CIRCUIT_IDS, CIRCUIT_NAMES, n_values_for_sweep  # noqa: E402
+from shared import timing_model as tm  # noqa: E402
 
 BOARDS = {
     "uno": {
@@ -61,7 +80,11 @@ BOARDS = {
     },
 }
 
-SESSION_TIMEOUT_S = 300  # scaled for REPS=100 (was 90 for REPS=30)
+# timeout ต่อ session ไม่ใช่ค่าคงที่แล้ว — คำนวณต่อ (circuit, n) จาก
+# pc/shared/timing_model.phase3_session_budget_s() เพราะคอขวดของ Phase 3 คือ
+# "เวลาที่ PC จำลองด้วย Qiskit Aer ใหม่ทุกคำขอ" ซึ่งแปรผันตามจำนวนเกทของวงจร
+# ไม่ใช่ความเร็วบอร์ด: grover n=10 ใช้ ~40 วินาที/คำขอ (วัดจริงใน Phase 1) แปลว่า
+# 100 reps = ~1.1 ชั่วโมงต่อจุด ในขณะที่ qft n=12 ใช้ ~5 วินาทีต่อ 100 reps ทั้งจุด
 N_SAFETY_CAP = 22  # เพดานสูงสุดที่ยอมให้ทดสอบ (2^22 amplitude * 16 bytes = 64MB, ปลอดภัยต่อ RAM เครื่อง PC)
 
 
@@ -127,10 +150,10 @@ def simulate_and_sample(sim, n_qubits: int, circuit_id: int) -> int:
     return outcome
 
 
-def run_offload_session(ser, sim):
+def run_offload_session(ser, sim, session_timeout_s):
     """สตรีมไบต์เดียว รับมือทั้งเฟรมไบนารีและบรรทัด CSV ข้อความ (ดู docstring บนไฟล์)"""
     old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
-    signal.alarm(SESSION_TIMEOUT_S)
+    signal.alarm(session_timeout_s)
     text_buf = bytearray()
     csv_rows = []
     got_header = False
@@ -139,7 +162,7 @@ def run_offload_session(ser, sim):
     frames_dropped_bad_crc = 0
     last_sim_error = ""
     try:
-        deadline = time.time() + SESSION_TIMEOUT_S
+        deadline = time.time() + session_timeout_s
         while time.time() < deadline and not done:
             b = ser.read(1)
             if not b:
@@ -201,6 +224,9 @@ def main():
                           "ขีดจำกัดจริงคือฝั่ง PC — เวลาจำลอง/หน่วยความจำของ Qiskit Aer) "
                           f"เพดานความปลอดภัยสูงสุดคือ n={N_SAFETY_CAP} กัน PC หน่วยความจำพัง")
     ap.add_argument("--bauds", nargs="+", type=int, default=[115200])
+    ap.add_argument("--force-infeasible", action="store_true",
+                     help="พยายามรันจุดที่ timing_model บอกว่าเก็บครบ 100 reps ไม่ไหว "
+                          "(ปกติจะข้ามพร้อมบันทึกเหตุผล)")
     args = ap.parse_args()
     n_max = args.n_max if args.n_max is not None else N_SAFETY_CAP
 
@@ -218,7 +244,16 @@ def main():
     if raw_is_new:
         raw_f.write("board,circuit,n,baud_rate,rep,e2e_latency_us,crc_error,timed_out\n")
     if meta_is_new:
-        meta_f.write("board,circuit,n,baud_rate,status,frames_served,frames_dropped_bad_crc,rows_captured,last_sim_error,timestamp_utc\n")
+        meta_f.write("board,circuit,n,baud_rate,status,frames_served,frames_dropped_bad_crc,rows_captured,last_sim_error,timestamp_utc,session_timeout_budget_s,expected_session_s,pc_sim_s_per_request\n")
+
+    # preflight: ต้นทุนของ Phase 3 อยู่ฝั่ง PC ทั้งหมด จึงไม่ขึ้นกับบอร์ด — แผนเดียวกัน
+    # ใช้ได้ทุกบอร์ด แสดงก่อนเริ่มเพื่อให้เห็นว่าจุดไหนเก็บครบ 100 reps ไม่ไหว
+    planned = [(c, n) for c in args.circuits
+               for n in n_values_for_sweep(c, args.n_start, n_max)]
+    infeasible = tm.print_budget_plan(args.board, planned, phase=3)
+    if args.force_infeasible:
+        print("--force-infeasible: จะพยายามรันจุดที่เกินเพดานด้วย\n")
+        infeasible = set()
 
     for baud in args.bauds:
         print(f"\n########## baud={baud} ##########")
@@ -234,7 +269,23 @@ def main():
                 print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {n_max}]")
                 continue
             for n in n_values:
-                print(f"n={n:2d}  ", end="", flush=True)
+                budget_s = tm.phase3_session_budget_s(circuit, n)
+                per_req = tm.pc_sim_time_s(circuit, n)
+                expected_s = per_req * tm.REPS
+                ts = datetime.now(timezone.utc).isoformat()
+
+                if (circuit, n) in infeasible:
+                    # ไม่ใช่ปัญหาของลิงก์ serial หรือของบอร์ด — เป็นต้นทุนการจำลองฝั่ง PC
+                    # ล้วน ๆ (ไม่ cache โดยตั้งใจ) บันทึกค่าประมาณไว้ให้อ่านออกว่าทำไมถึงข้าม
+                    print(f"n={n:2d}  SKIP: PC-side sim needs {tm.human_duration(expected_s)} "
+                          f"for {tm.REPS} reps ({per_req:.1f}s/request, uncached) "
+                          f"> ceiling {tm.PHASE3_CEILING_S}s")
+                    meta_f.write(f"{args.board},{circuit},{n},{baud},skipped_sim_cost_infeasible,"
+                                 f"0,0,0,,{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
+                    meta_f.flush()
+                    continue
+
+                print(f"n={n:2d}  budget={budget_s}s ({per_req:.2f}s/request)  ", end="", flush=True)
 
                 ok, log, used_port = build_and_upload(args.board, circuit, n, baud, args.port)
                 args.port = used_port
@@ -242,7 +293,7 @@ def main():
 
                 if not ok:
                     print("UPLOAD/BUILD FAIL")
-                    meta_f.write(f"{args.board},{circuit},{n},{baud},build_or_upload_fail,0,0,0,,{ts}\n")
+                    meta_f.write(f"{args.board},{circuit},{n},{baud},build_or_upload_fail,0,0,0,,{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
                     meta_f.flush()
                     print(log[-600:])
                     break
@@ -254,11 +305,11 @@ def main():
                     ser.rts = False
                     time.sleep(0.3)
                     ser.reset_input_buffer()
-                    done, rows, served, dropped, sim_error = run_offload_session(ser, sim)
+                    done, rows, served, dropped, sim_error = run_offload_session(ser, sim, budget_s)
                 sim_error_safe = sim_error.replace(",", ";").replace("\n", " ")
 
                 status = "ok" if (done and len(rows) > 0) else "session_incomplete"
-                meta_f.write(f"{args.board},{circuit},{n},{baud},{status},{served},{dropped},{len(rows)},{sim_error_safe},{ts}\n")
+                meta_f.write(f"{args.board},{circuit},{n},{baud},{status},{served},{dropped},{len(rows)},{sim_error_safe},{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
                 meta_f.flush()
 
                 for line in rows:

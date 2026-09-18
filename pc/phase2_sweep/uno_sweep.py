@@ -7,12 +7,30 @@
 #      เพราะเป็นผลลัพธ์ deterministic — retry ก็ได้ผลเดิม)
 #   2. อ่านค่า RAM usage % ที่ avr-size รายงานตอน build (ค่าทางทฤษฎีเทียบค่าที่วัดจริง)
 #   3. เปิด serial อ่านผลจากบอร์ด 100 trial ต่อจุดข้อมูล จนกว่าจะเจอ "DONE"
+#      timeout ไม่ใช่ค่าคงที่ค่าเดียวทั้งสวีปแล้ว แต่คำนวณต่อ (circuit, n) จาก
+#      pc/shared/timing_model.py (จำนวนเกท × ค่าคงที่เวลาต่อเกทของบอร์ด × safety 2.5
+#      หนีบด้วยพื้น 90 วินาที / เพดาน 4 ชั่วโมง) เพราะ grover ที่ n สูงใช้เวลาต่อจุด
+#      มากกว่า h_all หลักพันเท่า ถ้าใช้ค่าคงที่เดียวกันหมด จุด grover จะถูกบันทึกเป็น
+#      Memory Wall ทั้งที่บอร์ดแค่ยังคำนวณไม่เสร็จ — ค่า timeout ที่ใช้จริงถูกบันทึกลง
+#      คอลัมน์ timeout_budget_s ของทั้งสองไฟล์ผลลัพธ์ (ไม่งั้นอ่านย้อนหลังแยกไม่ออก
+#      ว่า "ชน 90 วินาที" กับ "ชน 4 ชั่วโมง" ซึ่งคนละความหมายสิ้นเชิง)
 #      ถ้าไม่มี "DONE" ภายใน timeout = บอร์ด hang/reset -> ถือเป็นความล้มเหลวชั่วคราวได้
 #      (สายหลุด, USB glitch) จึง retry ที่ n เดิมอีก 1 ครั้งก่อนสรุปว่าเป็น Memory Wall จริง
 #      *** ข้อแตกต่างจากวิธีวัดของ dataset n=30: รอบนั้นไม่มี retry เลย ล้มเหลวครั้งแรก
 #      ที่ n ไหนก็ถือเป็นกำแพงทันที รอบ n=100 นี้ผ่อนเกณฑ์ให้ทนความล้มเหลวชั่วคราวได้ 1
 #      ครั้ง — ทำให้ตัวเลข Memory Wall ระหว่างสอง dataset "ไม่ได้เปรียบเทียบกันตรง ๆ
 #      ได้ทันที" ต้องดูคอลัมน์ retry_count ใน *_memory_wall.csv ประกอบ (ดู run_log.md) ***
+#      *** นโยบาย retry เพิ่มเติมสำหรับรอบ 6 วงจร: retry เฉพาะจุดที่ timeout budget
+#      <= 600 วินาที เท่านั้น จุดที่แพงกว่านั้น (grover n สูง) จะไม่ retry เพราะต้นทุน
+#      ของ retry แปรผันตาม budget แต่ประโยชน์คงที่ — ที่ 70 วินาทีคุ้ม แต่การจ่ายเพิ่ม
+#      อีก 4 ชั่วโมงเพื่อทดสอบซ้ำสมมติฐานเดิมไม่คุ้ม และรันซ้ำเฉพาะจุดนั้นทีหลังก็ได้
+#      (ไฟล์เป็น append-only) จุดที่ถูกข้าม retry บันทึกไว้ในคอลัมน์ retry_policy =
+#      skipped_high_budget ไม่ปนกับจุดที่สำเร็จตั้งแต่ครั้งแรก (retry_count=0 เหมือนกัน
+#      แต่คนละความหมาย) ***
+#   3b. จุดที่ timing_model ประเมินว่าใช้เวลาเกินเพดาน (เช่น ESP8266 grover n=12 ~95 วัน
+#      ต่อจุด) จะถูก "ข้าม" พร้อมบันทึก status=skipped_compute_infeasible และค่าประมาณ
+#      ลงคอลัมน์ expected_point_s — ไม่ใช่ Memory Wall แต่เป็น compute wall ที่มาถึงก่อน
+#      (ใช้ --force-infeasible ถ้าต้องการดันทุรังรันจริง ๆ)
 #   4. เขียนทุกแถวลง data/raw/phase2/uno_raw.csv (ไฟล์ดิบ ไม่ทับข้อมูลเดิม, append)
 #      และสรุป Memory Wall ต่อจุดข้อมูลลง data/raw/phase2/uno_memory_wall.csv
 #      (คอลัมน์ retry_count: 0 = สำเร็จ/ล้มเหลวตั้งแต่ครั้งแรก, 1 = ต้อง retry ก่อนได้
@@ -43,13 +61,15 @@ import serial
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep  # noqa: E402
+from shared import timing_model as tm  # noqa: E402
 
 FW_DIR = REPO_ROOT / "firmware" / "uno"
 RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 PIO = os.environ.get("PIO_PATH") or shutil.which("pio")
 
 BAUD = 115200
-SERIAL_TIMEOUT_S = 70  # เวลารอสูงสุดต่อจุดข้อมูล (100 trial, scaled from 20s@REPS=30)
+# เวลารอสูงสุดต่อจุดข้อมูลไม่ใช่ค่าคงที่อีกต่อไป — คำนวณต่อ (circuit, n) จาก
+# pc/shared/timing_model.timeout_budget_s() ดูเหตุผลใน header ของไฟล์นี้
 TOTAL_SRAM_BYTES = 2048  # ATmega328P
 
 
@@ -98,8 +118,11 @@ def _alarm_handler(signum, frame):
     raise HardTimeout()
 
 
-def read_serial_trials(port: str, circuit: str, n: int):
+def read_serial_trials(port: str, circuit: str, n: int, timeout_s: int):
     """เปิด serial แล้วอ่านจนเจอ DONE หรือ timeout (=hang/reset)
+
+    timeout_s มาจาก pc/shared/timing_model.timeout_budget_s() ต่อจุดข้อมูล ไม่ใช่ค่าคงที่
+    ค่าเดียวทั้งสวีปอีกต่อไป — grover ที่ n สูงต้องการเวลามากกว่า h_all หลักพันเท่า
 
     ใช้ signal.alarm บังคับ deadline แข็ง (hard deadline) ครอบทั้งฟังก์ชัน
     เพราะพบจริงระหว่างทดลองว่า pyserial's readline() timeout เพียงอย่างเดียว
@@ -110,10 +133,10 @@ def read_serial_trials(port: str, circuit: str, n: int):
     rows = []
     reset_count = 0
     old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
-    signal.alarm(SERIAL_TIMEOUT_S + 10)
+    signal.alarm(timeout_s + 10)
     try:
         with serial.Serial(port, BAUD, timeout=2) as ser:
-            deadline = time.time() + SERIAL_TIMEOUT_S
+            deadline = time.time() + timeout_s
             done = False
             while time.time() < deadline:
                 line = ser.readline().decode("utf-8", errors="replace").strip()
@@ -145,6 +168,9 @@ def main():
                      default=["h_all", "bell_ghz", "qft", "grover", "qpe", "steane_encode"])
     ap.add_argument("--n-start", type=int, default=2)
     ap.add_argument("--n-max", type=int, default=14)
+    ap.add_argument("--force-infeasible", action="store_true",
+                     help="พยายามรันจุดที่ timing_model บอกว่าเกินเพดานเวลาไปแล้วด้วย "
+                          "(ปกติจะข้ามพร้อมบันทึกเหตุผล เพราะได้แค่ timeout เปล่า ๆ)")
     args = ap.parse_args()
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -158,12 +184,23 @@ def main():
     raw_w = csv.writer(raw_f)
     wall_w = csv.writer(wall_f)
     if raw_is_new:
-        raw_w.writerow(["board", "circuit", "n", "rep", "exec_time_us", "free_heap_before", "free_heap_after"])
+        raw_w.writerow(["board", "circuit", "n", "rep", "exec_time_us",
+                        "free_heap_before", "free_heap_after", "timeout_budget_s"])
     if wall_is_new:
         wall_w.writerow([
             "board", "circuit", "n", "theoretical_bytes", "compile_ram_used_bytes",
             "compile_ram_pct", "status", "timestamp_utc", "retry_count",
+            "timeout_budget_s", "expected_point_s", "retry_policy",
         ])
+
+    # preflight: โชว์ budget ของทุกจุดก่อนเริ่ม ให้คนกดรันเห็นว่าจุดไหนแพง/จุดไหนทำไม่ได้
+    # ตั้งแต่ก่อนเริ่ม ไม่ใช่ไปเจอตอนชั่วโมงที่หก
+    planned = [(c, n) for c in args.circuits
+               for n in n_values_for_sweep(c, args.n_start, args.n_max)]
+    infeasible = tm.print_budget_plan("uno", planned, phase=2)
+    if args.force_infeasible:
+        print("--force-infeasible: จะพยายามรันจุดที่เกินเพดานด้วย\n")
+        infeasible = set()
 
     for circuit in args.circuits:
         print(f"\n=== circuit={circuit} ===")
@@ -173,14 +210,39 @@ def main():
             continue
         for n in n_values:
             theoretical_bytes = (1 << n) * 8
+            budget_s = tm.timeout_budget_s("uno", circuit, n)
+            expected_s = tm.expected_point_time_s("uno", circuit, n)
+            may_retry = tm.retry_allowed(budget_s)
+            retry_policy = "allowed" if may_retry else "skipped_high_budget"
+            ts = datetime.now(timezone.utc).isoformat()
+
+            if (circuit, n) in infeasible:
+                # ไม่ใช่ Memory Wall และไม่ใช่ hang — เป็นขีดจำกัดเชิงเวลาคำนวณล้วน ๆ
+                # บันทึกค่าประมาณไว้ด้วย เพื่อให้แถวนี้อ่านเป็น "ผลการทดลอง" ได้จริง
+                print(f"n={n:2d}  SKIP compute-infeasible: expected "
+                      f"{tm.human_duration(expected_s)} > ceiling {tm.CEILING_S}s")
+                wall_w.writerow(["uno", circuit, n, theoretical_bytes, None, None,
+                                  "skipped_compute_infeasible", ts, 0,
+                                  budget_s, round(expected_s, 1), "n/a"])
+                wall_f.flush()
+                continue
+
             wall_found = False
             retry_used = 0
 
             # attempt 0 = ครั้งแรก, attempt 1 = retry เดียว — เฉพาะความล้มเหลวแบบ
             # runtime hang/reset/serial error เท่านั้นที่ retry ได้ (อาจเป็นสายหลุด/USB
             # glitch ชั่วคราว) build/upload fail ไม่ retry เพราะ deterministic
-            for attempt in range(2):
-                print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  ", end="", flush=True)
+            #
+            # ข้อยกเว้นใหม่ (REPS=100 + 6 วงจร): จุดที่ budget สูงกว่า RETRY_MAX_BUDGET_S
+            # จะไม่ retry เพราะต้นทุน retry แปรผันตาม budget แต่ประโยชน์คงที่ — ที่ 70
+            # วินาทีคุ้ม ที่ 4 ชั่วโมงไม่คุ้ม รันซ้ำเฉพาะจุดนั้นทีหลังถูกกว่ามาก (ไฟล์
+            # ผลลัพธ์เป็น append-only) ดู timing_model.retry_allowed()
+            max_attempts = 2 if may_retry else 1
+            for attempt in range(max_attempts):
+                print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  "
+                      f"budget={budget_s}s (expected {tm.human_duration(expected_s)})  ",
+                      end="", flush=True)
                 if attempt == 1:
                     print("(retry) ", end="", flush=True)
 
@@ -191,37 +253,41 @@ def main():
                 if not ok:
                     print("UPLOAD/BUILD FAIL -> Memory Wall found (link/flash stage)")
                     wall_w.writerow(["uno", circuit, n, theoretical_bytes, ram_bytes, ram_pct,
-                                      "build_or_upload_fail", ts, retry_used])
+                                      "build_or_upload_fail", ts, retry_used,
+                                      budget_s, round(expected_s, 1), retry_policy])
                     wall_f.flush()
                     print(log[-800:])
                     wall_found = True
                     break
 
                 time.sleep(1.0)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
-                done, rows, note = read_serial_trials(find_uno_port(args.port), circuit, n)
+                done, rows, note = read_serial_trials(find_uno_port(args.port), circuit, n, budget_s)
 
                 if done:
                     for line in rows:
-                        raw_w.writerow(line.split(","))
+                        raw_w.writerow(line.split(",") + [budget_s])
                     raw_f.flush()
                     wall_w.writerow(["uno", circuit, n, theoretical_bytes, ram_bytes, ram_pct,
-                                      "ok", ts, retry_used])
+                                      "ok", ts, retry_used,
+                                      budget_s, round(expected_s, 1), retry_policy])
                     wall_f.flush()
                     suffix = f"  (succeeded after {retry_used} retry)" if retry_used else ""
                     print(f"OK  compile_ram={ram_pct}%  trials_captured={len(rows)}{suffix}")
                     break
 
                 status = f"runtime_hang_or_reset({note})"
-                if attempt == 0:
+                if attempt == 0 and may_retry:
                     retry_used = 1
-                    print(f"NO 'DONE' within {SERIAL_TIMEOUT_S}s -> {status}  "
+                    print(f"NO 'DONE' within {budget_s}s -> {status}  "
                           "-- transient failure, retrying once at same n before declaring "
                           "Memory Wall (deviation from n=30 methodology, see run_log.md)")
                     continue
 
-                print(f"NO 'DONE' within {SERIAL_TIMEOUT_S}s -> {status} (after retry)")
+                tail = "(after retry)" if retry_used else f"(no retry: {retry_policy})"
+                print(f"NO 'DONE' within {budget_s}s -> {status} {tail}")
                 wall_w.writerow(["uno", circuit, n, theoretical_bytes, ram_bytes, ram_pct,
-                                  status, ts, retry_used])
+                                  status, ts, retry_used,
+                                  budget_s, round(expected_s, 1), retry_policy])
                 wall_f.flush()
                 wall_found = True
 

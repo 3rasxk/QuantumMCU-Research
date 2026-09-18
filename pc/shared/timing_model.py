@@ -1,0 +1,422 @@
+# timing_model.py — ประมาณเวลาที่แต่ละจุดข้อมูล (circuit, n) "ควรจะ" ใช้ แล้วแปลงเป็น
+# timeout budget ต่อจุด (แหล่งความจริงเดียวของทั้ง Phase 2 และ Phase 3)
+#
+# ทำไมต้องมีไฟล์นี้: เดิมทุกสคริปต์ sweep ใช้ timeout ค่าคงที่ค่าเดียว (SERIAL_TIMEOUT_S
+# = 70 วินาที) ซึ่งพอดีกับ h_all/bell_ghz/qft แต่ "สั้นเกินไปมาก" สำหรับ grover ที่ n สูง
+# (ESP8266 grover n=12 ประเมินไว้ ~2004 วินาทีต่อจุด) ผลคือจุดข้อมูลของ grover ที่ n สูง
+# จะถูกบันทึกเป็น runtime_hang_or_reset ทั้งที่บอร์ด "ไม่ได้ hang" — แค่ยังคำนวณไม่เสร็จ
+# กลายเป็น timeout artifact ที่ถูกตีความผิดเป็น Memory Wall
+#
+# การแก้แบบ "ขึ้น timeout รวมให้สูงไปเลย" ใช้ไม่ได้ เพราะจะทำให้การ hang จริงของวงจร
+# "ถูก ๆ" (เช่น h_all n=2) ต้องรอนานเท่ากัน — เสียเวลาหลายชั่วโมงไปกับความล้มเหลวที่
+# ตรวจพบได้ในไม่กี่วินาที จึงต้องให้ timeout เป็นฟังก์ชันของต้นทุนวงจรที่คาดไว้แทน
+#
+# โครงสร้าง:
+#   1. GATE_COUNTS — จำนวนเกทแยกตามชนิด (H / CNOT / CPhase) ของแต่ละวงจร
+#      ต้องตรงกับ firmware/common/circuits.hpp เสมอ (มี self-test ท้ายไฟล์)
+#   2. BOARD_GATE_COST — ค่าคงที่เวลาต่อเกทต่อ amplitude ของแต่ละบอร์ด fit จากข้อมูล
+#      ที่ "วัดจริง" ในรอบ REPS=30 (กู้จาก git history: docs/report/chapter4_results_th.md
+#      ที่ commit 7a7c728~1) — ไม่ใช่ค่าที่เดาเอา
+#   3. timeout_budget_s() — expected × SAFETY_FACTOR หนีบด้วย FLOOR/CEILING
+#
+# ข้อจำกัดที่ต้องรู้: ค่าประมาณของ grover/qpe/steane_encode เป็นการ "ประมาณการ"
+# (projected) จากสูตรจำนวนเกท ไม่ใช่ค่าที่วัดจากบอร์ดจริง เพราะยังไม่เคยรันวงจรทั้งสาม
+# บนฮาร์ดแวร์เลย ส่วน h_all/bell_ghz/qft เป็นค่าที่ fit จากการวัดจริง หลังรอบ REPS=100
+# เสร็จควรกลับมา re-fit ค่าคงที่ทั้งหมดจากข้อมูลจริงชุดใหม่
+
+import math
+
+REPS = 100  # ต้องตรงกับ #define REPS ใน firmware/*/src/main.cpp
+
+# --- นโยบาย timeout (ค่าตัดสินใจเชิงระเบียบวิธี ไม่ใช่ค่าที่ได้จากข้อมูล) ---
+
+# 2.5× เผื่อความแปรปรวน: IQR ที่วัดจริงในรอบ REPS=30 แคบมาก (< 0.3% ของ median ทุกจุด
+# เพราะเป็น bare-metal ไม่มี OS คั่น) ตัวที่ต้องเผื่อจริง ๆ คือความคลาดเคลื่อนของ "ตัวแบบ"
+# เอง (ดู validate_model() — residual สูงสุดอยู่ราว ±40%) บวกเวลา build/upload/boot
+# ที่ไม่ได้อยู่ในสูตร ไม่ใช่ความแปรปรวนของตัวเลขเวลาเอง
+SAFETY_FACTOR = 2.5
+
+# พื้น: จุดข้อมูลที่ถูกที่สุด (h_all n=2 บน ESP32) ประเมินได้ ~0.2 มิลลิวินาที ซึ่งแปลว่า
+# timeout จะเหลือเศษวินาที — สั้นกว่าเวลาที่บอร์ด reset ตัวเองหลัง upload แล้วเริ่ม
+# setup() ใหม่ (~1-2 วินาที) เสียอีก จึงต้องมีพื้นที่ครอบเวลา boot + serial handshake
+FLOOR_S = 90
+
+# เพดาน: 4 ชั่วโมงต่อจุดข้อมูล — เลือกจาก 2 ข้อจำกัดที่ชนกัน
+#
+# (1) ความเสี่ยงของลิงก์ USB: เคยเจอจริงในรอบ REPS=30 ว่าพอร์ต USB-CDC ของ Uno ค้าง
+#     เกิน 16 นาทีโดยที่ pyserial ไม่ timeout ตามที่ตั้งไว้ (ดู run_log.md) ยิ่งรอนาน
+#     ต่อจุด โอกาสที่สายหลุด/พอร์ต re-enumerate กลางคันจนเสียการรอทั้งหมดยิ่งสูง
+# (2) ต้องครอบ "จุดที่แพงที่สุดเท่าที่ยังทำได้จริง" ซึ่งคือ ESP32 grover n=10
+#     (ประเมิน 6169 วินาที = 1.7 ชั่วโมง) — เพดาน 4 ชั่วโมงยังเหลือ headroom 2.3 เท่า
+#
+# จุดที่ "ประเมินแล้วเกินเพดาน" (เช่น ESP8266 grover n=10 = 1.3 วัน, grover n=12 = 95 วัน)
+# ไม่ใช่เรื่องของ timeout อีกต่อไป แต่เป็นขีดจำกัดเชิงการคำนวณจริง ๆ ไม่มีค่า timeout
+# ไหนช่วยได้ — สคริปต์จะข้ามจุดพวกนี้พร้อมบันทึกเหตุผลและตัวเลขประเมินไว้ในผลลัพธ์
+# (ดู is_compute_infeasible) แทนที่จะนั่งรอ 4 ชั่วโมงเพื่อให้ได้ timeout เปล่า ๆ
+CEILING_S = 14400
+
+# retry: ดูเหตุผลใน retry_allowed()
+RETRY_MAX_BUDGET_S = 600
+
+
+# ---------------------------------------------------------------------------
+# 1. จำนวนเกทแยกชนิด — ต้องตรงกับ firmware/common/circuits.hpp
+#    คืนค่า (n_h, n_cnot, n_cphase)
+# ---------------------------------------------------------------------------
+
+def _mc_phase_types(k, _memo={}):
+    """จำนวนเกทของ mc_phase_apply(k) (k control = คิวบิต [0,k-1])
+
+    เวียนเกิดตรงตาม circuits.hpp:
+      k<=1 : CPhase 1 ตัว
+      k>=2 : CPhase 2 ตัว (คู่ ±theta/2) + mc_x_apply(k-1) 2 ครั้ง + mc_phase_apply(k-1)
+    และ mc_x_apply(m) = CNOT 1 ตัว ถ้า m==1, ไม่งั้น = H 2 ตัว + mc_phase_apply(m)
+    """
+    if k in _memo:
+        return _memo[k]
+    if k <= 1:
+        return (0, 0, 1)
+    if k - 1 == 1:
+        mcx = (0, 1, 0)  # mc_x_apply(1) = CNOT ตรง ๆ
+    else:
+        h, c, p = _mc_phase_types(k - 1)
+        mcx = (h + 2, c, p)  # H ประกบสองข้าง + mc_phase_apply(k-1)
+    rest = _mc_phase_types(k - 1)
+    out = (2 * mcx[0] + rest[0],
+           2 * mcx[1] + rest[1],
+           2 * mcx[2] + rest[2] + 2)
+    _memo[k] = out
+    return out
+
+
+def grover_iterations(n):
+    """floor(pi/4 * sqrt(2^n)) อย่างน้อย 1 — ตรงกับ circuit_grover"""
+    return max(1, int((math.pi / 4) * math.sqrt(1 << n)))
+
+
+def gate_counts(circuit, n):
+    """คืน (n_h, n_cnot, n_cphase) ของวงจรที่ n ที่กำหนด"""
+    if circuit == "h_all":
+        return (n, 0, 0)
+    if circuit == "bell_ghz":
+        return (1, n - 1, 0)
+    if circuit == "qft":
+        return (n, 0, n * (n - 1) // 2)
+    if circuit == "grover":
+        it = grover_iterations(n)
+        mh, mc, mp = _mc_phase_types(n - 1)
+        # ต่อ 1 iteration: oracle (mc_phase) + diffusion (H ทุกคิวบิต, X ทุกคิวบิตผ่าน
+        # H-Z-H, mc_phase, X ทุกคิวบิตอีกครั้ง, H ทุกคิวบิต)
+        #   H     = 2*mh + (n + 2n + 2n + n) = 2*mh + 6n
+        #   CNOT  = 2*mc
+        #   CPhase= 2*mp + 2n   (Z ของ X-sandwich ทั้งสองชุด)
+        return (n + it * (2 * mh + 6 * n),
+                it * (2 * mc),
+                it * (2 * mp + 2 * n))
+    if circuit == "qpe":
+        t = n - 1
+        # eigenstate prep (H,Z,H) + H counting + controlled-U + inverse QFT
+        return (2 + t + t, 0, 1 + t + t * (t - 1) // 2)
+    if circuit == "steane_encode":
+        return (3, 9, 0)  # คงที่ ไม่ขึ้นกับ n
+    raise ValueError(f"unknown circuit {circuit!r}")
+
+
+# ---------------------------------------------------------------------------
+# 2. ค่าคงที่เวลาต่อเกทต่อ amplitude ของแต่ละบอร์ด
+#    แบบจำลอง: exec_time_us = sum_type(count_type * k_type) * n_states
+#
+#    fit จากค่า median ที่วัดจริงในรอบ REPS=30 (h_all, bell_ghz, qft) ที่ n สูงสุดของ
+#    แต่ละบอร์ด — เลือก n สูงสุดเพราะจุดที่ต้องใช้ตัวแบบนี้จริง ๆ คือ n สูง (ที่ timeout
+#    สำคัญ) และที่ n ต่ำ overhead คงที่ของ micros()/ลูปจะครอบงำจนบิดค่า fit
+#
+#    ที่มาของตัวเลข: docs/report/chapter4_results_th.md ตารางที่ 4.3 / 4.5 / 4.7
+#    (ไฟล์ถูกลบไปแล้ว อ่านจาก git history: `git show 7a7c728~1:docs/report/...`)
+# ---------------------------------------------------------------------------
+
+BOARD_GATE_COST = {
+    # (k_h, k_cnot, k_cphase) หน่วย: ไมโครวินาที ต่อ 1 เกท ต่อ 1 amplitude
+    # fit ที่ n = 7 (uno), 12 (esp8266), 13 (esp32) ตามลำดับ ด้วยสมการ 3 ตัวแปร:
+    #   h_all    : exec = n * k_h * n_states
+    #   bell_ghz : exec = (1 * k_h + (n-1) * k_cnot) * n_states
+    #   qft      : exec = (n * k_h + n(n-1)/2 * k_cphase) * n_states
+    "uno":     (29.36161, 4.93973, 13.06399),
+    "esp8266": (2.73098, 0.15243, 1.10248),
+    "esp32":   (0.07863, 0.10349, 0.04637),
+}
+# ข้อสังเกตที่ตัวเลขบอก: บน Uno (8-bit ไม่มี FPU) H แพงกว่า CNOT ~6 เท่า เพราะ H ทำ
+# เลขทศนิยมจริง (คูณ/บวก) ส่วน CNOT แค่สลับ struct ไม่แตะ ALU ทศนิยมเลย — บน ESP32
+# ที่มี FPU ความต่างนี้หายไป (k_cnot โผล่สูงกว่า k_h ด้วยซ้ำ ซึ่งมาจาก quantization
+# ของ micros() ที่ค่าระดับหลักหน่วยไมโครวินาที ไม่ใช่ความจริงเชิงสถาปัตยกรรม)
+
+# n สูงสุดที่วัดจริงว่ารันสำเร็จในรอบ REPS=30 (Memory Wall ที่วัดได้ ไม่ใช่ทฤษฎี)
+MEASURED_WALL_N = {"uno": 7, "esp8266": 12, "esp32": 13}
+
+
+def expected_exec_time_us(board, circuit, n):
+    """เวลารันวงจร 1 trial (ไมโครวินาที) ที่ตัวแบบทำนาย"""
+    k_h, k_cnot, k_cphase = BOARD_GATE_COST[board]
+    n_h, n_cnot, n_cphase = gate_counts(circuit, n)
+    n_states = 1 << n
+    return (n_h * k_h + n_cnot * k_cnot + n_cphase * k_cphase) * n_states
+
+
+def expected_point_time_s(board, circuit, n, reps=REPS):
+    """เวลาที่บอร์ดใช้รันครบทั้งจุดข้อมูล (reps trial) เป็นวินาที
+
+    เฟิร์มแวร์รันครบทุก trial ก่อนแล้วค่อยพิมพ์ผลทั้งชุด (ไม่ได้ stream ทีละ trial)
+    ฝั่ง host จึงต้องรอครบ reps × เวลาต่อ trial ก่อนจะได้เห็นอะไรเลย"""
+    return expected_exec_time_us(board, circuit, n) * reps / 1e6
+
+
+def timeout_budget_s(board, circuit, n, reps=REPS):
+    """timeout ที่ควรใช้กับจุดข้อมูลนี้ (วินาที, ปัดเป็นจำนวนเต็ม)"""
+    raw = expected_point_time_s(board, circuit, n, reps) * SAFETY_FACTOR
+    return int(min(max(raw, FLOOR_S), CEILING_S))
+
+
+def budget_is_capped(board, circuit, n, reps=REPS):
+    """True ถ้า budget ดิบ (expected × SAFETY_FACTOR) ชนเพดาน
+
+    จุดแบบนี้ "ยังทำได้" ถ้าค่าประมาณแม่น (เพดานยังมากกว่า expected) แค่เหลือ headroom
+    น้อยลงเท่านั้น — ต่างจาก is_compute_infeasible ที่ทำไม่ได้เลย"""
+    raw = expected_point_time_s(board, circuit, n, reps) * SAFETY_FACTOR
+    return raw > CEILING_S
+
+
+def is_compute_infeasible(board, circuit, n, reps=REPS):
+    """True ถ้า "เวลาที่คาดว่าจะใช้จริง" เกินเพดานไปแล้ว — ไม่มี timeout ไหนช่วยได้
+
+    นี่ไม่ใช่ปัญหาของนโยบาย timeout แต่เป็นขีดจำกัดเชิงการคำนวณของบอร์ด: grover ที่ n
+    สูงมี "compute wall" ต่ำกว่า "memory wall" ของตัวเอง (ESP8266 จองหน่วยความจำสำหรับ
+    n=12 ได้สบาย แต่ต้องใช้เวลา ~95 วันต่อจุดข้อมูล) การพยายามรันจุดพวกนี้ได้แค่ timeout
+    เปล่า ๆ สคริปต์จึงข้ามพร้อมบันทึกค่าประมาณไว้ ให้มันเป็น "ผลการทดลอง" ที่อ่านได้
+    ไม่ใช่ช่องว่างที่ไม่มีคำอธิบาย"""
+    return expected_point_time_s(board, circuit, n, reps) > CEILING_S
+
+
+def human_duration(seconds):
+    """ทำให้ตัวเลขวินาทีอ่านออกในบรรทัด log (95 วัน กับ 8208961 วินาที คนละความรู้สึก)"""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    if seconds < 3600:
+        return f"{seconds / 60:.1f}min"
+    if seconds < 86400:
+        return f"{seconds / 3600:.1f}h"
+    return f"{seconds / 86400:.1f}days"
+
+
+def retry_allowed(budget_s):
+    """retry จุดที่ล้มเหลวแบบ transient ได้หรือไม่ ตัดสินจาก timeout budget ของจุดนั้น
+
+    เหตุผล: retry มีไว้กลบความล้มเหลวชั่วคราวของลิงก์ USB (สายหลุด, CDC re-enumerate)
+    "ประโยชน์" ของมันคงที่ไม่ว่าจุดจะแพงแค่ไหน (กู้จุดข้อมูลได้ 1 จุด) แต่ "ต้นทุน"
+    แปรผันตรงกับ budget — ที่ 70 วินาทีคุ้มชัดเจน แต่ที่ 3600 วินาทีคือการจ่ายเพิ่ม
+    อีกชั่วโมงเพื่อทดสอบสมมติฐานที่รันซ้ำเฉพาะจุดนั้นทีหลังก็ได้ (ไฟล์ผลลัพธ์เป็น
+    append-only จึงรันซ้ำเฉพาะจุดได้โดยไม่ต้องเริ่มบอร์ดใหม่ทั้งชุด)
+
+    จุดที่ถูกข้าม retry ต้องบันทึกให้เห็นในข้อมูล (คอลัมน์ retry_policy) ไม่ใช่ปล่อยให้
+    retry_count=0 ไปปนกับจุดที่ "สำเร็จตั้งแต่ครั้งแรก" ซึ่งคนละความหมายกันสิ้นเชิง"""
+    return budget_s <= RETRY_MAX_BUDGET_S
+
+
+# ---------------------------------------------------------------------------
+# 3. Phase 3 — คนละคอขวดกับ Phase 2 โดยสิ้นเชิง
+#    Phase 2 ช้าเพราะ "บอร์ด" คำนวณ, Phase 3 ช้าเพราะ "PC" จำลองด้วย Qiskit Aer ใหม่
+#    ทุกคำขอ (ตั้งใจไม่ cache — ดู pc/phase3_offload/sweep.py) ต้นทุนต่อคำขอจึงแปรผัน
+#    ตามจำนวนเกทของวงจร ไม่ใช่ตามความเร็วบอร์ด
+#
+#    ค่าคงที่ fit จากเวลาที่วัดจริงในรอบ Phase 1 ของ session นี้ (เครื่องเดียวกับที่จะ
+#    เป็น PC ฝั่ง offload): grover n=8 ใช้ 1.9 วินาที (47,368 เกท), n=10 ใช้ 40.5 วินาที
+#    (876,670 เกท) -> ~4.6e-5 วินาทีต่อเกท เชิงเส้นตามจำนวนเกท (ทำนาย n=8 ได้ 2.2
+#    วินาที เทียบค่าจริง 1.9 — คลาดเคลื่อน ~15%)
+# ---------------------------------------------------------------------------
+
+PC_SECONDS_PER_GATE = 4.6e-5
+PC_FIXED_OVERHEAD_S = 0.05  # ค่าเริ่มต้นของ AerSimulator + สร้าง object วงจร
+
+# เพดานของ Phase 3 สูงกว่า Phase 2 (2 ชั่วโมง ไม่ใช่ 1 ชั่วโมง) เพราะความเสี่ยงคนละแบบ:
+# Phase 2 รอ "บอร์ดพิมพ์ผลกลับมา" ผ่านลิงก์ USB ที่เคยค้างจริง ส่วน Phase 3 ระหว่างรอ
+# มีการแลกเฟรม request/response ตลอดเวลา (ทุก trial) ลิงก์จึงไม่ได้เงียบยาว ๆ แบบ
+# Phase 2 และตรวจจับการตายกลางคันได้เร็วกว่ามาก
+#
+# 2 ชั่วโมงเลือกให้ "ครอบ grover n=10 พอดี" (ประเมิน 4050 วินาที = 67 นาที ต่อจุด
+# ต่อบอร์ด) ซึ่งเป็นจุด grover ที่แพงที่สุดที่ยังทำได้จริงแบบไม่ cache ส่วน n=12
+# (ประเมิน ~20 ชั่วโมงต่อจุด) จะชนเพดานและถูกบันทึกเป็น session_incomplete ตามจริง
+# — จงใจไม่เพิ่ม cache เพื่อให้ตัวเลขดูดีขึ้น เพราะจะเปลี่ยนความหมายของสิ่งที่ Phase 3 วัด
+PHASE3_CEILING_S = 7200
+PHASE3_FLOOR_S = 300  # เท่ากับ SESSION_TIMEOUT_S เดิม — วงจรถูก ๆ ไม่ควรได้ timeout สั้นลง
+
+
+def pc_sim_time_s(circuit, n):
+    """เวลาที่ PC ใช้จำลองวงจรนี้ 1 ครั้งด้วย Qiskit Aer (สร้างวงจรใหม่ทุกครั้ง ไม่ cache)"""
+    n_h, n_cnot, n_cphase = gate_counts(circuit, n)
+    return PC_FIXED_OVERHEAD_S + (n_h + n_cnot + n_cphase) * PC_SECONDS_PER_GATE
+
+
+def phase3_session_budget_s(circuit, n, reps=REPS):
+    """timeout ของ 1 session (= 1 จุดข้อมูล = reps คำขอ) ใน Phase 3"""
+    raw = pc_sim_time_s(circuit, n) * reps * SAFETY_FACTOR
+    return int(min(max(raw, PHASE3_FLOOR_S), PHASE3_CEILING_S))
+
+
+def phase3_budget_is_capped(circuit, n, reps=REPS):
+    return pc_sim_time_s(circuit, n) * reps * SAFETY_FACTOR > PHASE3_CEILING_S
+
+
+def phase3_is_infeasible(circuit, n, reps=REPS):
+    """เวลาจำลองฝั่ง PC ล้วน ๆ เกินเพดาน session — เก็บครบ reps ไม่ได้ในทางปฏิบัติ
+
+    ข้อสังเกตสำคัญ: เกณฑ์นี้ "ไม่ขึ้นกับบอร์ด" เพราะ Phase 3 ให้ PC เป็นคนจำลอง
+    ผลคือ grover n=10 ที่ local บน ESP8266 ทำไม่ได้เลย (1.3 วันต่อจุด) กลับ offload
+    ได้สบายใน ~1.1 ชั่วโมงต่อจุด — ความไม่สมมาตรนี้คือ crossover ที่ชัดที่สุดในชุดข้อมูล"""
+    return pc_sim_time_s(circuit, n) * reps > PHASE3_CEILING_S
+
+
+# ---------------------------------------------------------------------------
+# preflight: พิมพ์แผน budget ทั้งชุดก่อนเริ่มรันจริง
+# เจตนา: ให้คนที่กดรันเห็น "จุดไหนจะแพง / จุดไหนจะชนเพดาน" ตั้งแต่ก่อนเริ่ม ไม่ใช่
+# ไปค้นพบเอาตอนชั่วโมงที่หก
+# ---------------------------------------------------------------------------
+
+def print_budget_plan(board, circuit_n_pairs, reps=REPS, phase=2):
+    """พิมพ์แผนก่อนเริ่มรัน คืน set ของ (circuit, n) ที่ประเมินแล้วว่าทำไม่ได้
+
+    ผู้เรียกใช้ค่าที่คืนมาเพื่อข้ามจุดพวกนั้น (หรือ --force-infeasible ถ้าจะดันทุรัง)"""
+    total_expected = 0
+    total_worst = 0
+    infeasible = set()
+    print(f"\n--- timeout budget plan (board={board}, phase={phase}, reps={reps}) ---")
+    print(f"{'circuit':14s} {'n':>3s} {'expected':>11s} {'budget_s':>9s}  note")
+    for circuit, n in circuit_n_pairs:
+        if phase == 3:
+            expected = pc_sim_time_s(circuit, n) * reps
+            budget = phase3_session_budget_s(circuit, n, reps)
+            capped = phase3_budget_is_capped(circuit, n, reps)
+            unreachable = phase3_is_infeasible(circuit, n, reps)
+        else:
+            expected = expected_point_time_s(board, circuit, n, reps)
+            budget = timeout_budget_s(board, circuit, n, reps)
+            capped = budget_is_capped(board, circuit, n, reps)
+            unreachable = is_compute_infeasible(board, circuit, n, reps)
+
+        note = ""
+        if unreachable:
+            note = f"INFEASIBLE — needs {human_duration(expected)}, will be SKIPPED"
+            infeasible.add((circuit, n))
+        elif capped:
+            note = "capped at ceiling (still above expected, should complete)"
+        elif phase == 2 and not retry_allowed(budget):
+            note = "retry disabled (budget above RETRY_MAX_BUDGET_S)"
+
+        if not unreachable:
+            total_expected += expected
+            total_worst += budget
+        print(f"{circuit:14s} {n:3d} {human_duration(expected):>11s} {budget:9d}  {note}")
+
+    print(f"attempted points: expected total {human_duration(total_expected)}, "
+          f"worst case if every point times out {human_duration(total_worst)}")
+    print("note: upper bound only — the sweep stops a circuit at its first failure, so any n "
+          "past the board's Memory Wall is listed here but never actually reached")
+    if infeasible:
+        print(f"WARNING: {len(infeasible)} point(s) skipped as compute-infeasible: "
+              f"{sorted(infeasible)}")
+        print("         (pass --force-infeasible to attempt them anyway)")
+    print("---\n")
+    return infeasible
+
+
+# ---------------------------------------------------------------------------
+# self-test: รันไฟล์นี้ตรง ๆ เพื่อตรวจว่าตัวแบบยังสมเหตุสมผล
+#   python3 pc/shared/timing_model.py
+# ---------------------------------------------------------------------------
+
+def _check_gate_count_recursion():
+    """จำนวนเกทรวมของ mc_phase_apply ต้องตรงกับสูตรเวียนเกิด G(k) ที่เขียนไว้ใน
+    circuits.hpp (G(1)=1, G(2)=5, G(3)=21, G(4)=69, ...)"""
+    def G(k):
+        if k <= 1:
+            return 1
+        x = 1 if k - 1 == 1 else 2 + G(k - 1)
+        return 2 * x + G(k - 1) + 2
+    for k in range(1, 12):
+        assert sum(_mc_phase_types(k)) == G(k), f"k={k}: {_mc_phase_types(k)} vs {G(k)}"
+    return [G(k) for k in range(1, 12)]
+
+
+def validate_model():
+    """เทียบค่าที่ตัวแบบทำนาย กับค่า median ที่วัดจริงในรอบ REPS=30 ทุกจุดที่มีข้อมูล
+    (ตัวแบบ fit จาก n เดียวต่อบอร์ด จึงต้องตรวจว่ามันยัง extrapolate ไปจุดอื่นได้)"""
+    measured = {
+        "uno": {
+            "h_all": {2: 284, 3: 812, 4: 2088, 5: 4906, 6: 11468, 7: 26308},
+            "bell_ghz": {2: 150, 3: 348, 4: 772, 5: 1704, 6: 3556, 7: 7552},
+            "qft": {2: 292, 3: 1932, 4: 4692, 5: 11012, 6: 25920, 7: 61424},
+        },
+        "esp8266": {
+            "h_all": {2: 24, 3: 72, 4: 187, 5: 456, 6: 1082, 7: 2499, 8: 5663,
+                      9: 12697, 10: 28057, 11: 61760, 12: 134233},
+            "bell_ghz": {2: 13, 3: 26, 4: 51, 5: 104, 6: 215, 7: 444, 8: 919,
+                         9: 1961, 10: 4067, 11: 8707, 12: 18054},
+            "qft": {2: 28, 3: 248, 4: 578, 5: 1262, 6: 2781, 7: 6290, 8: 14524,
+                    9: 34132, 10: 79774, 11: 187237, 12: 432274},
+        },
+        "esp32": {
+            "h_all": {2: 2, 3: 4, 4: 7, 5: 15, 6: 32, 7: 71, 8: 163, 9: 364,
+                      10: 812, 11: 1779, 12: 3872, 13: 8374},
+            "bell_ghz": {2: 2, 3: 3, 4: 7, 5: 15, 6: 34, 7: 78, 8: 177, 9: 417,
+                         10: 931, 11: 2282, 12: 4988, 13: 10818},
+            "qft": {2: 3, 3: 11, 4: 23, 5: 48, 6: 103, 7: 230, 8: 523, 9: 1275,
+                    10: 3010, 11: 7066, 12: 15609, 13: 38003},
+        },
+    }
+    worst = 0.0
+    worst_at = None
+    rows = []
+    for board, circuits in measured.items():
+        for circuit, table in circuits.items():
+            for n, actual_us in table.items():
+                pred = expected_exec_time_us(board, circuit, n)
+                rel = (pred - actual_us) / actual_us
+                rows.append((board, circuit, n, actual_us, pred, rel))
+                # จุดที่ n <= 4 มี overhead คงที่ของ micros()/ลูปครอบงำ ไม่นับเป็น
+                # ตัววัดคุณภาพของตัวแบบ (timeout ที่ n ต่ำถูกกำหนดโดย FLOOR_S อยู่แล้ว)
+                if n > 4 and abs(rel) > abs(worst):
+                    worst, worst_at = rel, (board, circuit, n)
+    return rows, worst, worst_at
+
+
+if __name__ == "__main__":
+    g = _check_gate_count_recursion()
+    print("mc_phase gate-count recursion G(1..11):", g)
+
+    rows, worst, worst_at = validate_model()
+    print(f"\n{'board':8s} {'circuit':9s} {'n':>3s} {'measured_us':>12s} {'model_us':>12s} {'rel_err':>9s}")
+    for board, circuit, n, actual, pred, rel in rows:
+        flag = "  <-- worst" if (board, circuit, n) == worst_at else ""
+        print(f"{board:8s} {circuit:9s} {n:3d} {actual:12d} {pred:12.1f} {rel:8.1%}{flag}")
+    print(f"\nworst relative error at n>4: {worst:.1%} at {worst_at}")
+    print(f"SAFETY_FACTOR={SAFETY_FACTOR} must exceed that margin to avoid false timeouts")
+
+    print("\n--- phase 2 timeout budgets, extreme cases ---")
+    for board, circuit, n in [("esp8266", "h_all", 2), ("esp8266", "qft", 12),
+                              ("esp8266", "grover", 8), ("esp8266", "grover", 10),
+                              ("esp8266", "grover", 12), ("esp32", "grover", 10),
+                              ("esp32", "grover", 12), ("uno", "grover", 6),
+                              ("uno", "steane_encode", 7), ("esp8266", "qpe", 12)]:
+        exp_s = expected_point_time_s(board, circuit, n)
+        b = timeout_budget_s(board, circuit, n)
+        state = "INFEASIBLE" if is_compute_infeasible(board, circuit, n) else (
+            "capped" if budget_is_capped(board, circuit, n) else "ok")
+        print(f"{board:8s} {circuit:14s} n={n:2d}  expected={human_duration(exp_s):>9s}  "
+              f"budget={b:6d}s  retry={'yes' if retry_allowed(b) else ' NO'}  {state}")
+
+    print("\n--- phase 3 (PC-side Aer, uncached, board-independent) ---")
+    for circuit, n in [("qft", 12), ("grover", 8), ("grover", 10), ("grover", 12)]:
+        per_req = pc_sim_time_s(circuit, n)
+        full = per_req * REPS
+        b = phase3_session_budget_s(circuit, n)
+        state = "INFEASIBLE" if phase3_is_infeasible(circuit, n) else (
+            "capped" if phase3_budget_is_capped(circuit, n) else "ok")
+        print(f"{circuit:9s} n={n:2d}  per_request={per_req:9.2f}s  "
+              f"x{REPS} = {human_duration(full):>9s}  budget={b:5d}s  {state}")
