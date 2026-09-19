@@ -24,6 +24,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 sys.path.insert(0, str(REPO_ROOT / "pc" / "phase2_sweep"))
+sys.path.insert(0, str(REPO_ROOT / "pc" / "phase3_offload"))
 
 RESULTS = []
 
@@ -45,18 +46,23 @@ def test_schema_and_append(scratch: Path):
                               sessions_csv=sessions_csv) as sess:
         sess.note_point(device_s=1.2, reflash_s=20.0, status="ok")
         sess.note_point(device_s=0.0, reflash_s=20.0, status="failed")
-        sess.note_point(device_s=0.0, reflash_s=0.0, status="skipped")
-        sess.note_point(device_s=0.0, reflash_s=0.0, status="ok", resumed_skip=True)
+        sess.note_point(device_s=0.0, reflash_s=0.0, status="skipped_compute_infeasible")
+        sess.note_point(device_s=0.0, reflash_s=0.0, status="skipped_resume")
+        sess.note_point(device_s=0.0, reflash_s=0.0, status="skipped_known_wall")
+        sess.note_point(device_s=0.0, reflash_s=0.0, status="skipped_sim_cost_infeasible")
 
     rows = list(csv.DictReader(open(sessions_csv)))
     check("session: exactly 1 row written", len(rows) == 1)
     r = rows[0]
+    check("session: schema_version=1", r["schema_version"] == "1")
     check("session: device_time_s_sum aggregated correctly", abs(float(r["device_time_s_sum"]) - 1.2) < 1e-6)
     check("session: reflash_time_s_sum aggregated correctly", abs(float(r["reflash_time_s_sum"]) - 40.0) < 1e-6)
     check("session: n_points_ok=1", r["n_points_ok"] == "1")
     check("session: n_points_failed=1", r["n_points_failed"] == "1")
-    check("session: n_points_skipped=1", r["n_points_skipped"] == "1")
-    check("session: n_points_resumed_skip=1", r["n_points_resumed_skip"] == "1")
+    check("session: n_points_skipped_resume=1", r["n_points_skipped_resume"] == "1")
+    check("session: n_points_skipped_known_wall=1", r["n_points_skipped_known_wall"] == "1")
+    check("session: n_points_skipped_compute_infeasible=1", r["n_points_skipped_compute_infeasible"] == "1")
+    check("session: n_points_skipped_sim_cost_infeasible=1", r["n_points_skipped_sim_cost_infeasible"] == "1")
 
     tel.write_point_row({
         "session_id": "test123", "phase": 2, "board": "uno", "circuit": "grover", "n": 6,
@@ -67,6 +73,7 @@ def test_schema_and_append(scratch: Path):
     }, points_csv=points_csv)
     prows = list(csv.DictReader(open(points_csv)))
     check("point: 1 row written", len(prows) == 1)
+    check("point: schema_version=1", prows[0]["schema_version"] == "1")
     check("point: unspecified fields blank, not 0", prows[0]["pc_sim_s_total"] == "")
     check("point: field order matches POINT_FIELDS", list(prows[0].keys()) == tel.POINT_FIELDS)
 
@@ -75,6 +82,34 @@ def test_schema_and_append(scratch: Path):
         check("point: unknown field raises ValueError", False)
     except ValueError:
         check("point: unknown field raises ValueError", True)
+
+    try:
+        tel.write_point_row({"status": "skipped"}, points_csv=points_csv)
+        check("point: invalid status ('skipped', pre-freeze value) raises ValueError", False)
+    except ValueError:
+        check("point: invalid status ('skipped', pre-freeze value) raises ValueError", True)
+
+    try:
+        tel.write_point_row({"status": "ok", "failure_type": "bogus"}, points_csv=points_csv)
+        check("point: invalid failure_type raises ValueError", False)
+    except ValueError:
+        check("point: invalid failure_type raises ValueError", True)
+
+    for valid_status in tel.STATUS_TYPES:
+        tel.write_point_row({"status": valid_status}, points_csv=points_csv)
+    prows_after_valid = list(csv.DictReader(open(points_csv)))
+    check(f"point: all {len(tel.STATUS_TYPES)} STATUS_TYPES values accepted without error",
+          len(prows_after_valid) == 1 + len(tel.STATUS_TYPES), len(prows_after_valid))
+
+    # schema mismatch on an old-header file must refuse, not silently misalign columns
+    old_schema_points_csv = scratch / "old_schema_points.csv"
+    with open(old_schema_points_csv, "w", newline="") as f:
+        csv.writer(f).writerow(["session_id", "phase", "board"])  # ไม่มี schema_version เลย
+    try:
+        tel.write_point_row({"status": "ok"}, points_csv=old_schema_points_csv)
+        check("point: appending to an old-schema file raises SchemaMismatchError", False)
+    except tel.SchemaMismatchError:
+        check("point: appending to an old-schema file raises SchemaMismatchError", True)
 
     # append-only across two sessions (simulates a resume)
     with tel.SessionRecorder(phase=2, board="uno", circuits=["h_all"],
@@ -95,6 +130,7 @@ def test_schema_and_append(scratch: Path):
         REPO_ROOT / "firmware" / "uno" / "src", env_dir=scratch / "env")
     check("environment metadata file created", env_path.exists())
     meta = json.loads(env_path.read_text())
+    check("environment metadata has schema_version=1", meta["schema_version"] == 1)
     check("environment metadata has non-empty git_commit", meta["git_commit"] != "")
     check("environment metadata has 16-char firmware_source_hash", len(meta["firmware_source_hash"]) == 16)
     check("environment metadata has sleep_prevention.checked", "checked" in meta["sleep_prevention"])
@@ -175,7 +211,78 @@ def test_mocked_uno_sweep_dry_run(scratch: Path):
     check("dry-run resume: no new build_and_upload calls", len(calls) == 2)
     sess2 = list(csv.DictReader(open(tel.SESSIONS_CSV)))
     check("dry-run resume: second session appended, not overwritten", len(sess2) == 2)
-    check("dry-run resume: n_points_resumed_skip=2", sess2[1]["n_points_resumed_skip"] == "2")
+    check("dry-run resume: n_points_skipped_resume=2", sess2[1]["n_points_skipped_resume"] == "2")
+    pts2 = list(csv.DictReader(open(tel.POINTS_CSV)))
+    check("dry-run resume: 2 more point rows appended for the resumed skips (4 total)",
+          len(pts2) == 4, len(pts2))
+    check("dry-run resume: the new rows carry status=skipped_resume",
+          pts2[2]["status"] == "skipped_resume" and pts2[3]["status"] == "skipped_resume",
+          (pts2[2]["status"], pts2[3]["status"]))
+
+
+def test_phase3_crc_vs_serial_dry_run(scratch: Path):
+    """เอกสารประกอบการตัดสินใจ (2026-09-20, run_checklist.md ส่วน 'Telemetry schema'):
+    CRC error กับความล้มเหลวของสาย/พอร์ตแยกไม่ออกด้วย exchange logic ปัจจุบันของ Phase 3
+    — จำลอง session_incomplete ที่มี crc_error_count > 0 (dropped=5) แล้วยืนยันว่า
+    failure_type ที่บันทึกยังคงเป็น "serial" ไม่ใช่ "crc" (การเดาจาก crc_error_count > 0
+    ว่าเป็นสาเหตุจะให้ข้อมูลที่ดูน่าเชื่อถือแต่อาจผิด — ไม่ implement การเดานั้น) เทสต์นี้
+    เป็น regression guard: ถ้าใครมาแก้ให้เดา failure_type จาก crc_error_count ทีหลังโดย
+    ไม่ได้แก้ exchange logic ให้แยกสาเหตุได้จริงก่อน เทสต์นี้จะ fail"""
+    import importlib
+    import sweep as p3
+    importlib.reload(p3)
+    from shared import telemetry as tel
+
+    sweep_dir = scratch / "phase3_dry_run"
+    sweep_dir.mkdir(parents=True)
+    p3.RESULTS_DIR = sweep_dir
+    tel.TELEMETRY_DIR = sweep_dir / "telemetry"
+    tel.SESSIONS_CSV = tel.TELEMETRY_DIR / "sessions.csv"
+    tel.POINTS_CSV = tel.TELEMETRY_DIR / "points.csv"
+    tel.ENV_DIR = tel.TELEMETRY_DIR / "env"
+
+    def fake_build_and_upload(board, circuit, n, baud, port_hint):
+        return {"ok": True, "port": "/dev/fake", "compile_s": 1.0, "upload_s": 1.0, "log": ""}
+
+    def fake_find_port(board, hint):
+        return "/dev/fake"
+
+    def fake_run_offload_session(ser, sim, session_timeout_s):
+        # session_incomplete (done=False, 0 rows) แต่มี crc_error_count>0 (dropped=5) —
+        # กรณีตรงที่แยกสาเหตุไม่ได้ตามที่บันทึกไว้
+        return False, [], 0, 5, "", [], 24
+
+    class FakeSerial:
+        def __init__(self, *a, **k):
+            self.dtr = True
+            self.rts = True
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def reset_input_buffer(self):
+            pass
+
+    p3.build_and_upload = fake_build_and_upload
+    p3.find_port = fake_find_port
+    p3.run_offload_session = fake_run_offload_session
+    p3.serial.Serial = FakeSerial
+
+    sys.argv = ["sweep.py", "--board", "esp8266", "--port", "/dev/fake",
+                "--circuits", "h_all", "--n-start", "2", "--n-max", "2"]
+    p3.main()
+
+    pts = list(csv.DictReader(open(tel.POINTS_CSV)))
+    check("phase3 crc-vs-serial: 1 point row written", len(pts) == 1, len(pts))
+    check("phase3 crc-vs-serial: status=failed (session_incomplete mapped for points.csv's enum)",
+          pts[0]["status"] == "failed", pts[0]["status"])
+    check("phase3 crc-vs-serial: crc_error_count recorded (5) even though failure_type stays serial",
+          pts[0]["crc_error_count"] == "5", pts[0]["crc_error_count"])
+    check("phase3 crc-vs-serial: failure_type is 'serial', NOT 'crc' (cannot be separated, documented)",
+          pts[0]["failure_type"] == "serial", pts[0]["failure_type"])
 
 
 def main():
@@ -186,6 +293,7 @@ def main():
         test_schema_and_append(scratch / "case1")
         test_module_attribute_reassignment_respected(scratch / "case2")
         test_mocked_uno_sweep_dry_run(scratch / "case3")
+        test_phase3_crc_vs_serial_dry_run(scratch / "case4")
     finally:
         after = set(real_data_dir.glob("**/*")) if real_data_dir.exists() else set()
         check("no test run touched the real data/raw/telemetry/ directory", after == before,

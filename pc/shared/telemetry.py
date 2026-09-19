@@ -35,6 +35,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+import csv
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 TELEMETRY_DIR = REPO_ROOT / "data" / "raw" / "telemetry"
 ENV_DIR = TELEMETRY_DIR / "env"
@@ -43,22 +45,45 @@ SESSIONS_CSV = TELEMETRY_DIR / "sessions.csv"
 POINTS_CSV = TELEMETRY_DIR / "points.csv"
 
 # ---------------------------------------------------------------------------
+# SCHEMA_VERSION — ตัวเลขเดียวที่บอกว่า schema ของ sessions.csv/points.csv/environment
+# JSON เวอร์ชันไหน บันทึกไว้ทั้ง 3 ที่ (คอลัมน์แรกของทั้งสอง CSV + field ใน JSON) —
+# เพิ่มทุกครั้งที่ field list เปลี่ยน (เพิ่ม/ลบ/เปลี่ยนความหมายคอลัมน์ใด ๆ) ห้าม
+# เปลี่ยนความหมายคอลัมน์เดิมโดยไม่เพิ่มเลขนี้ ไม่งั้นไฟล์เก่ากับใหม่จะปนกันโดยไม่มีทาง
+# แยกออกจากกันได้ทีหลัง — ดู SchemaMismatchError ด้านล่าง (บังคับด้วยโค้ด ไม่ใช่แค่
+# ข้อตกลงในคอมเมนต์) freeze ครั้งแรกที่ tag pre-run-schema-v1 (ดู run_log.md)
+# ---------------------------------------------------------------------------
+SCHEMA_VERSION = 1
+
+
+class SchemaMismatchError(RuntimeError):
+    """ไฟล์ CSV ที่มีอยู่แล้วมี header ไม่ตรงกับ field list ปัจจุบัน — เกิดได้ถ้า
+    SCHEMA_VERSION เปลี่ยนหลังไฟล์ถูกสร้างไปแล้ว การ append ทับแบบเงียบ ๆ จะทำให้
+    คอลัมน์เลื่อนไม่ตรงแถว (misaligned) โดยไม่มี error ใด ๆ เตือน — refuse ทันทีดีกว่า
+    ปล่อยให้ข้อมูลปนกันแบบตรวจไม่เจอ ผู้ใช้ต้อง archive ไฟล์เก่า (ดู
+    pc/shared/resume.archive_existing) หรือเริ่ม telemetry directory ใหม่ก่อนรันต่อ"""
+
+
+# ---------------------------------------------------------------------------
 # schema — คอลัมน์ที่ "ไม่มีข้อมูล" สำหรับแถวนั้น (เช่น field เฉพาะ Phase 3 ในแถว
 # Phase 2) ให้เว้นว่างไว้ ไม่ใช่ใส่ 0 หรือ "n/a" — คอลัมน์ว่างอ่านเป็น NULL ตอน
 # วิเคราะห์ได้ตรงไปตรงมากว่า
 # ---------------------------------------------------------------------------
 
 SESSION_FIELDS = [
+    "schema_version",
     "session_id", "phase", "board", "circuits",
     "start_utc", "end_utc", "wall_clock_s",
     "device_time_s_sum", "reflash_time_s_sum",
-    "n_points_ok", "n_points_failed", "n_points_skipped", "n_points_resumed_skip",
+    "n_points_ok", "n_points_failed",
+    "n_points_skipped_resume", "n_points_skipped_known_wall",
+    "n_points_skipped_compute_infeasible", "n_points_skipped_sim_cost_infeasible",
     "time_lost_to_interruption_s",
     "estimated_total_s", "actual_total_s", "ratio_actual_over_estimated",
     "resumed_from_previous", "env_json_path", "git_commit", "notes",
 ]
 
 POINT_FIELDS = [
+    "schema_version",
     "session_id", "phase", "board", "circuit", "n", "baud",
     "attempt_index", "start_utc", "end_utc", "wall_s",
     # ---- reflash breakdown (ทั้ง Phase 2 และ Phase 3 — ดู session_total_s ใน
@@ -73,7 +98,29 @@ POINT_FIELDS = [
     "retry_count", "timeout_hit", "failure_type", "failure_message", "status",
 ]
 
+# "crc" มีไว้ในตารางนี้เป็น value ที่ *เป็นไปได้ในหลักการ* เท่านั้น — โค้ดปัจจุบันของ
+# pc/phase3_offload/sweep.py (จุดเดียวที่ใช้ CRC เลย) ไม่เคย set ค่านี้จริง เพราะแยกไม่
+# ออกระหว่าง "session ล้มเหลวเพราะ CRC error พังจนหมดเวลา" กับ "session ล้มเหลวเพราะ
+# สาย/พอร์ตหลุดโดยไม่เกี่ยว CRC เลย" — ทั้งสองกรณีจบด้วย status=session_incomplete /
+# timeout เหมือนกันทุกประการจากมุมมองของ event loop ปัจจุบัน (ดู sweep.py:460 กับ
+# comment ประกอบตรง crc_error_count) ต้องเพิ่ม logic แยกแยะสาเหตุตอนจบ session
+# (เช่น "consecutive CRC error ก่อนหมดเวลา" หรือให้ MCU รายงานสาเหตุตอน timeout) ถึง
+# จะ set ค่านี้ได้อย่างมีความหมายจริง ไม่ใช่แค่เดาจาก crc_error_count > 0 (ตัวเลขนั้น
+# เป็น cumulative ทั้ง session ไม่ได้บอกว่า CRC error เป็น "สาเหตุสุดท้าย" ที่ทำให้ค้าง)
+# — ตัดสินใจไว้ตรงนี้: ปล่อย failure_type="serial" ไว้เหมือนเดิมสำหรับทุก
+# session_incomplete ไม่เดา แม้ crc_error_count จะสูงก็ตาม
 FAILURE_TYPES = ("none", "build", "malloc", "hang", "serial", "crc", "sim")
+
+# points.csv status — ต้องแยกเหตุผลการข้ามแต่ละแบบให้ชัด ไม่ยุบรวมเป็น "skipped"
+# เฉย ๆ (ก่อนหน้านี้ทำแบบนั้น ทำให้อ่าน points.csv อย่างเดียวแยกไม่ออกว่าข้ามเพราะอะไร
+# ต้องไปเปิด *_memory_wall.csv/*_session_log.csv ประกอบทุกครั้ง) "retrying" คือสถานะ
+# ของ attempt ที่ยังไม่ใช่ผลสุดท้าย (retry-once policy, attempt_index 0 ที่กำลังจะลอง
+# ซ้ำ) ไม่ใช่ terminal status ของจุดข้อมูล
+STATUS_TYPES = (
+    "ok", "failed", "retrying",
+    "skipped_resume", "skipped_known_wall",
+    "skipped_compute_infeasible", "skipped_sim_cost_infeasible",
+)
 
 
 def new_session_id() -> str:
@@ -84,9 +131,18 @@ def new_session_id() -> str:
 def _ensure_csv(path: Path, fields):
     path.parent.mkdir(parents=True, exist_ok=True)
     is_new = not path.exists()
+    if not is_new:
+        with open(path, newline="") as rf:
+            existing_header = next(csv.reader(rf), None)
+        if existing_header is not None and existing_header != list(fields):
+            raise SchemaMismatchError(
+                f"{path} has header {existing_header} but the current schema "
+                f"(SCHEMA_VERSION={SCHEMA_VERSION}) expects {list(fields)} — refusing to "
+                f"append (would silently misalign columns). Archive the old file "
+                f"(see pc/shared/resume.archive_existing) or move it aside before continuing."
+            )
     f = open(path, "a", newline="")
     if is_new:
-        import csv
         csv.writer(f).writerow(fields)
         f.flush()
     return f
@@ -95,7 +151,6 @@ def _ensure_csv(path: Path, fields):
 def _write_row(path: Path, fields, row: dict):
     """เขียน 1 แถว + flush ทันที — สอดคล้องกับ constraint ที่ว่า interruption ต้องเสีย
     ข้อมูลได้อย่างมากแค่ 1 แถว ไม่ใช่ทั้ง buffer ที่ยังไม่ flush"""
-    import csv
     f = _ensure_csv(path, fields)
     try:
         csv.writer(f).writerow([row.get(k, "") for k in fields])
@@ -110,6 +165,8 @@ def write_point_row(row: dict, points_csv: Path = None):
     compile/upload/boot ของแต่ละ attempt ใช้เวลาเท่าไหร่จริง ๆ)
 
     ค่า default ของทุกฟิลด์ที่ไม่ส่งมาคือ "" (ว่าง) ไม่ใช่ 0/None — เขียน CSV แล้วอ่านง่าย
+    schema_version ใส่ให้อัตโนมัติเสมอ (caller ไม่ต้องรู้จัก SCHEMA_VERSION) status และ
+    failure_type ถ้าระบุมาต้องอยู่ใน STATUS_TYPES/FAILURE_TYPES เท่านั้น
 
     points_csv=None แปลว่า resolve เป็น module-level POINTS_CSV "ตอนเรียก" ไม่ใช่ตอน
     def — ทำให้ทดสอบ redirect path ด้วยการ monkeypatch `telemetry.POINTS_CSV` ได้จริง
@@ -121,6 +178,13 @@ def write_point_row(row: dict, points_csv: Path = None):
     missing = set(row) - set(POINT_FIELDS)
     if missing:
         raise ValueError(f"unknown point field(s): {sorted(missing)}")
+    status = row.get("status")
+    if status and status not in STATUS_TYPES:
+        raise ValueError(f"invalid status {status!r}, must be one of {STATUS_TYPES}")
+    failure_type = row.get("failure_type")
+    if failure_type and failure_type not in FAILURE_TYPES:
+        raise ValueError(f"invalid failure_type {failure_type!r}, must be one of {FAILURE_TYPES}")
+    row = {**row, "schema_version": SCHEMA_VERSION}
     _write_row(points_csv, POINT_FIELDS, row)
 
 
@@ -130,6 +194,7 @@ def write_session_row(row: dict, sessions_csv: Path = None):
     missing = set(row) - set(SESSION_FIELDS)
     if missing:
         raise ValueError(f"unknown session field(s): {sorted(missing)}")
+    row = {**row, "schema_version": SCHEMA_VERSION}
     _write_row(sessions_csv, SESSION_FIELDS, row)
 
 
@@ -154,7 +219,9 @@ class SessionRecorder:
         self.env_json_path = env_json_path
         self.device_time_s_sum = 0.0
         self.reflash_time_s_sum = 0.0
-        self.n_ok = self.n_failed = self.n_skipped = self.n_resumed_skip = 0
+        self.n_ok = self.n_failed = 0
+        self.n_skipped_resume = self.n_skipped_known_wall = 0
+        self.n_skipped_compute_infeasible = self.n_skipped_sim_cost_infeasible = 0
         self.time_lost_to_interruption_s = 0.0
         self._t0 = None
         self._start_utc = None
@@ -164,16 +231,25 @@ class SessionRecorder:
         self._start_utc = datetime.now(timezone.utc).isoformat()
         return self
 
-    def note_point(self, device_s=0.0, reflash_s=0.0, status="ok", resumed_skip=False):
-        """เรียกครั้งเดียวต่อจุดข้อมูล (ไม่ใช่ต่อ attempt) หลังรู้ผลสุดท้ายของจุดนั้นแล้ว"""
+    def note_point(self, device_s=0.0, reflash_s=0.0, status="ok"):
+        """เรียกครั้งเดียวต่อจุดข้อมูล (ไม่ใช่ต่อ attempt) หลังรู้ผลสุดท้ายของจุดนั้นแล้ว
+        status ต้องเป็นค่า terminal จาก telemetry.STATUS_TYPES ("retrying" ไม่ใช่ terminal
+        จึงไม่ควรถูกส่งมาที่นี่) skipped_resume/skipped_known_wall/
+        skipped_compute_infeasible/skipped_sim_cost_infeasible นับแยกกันคนละตัวนับ
+        (เดิมยุบรวมเป็น n_resumed_skip/n_skipped สองก้อน ทำให้ session summary
+        แยกเหตุผลการข้ามไม่ได้ — ดู SCHEMA_VERSION 1 freeze)"""
         self.device_time_s_sum += device_s
         self.reflash_time_s_sum += reflash_s
-        if resumed_skip:
-            self.n_resumed_skip += 1
-        elif status == "ok":
+        if status == "ok":
             self.n_ok += 1
-        elif status == "skipped":
-            self.n_skipped += 1
+        elif status == "skipped_resume":
+            self.n_skipped_resume += 1
+        elif status == "skipped_known_wall":
+            self.n_skipped_known_wall += 1
+        elif status == "skipped_compute_infeasible":
+            self.n_skipped_compute_infeasible += 1
+        elif status == "skipped_sim_cost_infeasible":
+            self.n_skipped_sim_cost_infeasible += 1
         else:
             self.n_failed += 1
 
@@ -205,7 +281,10 @@ class SessionRecorder:
             "device_time_s_sum": round(self.device_time_s_sum, 3),
             "reflash_time_s_sum": round(self.reflash_time_s_sum, 3),
             "n_points_ok": self.n_ok, "n_points_failed": self.n_failed,
-            "n_points_skipped": self.n_skipped, "n_points_resumed_skip": self.n_resumed_skip,
+            "n_points_skipped_resume": self.n_skipped_resume,
+            "n_points_skipped_known_wall": self.n_skipped_known_wall,
+            "n_points_skipped_compute_infeasible": self.n_skipped_compute_infeasible,
+            "n_points_skipped_sim_cost_infeasible": self.n_skipped_sim_cost_infeasible,
             "time_lost_to_interruption_s": round(self.time_lost_to_interruption_s, 3),
             "estimated_total_s": self.estimated_total_s or "",
             "actual_total_s": round(wall, 3),
@@ -314,6 +393,7 @@ def write_environment_metadata(session_id, board, port, baud, f_cpu, fw_src_dir,
     env_dir.mkdir(parents=True, exist_ok=True)
     commit, dirty = _git_commit_and_dirty()
     meta = {
+        "schema_version": SCHEMA_VERSION,
         "session_id": session_id,
         "git_commit": commit,
         "git_dirty": dirty,

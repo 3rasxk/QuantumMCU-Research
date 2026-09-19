@@ -320,14 +320,29 @@ def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
             print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {args.n_max}]")
             continue
         for n in n_values:
+            skip_ts = datetime.now(timezone.utc).isoformat()
             if (circuit, n) in completed:
                 print(f"n={n:2d}  SKIP (resume): already {completed[(circuit, n)].get('status', '?')}")
-                session.note_point(resumed_skip=True)
+                tel.write_point_row({
+                    "session_id": session.session_id, "phase": 2, "board": "uno",
+                    "circuit": circuit, "n": n, "attempt_index": 0,
+                    "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
+                    "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                    "status": "skipped_resume",
+                })
+                session.note_point(status="skipped_resume")
                 continue
             if circuit in wall_n_by_circuit and n > wall_n_by_circuit[circuit]:
                 print(f"n={n:2d}  SKIP (resume): {circuit} already hit its wall at "
                       f"n={wall_n_by_circuit[circuit]} in a previous session")
-                session.note_point(resumed_skip=True)
+                tel.write_point_row({
+                    "session_id": session.session_id, "phase": 2, "board": "uno",
+                    "circuit": circuit, "n": n, "attempt_index": 0,
+                    "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
+                    "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                    "status": "skipped_known_wall",
+                })
+                session.note_point(status="skipped_known_wall")
                 continue
 
             theoretical_bytes = (1 << n) * 8
@@ -351,9 +366,9 @@ def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
                     "circuit": circuit, "n": n, "attempt_index": 0,
                     "start_utc": ts, "end_utc": ts, "wall_s": 0,
                     "retry_count": 0, "timeout_hit": False, "failure_type": "none",
-                    "status": "skipped",
+                    "status": "skipped_compute_infeasible",
                 })
-                session.note_point(status="skipped")
+                session.note_point(status="skipped_compute_infeasible")
                 continue
 
             wall_found = False

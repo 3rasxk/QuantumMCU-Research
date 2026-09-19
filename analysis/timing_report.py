@@ -62,6 +62,31 @@ def report_sessions(sessions):
               f"(n={len(ratios)})")
 
 
+def report_skip_reasons(sessions):
+    """สรุปจำนวนจุดที่ถูกข้ามต่อเหตุผล รวมทุก session — จุดที่ข้าม (ไม่ว่าเหตุผลไหน)
+    ไม่มีค่า timing ใด ๆ ให้บวก (ดู report_by_algorithm: ฟิลด์ device_exec_s/
+    build_compile_s/upload_s ของแถวข้ามเป็นค่าว่างเสมอ อ่านเป็น 0.0 อัตโนมัติ) จึงไม่
+    ปนเข้า actual-time totals อยู่แล้วโดยไม่ต้องกรองเพิ่ม — ฟังก์ชันนี้แค่แสดงให้เห็นว่า
+    "ข้ามไปกี่จุด เพราะอะไร" ซึ่งไม่มีที่ไหนอื่นสรุปให้เห็นภาพรวมทั้งรัน"""
+    print("\n" + "=" * 100)
+    print("SKIPPED POINTS BY REASON (summed across all sessions; excluded from actual-time totals above)")
+    print("=" * 100)
+    reasons = [
+        ("n_points_skipped_resume", "resume (already completed in a previous session)"),
+        ("n_points_skipped_known_wall", "known wall (higher n than a previously-found wall)"),
+        ("n_points_skipped_compute_infeasible", "compute-infeasible (Phase 2, expected time > ceiling)"),
+        ("n_points_skipped_sim_cost_infeasible", "sim-cost-infeasible (Phase 3, PC-side sim > ceiling)"),
+    ]
+    totals = {field: 0 for field, _ in reasons}
+    for r in sessions:
+        for field, _ in reasons:
+            totals[field] += int(_f(r, field, 0.0) or 0)
+    for field, label in reasons:
+        print(f"  {totals[field]:5d}  {label}")
+    print(f"  {'-' * 5}")
+    print(f"  {sum(totals.values()):5d}  total skipped")
+
+
 def report_by_phase(sessions):
     print("\n" + "=" * 100)
     print("BY PHASE: total actual wall-clock time")
@@ -128,6 +153,7 @@ def main():
     sessions = load_rows(tel.SESSIONS_CSV)
     points = load_rows(tel.POINTS_CSV)
     report_sessions(sessions)
+    report_skip_reasons(sessions)
     report_by_phase(sessions)
     report_by_algorithm(points)
     measured_reflash_cost(points)

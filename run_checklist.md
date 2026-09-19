@@ -345,6 +345,98 @@ requires touching hardware, which this session was not authorized to do.
 
 ---
 
+## Telemetry schema (frozen at SCHEMA_VERSION 1, tag `pre-run-schema-v1`)
+
+`pc/shared/telemetry.py` defines the schema for `data/raw/telemetry/sessions.csv`,
+`data/raw/telemetry/points.csv`, and each session's `data/raw/telemetry/env/<session_id>.json`.
+**This schema is frozen as of the `pre-run-schema-v1` tag, before any real
+hardware data is collected**, so every row of the REPS=100 run shares one
+schema — do not add, remove, rename, or repurpose a column without bumping
+`SCHEMA_VERSION` in `pc/shared/telemetry.py` first.
+
+**Enforcement, not just convention:** `SCHEMA_VERSION` is written as the
+first column of both CSVs and as a field in every environment JSON. If a
+sweep script is run against an existing `sessions.csv`/`points.csv` whose
+header doesn't match the current field list exactly (including because
+`SCHEMA_VERSION` changed), `telemetry._ensure_csv` raises
+`SchemaMismatchError` and refuses to append — it never silently mixes rows
+from two schema versions in one file. Fix: archive the old file (see
+`pc/shared/resume.archive_existing`, or move it aside by hand) and start a
+new `data/raw/telemetry/` for the new schema, or roll back the code.
+
+**`sessions.csv` columns:** `schema_version`, `session_id`, `phase`, `board`,
+`circuits`, `start_utc`, `end_utc`, `wall_clock_s`, `device_time_s_sum`,
+`reflash_time_s_sum`, `n_points_ok`, `n_points_failed`,
+`n_points_skipped_resume`, `n_points_skipped_known_wall`,
+`n_points_skipped_compute_infeasible`, `n_points_skipped_sim_cost_infeasible`,
+`time_lost_to_interruption_s`, `estimated_total_s`, `actual_total_s`,
+`ratio_actual_over_estimated`, `resumed_from_previous`, `env_json_path`,
+`git_commit`, `notes`.
+
+**`points.csv` columns:** `schema_version`, `session_id`, `phase`, `board`,
+`circuit`, `n`, `baud`, `attempt_index`, `start_utc`, `end_utc`, `wall_s`,
+`build_compile_s`, `upload_s`, `boot_wait_s`, `device_exec_s` (Phase 2),
+`pc_sim_s_total`, `pc_sim_s_median`, `serial_transfer_s_total`,
+`avg_round_trip_latency_s`, `crc_error_count`, `bytes_transferred` (Phase 3
+only — blank on Phase 2 rows), `retry_count`, `timeout_hit`, `failure_type`,
+`failure_message`, `status`.
+
+**`status` allowed values** (`telemetry.STATUS_TYPES`) — a point-level
+outcome, one row per attempt:
+- `ok` — completed successfully
+- `failed` — terminal failure for this attempt (see `failure_type` for why;
+  also covers Phase 3's `session_incomplete` — no `DONE` or zero rows
+  captured within budget — which points.csv folds into `failed` rather than
+  keeping as a separate value, since `session_incomplete` is really "why it
+  failed," recorded instead in `failure_type`/`failure_message` and in the
+  richer `*_session_log.csv` row for that point)
+- `retrying` — attempt 0 of a point that will be retried once (Phase 2's
+  retry-once-on-transient-failure policy, budget ≤ 600s only); not a
+  terminal status, only ever seen on a non-final attempt row
+- `skipped_resume` — this point already had a terminal record from a
+  previous session; this session's row exists only to record that this
+  session, too, chose to skip it
+- `skipped_known_wall` — this point's `n` is above a wall already found for
+  this circuit in a previous session (Phase 2 only — Phase 3 has no
+  known-wall inference, see "Session order and why")
+- `skipped_compute_infeasible` — Phase 2 only: expected device time exceeds
+  the timeout ceiling, never attempted
+- `skipped_sim_cost_infeasible` — Phase 3 only: expected PC-side (uncached
+  Aer) simulation time exceeds the ceiling, never attempted
+
+Before this freeze, all four `skipped_*` reasons collapsed into a single
+generic `"skipped"` value, and `skipped_resume`/`skipped_known_wall` points
+had no `points.csv` row at all — both are what this freeze fixes.
+`analysis/timing_report.py`'s `report_skip_reasons()` prints the per-reason
+totals across a run; none of the four contribute to its actual-time totals
+(their timing fields are always blank).
+
+**`failure_type` allowed values** (`telemetry.FAILURE_TYPES`): `none`,
+`build`, `malloc`, `hang`, `serial`, `crc`, `sim`.
+
+**`crc` is defined but never set by any code path today.** Phase 3 is the
+only place CRC exists at all, and a CRC-corrupted request frame is already
+counted (`crc_error_count`, `dropped` in the console log) — but a Phase 3
+point that fails (`session_incomplete`: no `DONE`, or zero rows, within the
+session budget) is tagged `failure_type="serial"` unconditionally, whether
+or not any CRC errors occurred during that session. This is a deliberate
+decision, not an oversight: `crc_error_count` is a *cumulative* count for
+the whole session, not a record of what the *last* thing to happen was
+before the session gave up — a point can have a handful of harmless CRC
+retries early on and then hang for an unrelated reason (or vice versa), and
+the current exchange logic in `run_offload_session()`
+(`pc/phase3_offload/sweep.py`) has no way to tell those apart after the
+fact. Guessing `failure_type="crc"` from `crc_error_count > 0` would be
+exactly the kind of misleading-but-plausible-looking data this schema is
+trying to avoid. Telling them apart for real would need a logic change (not
+made here, per this task's scope) — e.g. the exchange loop tracking
+"consecutive CRC errors immediately before giving up," or the MCU itself
+reporting a reason code when it gives up. `crc_error_count` remains
+available as its own honest, independent number for anyone who wants to
+eyeball high-CRC-error `session_incomplete` points by hand.
+
+---
+
 ## Logic Analyzer procedure (for when the loaned LA arrives)
 
 Analysis tooling for this already exists and is tested against synthetic

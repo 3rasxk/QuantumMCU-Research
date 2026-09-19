@@ -390,7 +390,15 @@ def _sweep_body(args, n_max, completed, infeasible, raw_f, meta_f, sim, session)
                 if (circuit, n, baud) in completed:
                     print(f"n={n:2d}  SKIP (resume): already "
                           f"{completed[(circuit, n, baud)].get('status', '?')}")
-                    session.note_point(resumed_skip=True)
+                    skip_ts = datetime.now(timezone.utc).isoformat()
+                    tel.write_point_row({
+                        "session_id": session.session_id, "phase": 3, "board": args.board,
+                        "circuit": circuit, "n": n, "baud": baud, "attempt_index": 0,
+                        "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
+                        "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                        "status": "skipped_resume",
+                    })
+                    session.note_point(status="skipped_resume")
                     continue
 
                 budget_s = tm.phase3_session_budget_s(circuit, n)
@@ -412,9 +420,9 @@ def _sweep_body(args, n_max, completed, infeasible, raw_f, meta_f, sim, session)
                         "circuit": circuit, "n": n, "baud": baud, "attempt_index": 0,
                         "start_utc": ts, "end_utc": ts, "wall_s": 0,
                         "retry_count": 0, "timeout_hit": False, "failure_type": "none",
-                        "status": "skipped",
+                        "status": "skipped_sim_cost_infeasible",
                     })
-                    session.note_point(status="skipped")
+                    session.note_point(status="skipped_sim_cost_infeasible")
                     continue
 
                 print(f"n={n:2d}  budget={budget_s}s ({per_req:.2f}s/request)  ", end="", flush=True)
@@ -507,7 +515,12 @@ def _sweep_body(args, n_max, completed, infeasible, raw_f, meta_f, sim, session)
                     "crc_error_count": crc_error_count, "bytes_transferred": bytes_transferred,
                     "retry_count": 0, "timeout_hit": not done,
                     "failure_type": "none" if status == "ok" else "serial",
-                    "failure_message": sim_error_safe, "status": status,
+                    # points.csv status ใช้ enum ของมันเอง (telemetry.STATUS_TYPES: ok/failed
+                    # เท่านั้นสำหรับผลจริง ไม่มี "session_incomplete") — session_log.csv
+                    # (meta_f ด้านบน) ยังเก็บ "session_incomplete" แบบเดิมเป็นบันทึกฝั่ง resume
+                    # ที่ละเอียดกว่า สองไฟล์นี้ตอบคำถามคนละคำถาม ไม่ต้องใช้ค่าเดียวกัน
+                    "failure_message": sim_error_safe,
+                    "status": "ok" if status == "ok" else "failed",
                 })
                 session.note_point(device_s=device_exec_s, reflash_s=reflash_s,
                                     status="ok" if status == "ok" else "failed")
