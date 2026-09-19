@@ -54,21 +54,21 @@ Run these three back to back (or in any order — independent files):
 .venv/bin/python pc/phase2_sweep/uno_sweep.py --port /dev/cu.usbmodemXXXX \
     --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 8
 ```
-**Expected: ~13 min** (29 points; device time ~1.3 min, rest is build/upload overhead
-— each point reflashes the board, that dominates at this end of the scale).
+**Expected: ~11 min** (29 points — device ~1.3 min + reflash ~9.7 min. Reflash
+at 20s/point [UNMEASURED, see § Reflash cost below] is ~90% of this session).
 
 ```bash
 .venv/bin/python pc/phase2_sweep/esp8266_sweep.py --port /dev/cu.usbserialXXXX \
     --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 13
 ```
-**Expected: ~28 min** (49 points; device time ~7.8 min, rest is build/upload overhead).
+**Expected: ~32 min** (49 points — device ~7.8 min + reflash ~24.5 min at 30s/point).
 
 ```bash
 .venv/bin/python pc/phase2_sweep/esp32_sweep.py --port /dev/cu.usbserialXXXX \
     --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 14
 ```
-**Expected: ~23 min** (53 points; device time under a minute, entirely build/upload
-overhead — ESP32 is so fast per-trial that reflashing dominates completely here).
+**Expected: ~27 min** (53 points — device <1 min + reflash ~26.5 min at 30s/point.
+ESP32 is so fast per-trial that reflashing is essentially all of this session).
 
 **If one dies:** rerun the identical command. Check the "resume summary" line
 count at the top — it should show most points already done.
@@ -84,27 +84,29 @@ sitting unless you have the time budgeted — ESP8266's alone is ~4 hours.
 .venv/bin/python pc/phase2_sweep/uno_sweep.py --port /dev/cu.usbmodemXXXX \
     --circuits grover --n-start 2 --n-max 8
 ```
-**Expected: ~44 min** (6 points run, device time ~41 min; n=8 is skipped as
-compute-infeasible — that's correct, not a bug, see the printed budget plan).
+**Expected: ~43 min** (6 points run, 1 skipped — device ~41.3 min + reflash
+~2 min. n=8 is skipped as compute-infeasible, that's correct, not a bug).
 
 ```bash
 .venv/bin/python pc/phase2_sweep/esp32_sweep.py --port /dev/cu.usbserialXXXX \
     --circuits grover --n-start 2 --n-max 14
 ```
-**Expected: ~2 hours** (9 points run, device time ~1.9h; n=11+ skipped as
-infeasible). The single most expensive point here is n=10 at ~1.7h — do not
-interrupt the board mid-point unless you have to; if you do, the resume will
-redo that whole point (up to another 1.7h), not top it up.
+**Expected: ~2.0 hours** (9 points run, 4 skipped — device ~1.9h + reflash
+~4.5 min; reflash is negligible here, device time dominates). The single
+most expensive point is n=10 at ~1.7h — do not interrupt the board mid-point
+unless you have to; if you do, the resume will redo that whole point (up to
+another 1.7h), not top it up.
 
 ```bash
 .venv/bin/python pc/phase2_sweep/esp8266_sweep.py --port /dev/cu.usbserialXXXX \
     --circuits grover --n-start 2 --n-max 13
 ```
-**Expected: ~4.2 hours.** This is the longest single session in the whole
-run (8 points run). n=9 alone is ~3.6h; n=10+ are skipped as infeasible
-(n=10 would be 1.3 *days*). **Plan this one for overnight or a day you're not
-touching the Uno/ESP32 setup** (different USB ports, shouldn't conflict, but
-don't tempt fate).
+**Expected: ~4.2 hours** (8 points run, 4 skipped — device ~4.1h + reflash
+~4 min, reflash negligible). This is the longest single session in the whole
+run. n=9 alone is ~3.6h; n=10+ are skipped as infeasible (n=10 would be
+1.3 *days*). **Plan this one for overnight or a day you're not touching the
+Uno/ESP32 setup** (different USB ports, shouldn't conflict, but don't tempt
+fate).
 
 **If it dies partway through n=9 (the 3.6h point):** rerunning the same
 command redoes that entire point from scratch — the resume logic discards
@@ -123,7 +125,22 @@ The offload server runs *on this machine* and needs the venv active
 (`qiskit_aer`). Same board/port notes as above, plus `--bauds` (defaults to
 just 115200 if omitted — pass explicitly if you want to test multiple).
 
-**Cheap circuits, one command per board** (fast, PC-side cost is negligible):
+**Phase 3 reflashes per data point too** — `pc/phase3_offload/sweep.py` calls
+`build_and_upload()` once per `(circuit, n, baud)` before the 100-rep
+exchange, same as Phase 2. This is **not** incidental: `N_QUBITS`/
+`CIRCUIT_ID`/`BAUD_RATE` are `#define`d build flags in
+`firmware/*/src_offload/main_offload.cpp`, baked into the request frame at
+compile time — the offload protocol's request frame *does* carry
+`n_qubits`/`circuit_type` per-request already (`firmware/common/protocol.hpp`),
+and the PC side (`simulate_and_sample()`) already builds a fresh circuit from
+whatever it receives, so the PC side could sweep many points over one
+connection — but the current MCU firmware has no runtime mechanism (no serial
+command, no config) to change what it sends; each flashed image asks the same
+question 100 times. Fixing that would cut Phase 3's reflash count from
+"per point" to "per board" but is a firmware/protocol change, out of scope
+here — noted for later.
+
+**Cheap circuits, one command per board:**
 
 ```bash
 .venv/bin/python pc/phase3_offload/sweep.py --board uno --port /dev/cu.usbmodemXXXX \
@@ -133,7 +150,9 @@ just 115200 if omitted — pass explicitly if you want to test multiple).
 .venv/bin/python pc/phase3_offload/sweep.py --board esp32 --port /dev/cu.usbserialXXXX \
     --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 14
 ```
-**Expected: a few minutes each.**
+**Expected: ~12 min (Uno), ~29 min (ESP8266), ~31 min (ESP32)** — PC-side
+simulation cost is a few minutes each; reflash (29/49/53 points × 20–30s) is
+most of it, same pattern as Session A.
 
 **`grover`, one board per session, capped at n=10:**
 
@@ -145,11 +164,13 @@ just 115200 if omitted — pass explicitly if you want to test multiple).
 .venv/bin/python pc/phase3_offload/sweep.py --board esp8266 --port /dev/cu.usbserialXXXX \
     --circuits grover --n-start 2 --n-max 10
 ```
-**Expected: ~1.1 hours each**, dominated entirely by n=10's uncached Aer
-simulation (~40s × 100 reps). This cost is **the same on all three boards**
-— it's PC-side, not board-side. n=12 is automatically skipped
-(`skipped_sim_cost_infeasible`, ~20h/board — not attempted without your
-explicit `--force-infeasible`, which is not recommended here).
+**Expected: ~1.5 hours each on all three boards** — this is the **full
+session (n=2 through n=10, 9 points, none skipped)**, not just the n=10
+point. n=10 alone is ~1.1h of that (uncached Aer simulation, ~40s × 100
+reps) and is the same cost on every board since it's PC-side, not
+board-side; n=9 adds another ~15 min; reflash adds ~3–4.5 min on top. n=12
+is automatically skipped (`skipped_sim_cost_infeasible`, ~20h/board — not
+attempted without `--force-infeasible`, not recommended here).
 
 **If it dies:** same story — rerun the identical command, resume picks up
 per `(circuit, n, baud)`. Unlike Phase 2, a `session_incomplete` result here
@@ -162,25 +183,47 @@ one that failed. That's intentional; re-read the header of
 
 ## Total budget
 
-| Session | Expected |
-|---|---|
-| A (cheap × 3 boards) | ~64 min (13 + 28 + 23) |
-| B (grover, Uno) | ~44 min |
-| B (grover, ESP32) | ~2.0 h |
-| B (grover, ESP8266) | ~4.2 h |
-| C (cheap × 3 boards) | ~11 min |
-| C (grover × 3 boards, n≤10) | ~3.3 h |
-| **Total** | **~11.6 h**, dominated by Session B/ESP8266 and Session C/grover |
+Generated by `pc/shared/timing_model.session_total_s()` — device time and
+reflash time are tracked as **separate line items**, never summed before
+being shown, so the reflash assumption's contribution stays visible and
+auditable instead of disappearing into a single blended number.
 
-All sessions include a 25s/point build-upload-reflash assumption (not
-separately measured anywhere in this repo — a placeholder pending a real
-timed sample from this run). Phase 3 reflashes per data point
-too (`N_QUBITS`/`CIRCUIT_ID`/`BAUD_RATE` are compile-time build flags on the
-offload firmware, same as Phase 2), so Session C's real time will run a bit
-above the PC-side-only numbers above — it just doesn't show up in the model
-because `timing_model.py` only estimates PC simulation cost for Phase 3, not
-build/upload. With ~14 cheap points × 3 boards and 3 grover points, expect
-roughly another 10–15 min added to Session C from reflashing alone.
+| Session | Device | Reflash | Total |
+|---|---|---|---|
+| A: Uno cheap | 1.3 min | 9.7 min | 10.9 min |
+| A: ESP8266 cheap | 7.8 min | 24.5 min | 32.3 min |
+| A: ESP32 cheap | 41.9 s | 26.5 min | 27.2 min |
+| B: Uno grover | 41.3 min | 2.0 min | 43.3 min |
+| B: ESP8266 grover | 4.1 h | 4.0 min | 4.2 h |
+| B: ESP32 grover | 1.9 h | 4.5 min | 2.0 h |
+| C: Uno cheap | 2.4 min | 9.7 min | 12.1 min |
+| C: ESP8266 cheap | 4.2 min | 24.5 min | 28.7 min |
+| C: ESP32 cheap | 4.5 min | 26.5 min | 31.0 min |
+| C: Uno grover (n≤10) | 1.5 h | 3.0 min | 1.5 h |
+| C: ESP8266 grover (n≤10) | 1.5 h | 4.5 min | 1.5 h |
+| C: ESP32 grover (n≤10) | 1.5 h | 4.5 min | 1.5 h |
+| **Phase 2 total (A+B)** | | | **8.1 h** |
+| **Phase 3 total (C)** | | | **5.8 h** |
+| **GRAND TOTAL** | | | **13.9 h** |
+
+### Reflash cost — currently an unmeasured placeholder
+
+`REFLASH_COST_S = {"uno": 20, "esp8266": 30, "esp32": 30}` in
+`pc/shared/timing_model.py` is a **reasoned estimate, not a measurement** —
+compile time (full rebuild every point, since `N_QUBITS`/`CIRCUIT_ID` are
+`#define`s) plus upload time, reasoned from typical avrdude/esptool/
+PlatformIO behavior for a project this small. It has never been timed on
+real hardware.
+
+This matters more than it might look: for the cheap-circuit sessions
+(A and C's non-grover rows), device time is often under a minute and
+**reflash is 90%+ of the session** — meaning most of this checklist's
+duration estimate rests on a number nobody has actually clocked. Before
+trusting the 13.9h total, time one real build+upload cycle per board
+(`time pio run -e <env> -t upload --upload-port <port>` with the usual
+`N_QUBITS`/`CIRCUIT_ID` env vars set) and update `REFLASH_COST_S` with the
+real number. This was not done as part of producing this checklist — it
+requires touching hardware, which this session was not authorized to do.
 
 ## After everything
 

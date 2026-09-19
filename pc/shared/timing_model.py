@@ -152,6 +152,66 @@ BOARD_GATE_COST = {
 # n สูงสุดที่วัดจริงว่ารันสำเร็จในรอบ REPS=30 (Memory Wall ที่วัดได้ ไม่ใช่ทฤษฎี)
 MEASURED_WALL_N = {"uno": 7, "esp8266": 12, "esp32": 13}
 
+# ---------------------------------------------------------------------------
+# ต้นทุน reflash ต่อจุดข้อมูล — ทั้ง Phase 2 (uno/esp32/esp8266_sweep.py) และ Phase 3
+# (pc/phase3_offload/sweep.py) เรียก build_and_upload() หนึ่งครั้งต่อ (circuit, n)
+# [Phase 3 เพิ่ม baud เป็นมิติที่ 3] ก่อนเริ่มเก็บ 100 trial ของจุดนั้น เหตุผล: ทั้ง
+# N_QUBITS และ CIRCUIT_ID ประกาศเป็น #define ผ่าน build_flags (ดู
+# firmware/*/src{,_offload}/main{,_offload}.cpp) จึงเป็นค่าคงที่ตอน "คอมไพล์" ไม่ใช่
+# ค่าที่อ่านตอนรันจริง — เฟิร์มแวร์ที่ build ไว้แล้วรันได้แค่ (circuit, n) เดียวตลอดไป
+# เปลี่ยนต้องคอมไพล์ + อัปโหลดใหม่เท่านั้น ไม่มีทางอื่น
+#
+# ข้อสังเกตสำคัญที่เจอระหว่างตรวจสอบ (ไม่ใช่แค่ต้นทุนเวลา แต่เป็นข้อจำกัดเชิงสถาปัตยกรรม
+# ที่ควรบันทึกแยกไว้): โปรโตคอล Phase 3 เอง "รองรับ" การเลือก n/circuit_type แบบ runtime
+# อยู่แล้ว — เฟรม request 4 byte มี byte[1]=n_qubits, byte[2]=circuit_type ส่งมาพร้อม
+# ทุกคำขอ (ดู firmware/common/protocol.hpp) และฝั่ง PC
+# (pc/phase3_offload/sweep.py::simulate_and_sample) ก็สร้างวงจร Qiskit ใหม่ตาม
+# n/circuit_id ที่ parse ได้จากเฟรมทุกครั้งอยู่แล้ว ไม่ผูกกับค่าคงที่ใด ๆ เลย — ฝั่ง PC
+# "พร้อม" รับคำขอที่ n/circuit ต่างกันในทุกเฟรมได้จริง
+# แต่เฟิร์มแวร์ฝั่ง MCU (main_offload.cpp) ใช้ N_QUBITS/CIRCUIT_ID (compile-time
+# #define) เป็นค่าคงที่ตายตัวเขียนลง req[1]/req[2] "เดิมทุกรอบ" ตลอด 100 rep ของ
+# setup() เดียว — ไม่มีกลไกใดให้ MCU เปลี่ยนค่านี้ระหว่างรัน (ไม่มีคำสั่ง serial ให้ตั้งค่า,
+# ไม่มีปุ่ม, ไม่มี EEPROM config) สรุปคือ: โปรโตคอลออกแบบให้ "sweep หลายจุดข้อมูลได้ในการ
+# เชื่อมต่อเดียว" แต่เฟิร์มแวร์ปัจจุบันใช้งานมันแค่ "ถามคำถามเดียวซ้ำ 100 ครั้ง" เท่านั้น —
+# ถ้าจะลดต้นทุน reflash ของ Phase 3 ลงจริง ๆ ต้องแก้เฟิร์มแวร์ให้อ่านชุด (n, circuit)
+# ที่จะทดสอบจาก PC ตอน boot ครั้งเดียว (เช่นผ่านเฟรมพิเศษ) แล้ววนสวีปเองในเครื่อง —
+# เป็นงานแยกต่างหากจากที่ทำใน session นี้ ไม่ได้แก้ในรอบนี้
+#
+# ค่าต้นทุนด้านล่าง "ยังไม่ได้วัดจริง" (ต้อง build+upload จริงบนบอร์ดจึงจะวัดได้ ซึ่ง
+# session นี้ไม่แตะฮาร์ดแวร์ตามที่ตกลงไว้) เป็นค่าประมาณเชิงเหตุผลจาก 2 ส่วน: (1) เวลา
+# คอมไพล์ — N_QUBITS/CIRCUIT_ID เปลี่ยนทุกจุดบังคับ full rebuild ไม่ใช่แค่ relink,
+# avr-gcc คอมไพล์โปรเจกต์เล็กเร็ว (~5-10s) แต่ xtensa-gcc (ESP8266/ESP32 บน Arduino
+# framework) คอมไพล์ช้ากว่ามากแม้ user code เล็ก เพราะมี framework glue code ให้แปล
+# (~15-30s ทั่วไปจากประสบการณ์ใช้งาน PlatformIO) (2) เวลาอัปโหลด — avrdude ที่ 115200
+# baud กับไบนารีเล็ก (~2-5s) เทียบกับ esptool ที่ baud สูงกว่าแต่ไบนารีใหญ่กว่ามากเพราะ
+# มี framework/bootloader/partition table (~5-10s) ตัวเลขเหล่านี้ "ต้องแทนที่ด้วยค่าที่
+# วัดจริง" ก่อนเชื่อถือได้ — ห้ามใช้ตัดสินใจเรื่องเวลารันจริงจนกว่าจะมีการวัด
+REFLASH_COST_S = {"uno": 20, "esp8266": 30, "esp32": 30}  # UNMEASURED — placeholder, see above
+
+
+def session_total_s(board, points, phase=2):
+    """ต้นทุนรวมของชุดจุดข้อมูล (circuit, n) หนึ่ง ๆ แยกเป็น (device_s, reflash_s,
+    n_run, n_skipped) อย่างชัดเจน — ห้ามรวมกันเป็นตัวเลขเดียวเงียบ ๆ ก่อนรายงาน เพราะ
+    reflash_s เป็นค่าประมาณที่ยังไม่วัดจริง (REFLASH_COST_S) ในขณะที่ device_s (เฉพาะ
+    h_all/bell_ghz/qft) มาจากข้อมูลวัดจริง — ปนสองอย่างเข้าด้วยกันโดยไม่บอกสัดส่วนทำให้
+    ตรวจสอบย้อนหลังไม่ได้ว่าตัวเลขสุดท้ายเชื่อถือได้แค่ไหน
+
+    points = list ของ (circuit, n) ไม่ต้องกรอง infeasible มาก่อน — ฟังก์ชันนี้เช็คเองแล้ว
+    ข้ามจุดที่ทำไม่ได้ (ไม่นับ reflash cost ให้จุดที่ถูกข้าม เพราะจริง ๆ แล้วไม่ได้ reflash)"""
+    device = reflash = 0.0
+    n_run = n_skipped = 0
+    for circuit, n in points:
+        infeasible = (phase3_is_infeasible(circuit, n) if phase == 3
+                      else is_compute_infeasible(board, circuit, n))
+        if infeasible:
+            n_skipped += 1
+            continue
+        n_run += 1
+        reflash += REFLASH_COST_S[board]
+        device += (pc_sim_time_s(circuit, n) * REPS if phase == 3
+                   else expected_point_time_s(board, circuit, n))
+    return device, reflash, n_run, n_skipped
+
 
 def expected_exec_time_us(board, circuit, n):
     """เวลารันวงจร 1 trial (ไมโครวินาที) ที่ตัวแบบทำนาย"""
