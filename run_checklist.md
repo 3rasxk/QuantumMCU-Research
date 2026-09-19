@@ -259,67 +259,163 @@ data/raw/la/<board>_<circuit>_n<N>.csv
 ```
 e.g. `data/raw/la/uno_h_all_n2.csv`, `data/raw/la/esp32_grover_n10.csv` — this
 naming convention is load-bearing: `la_crosscheck.py` parses board/circuit/n
-directly from the filename, no other metadata is read. One capture must cover
-the *entire* 100-rep loop for that point (100 pulses in one file), not one
-capture per rep.
-
-Start the capture, then run the sweep script for just that one `(circuit, n)`
-so the capture window lines up with the loop; stop the capture once the
-firmware's `DONE` line appears on serial (or a couple seconds after, extra
-idle time at the end doesn't hurt — extra idle time at the *start*, before the
-first rising edge, doesn't hurt either. What breaks the tool is the capture
-window cutting into a pulse, not extra silence around it).
+directly from the filename, no other metadata is read.
 
 **Export format:** two are supported (auto-detected by `la_pulses.py`, see its
 module docstring for the exact byte-level format of each):
 - **FORMAT A** — `sigrok-cli -O csv` default (raw, one sample per line at full
-  rate). Simple, but see the capture-memory note below before using it for
-  anything but the shortest points.
+  rate).
 - **FORMAT B** — PulseView's "changes only" CSV export (one row per edge, not
-  per sample). Far smaller for anything but trivial durations — **use this one
-  by default**, reserve FORMAT A for quick sanity captures only.
+  per sample). Smaller for anything but the shortest points.
 
-**Capture memory / file size limits — real numbers, not implemented as
-sub-sampling here:**
+### Generate the capture plan first — don't use 24MHz/100-reps for every point
 
-FORMAT A's file size and required LA sample buffer scale directly with
-capture *duration* at 24MHz, independent of how few pulses are in it. A
-measured 33ms synthetic capture (100 pulses at ~284µs + gaps) produced a
-1.6MB FORMAT A file — roughly 48MB per second of capture duration. Applying
-that to the actual per-point durations already established in this
-checklist's cost table:
+The cross-check validates `micros()`, which is only ever accurate to ~1µs —
+capturing a multi-minute pulse at 24MHz to get nanosecond resolution buys
+nothing. `analysis/la_capture_plan.py` picks the **lowest sample rate** that
+still resolves each point's pulse to within 0.1% (or hits a minimum
+sample-per-pulse floor, whichever binds), and drops to a handful of reps for
+pulses long enough that 100 full-length captures would be wasteful:
 
-| Board | Circuit | n | REPS=100 duration | FORMAT A file size (raw estimate) |
-|---|---|---|---|---|
-| Uno | grover | 6 | 4.9 min | ~14 GB |
-| Uno | grover | 7 | 35.6 min | ~103 GB |
-| ESP8266 | grover | 7 | 3.0 min | ~9 GB |
-| ESP8266 | grover | 8 | 26.0 min | ~75 GB |
-| ESP8266 | grover | 9 | 3.6 h | **~627 GB** |
-| ESP32 | grover | 9 | 11.7 min | ~34 GB |
-| ESP32 | grover | 10 | 1.7 h | ~296 GB |
+```bash
+.venv/bin/python analysis/la_capture_plan.py
+```
 
-**Any `grover` point at n≥5 on any board, and effectively every point above a
-few seconds of device time, needs FORMAT B, not FORMAT A** — FORMAT B's size
-depends only on pulse *count* (always ~200 rows for a 100-rep capture, KB not
-GB), not duration, so it doesn't have this problem in principle.
+This prints a table and writes `data/raw/la/capture_plan.csv` — `n_reps_to_capture`
+and `recommended_sample_rate_hz` for every point, one row per `(board, circuit, n)`.
+`la_crosscheck.py` reads this file automatically (via `--plan`, defaulted to
+this path) to know how many reps to expect per point, so generate it before
+running any real capture, then re-check with `analysis/timing_report.py`
+once real device timings replace the estimates it's currently built from.
 
-What FORMAT B does **not** solve: the LA's own onboard capture buffer and USB
-streaming bandwidth *while capturing* are still bounded by real-time
-constraints at 24MHz — a cheap LA may simply be unable to *hold* multiple
-minutes to hours of samples in flight regardless of what format it exports to
-afterward, since the reduction to "changes only" typically happens in the
-export step, after the full-rate capture already had to fit somewhere. For
-the ESP8266 n=9 (3.6h) and ESP32 n=10 (1.7h) points specifically, and likely
-several of the multi-minute ones above, **this means a straight one-shot
-24MHz capture for the full 100-rep session is probably not possible on
-typical hardware, and those points would need a sub-sampling strategy** — for
-example, a reduced sample rate (trading pulse-width resolution for capturable
-duration) or capturing only a subset of the 100 reps for those specific
-points rather than the full set. Neither is implemented here; check the
-LA's actual specs (onboard memory, max streaming rate) once it arrives before
-deciding, and treat those specific points as a known gap in LA coverage if no
-workaround is practical in the time available.
+**Summary from the current plan** (154 points across all three boards, all six
+circuits; regenerate after the REPS=100 run to refresh the pulse-width inputs):
+
+| Sample rate | Points |
+|---|---|
+| 24 MHz | 29 |
+| 12 MHz | 8 |
+| 6 MHz | 24 |
+| 1 MHz | 38 |
+| 100 kHz | 33 |
+| 10 kHz | 22 |
+
+- **8 points** get reduced reps (5 instead of 100) — all `grover` at high n,
+  where a single pulse already runs seconds to minutes.
+  For those: **capture only the first 5 reps**, stop the LA before rep 6
+  starts (watch the firmware's own device-side clock, not a fixed wall-clock
+  guess — see the reduced-capture procedure below).
+- **24 points** are flagged `resolution_insufficient` — pulses only a few
+  microseconds wide (mostly `qft`/`qpe`/`grover` at their smallest n on ESP32)
+  where even 24MHz can't hit 0.1% relative resolution. This is expected and
+  not a blocker: 24MHz still gives ~42ns absolute resolution, far finer than
+  `micros()`'s own 1µs granularity — the 0.1%-relative target just doesn't
+  apply meaningfully to sub-10µs pulses. Use FORMAT A there regardless of
+  the "prefer FORMAT B" default below, since duration is trivial anyway.
+- **Total capture size across all 154 points: ~0.10 GB in FORMAT A, ~0.6 MB
+  in FORMAT B.** This replaces the previous estimate (up to 627 GB for a
+  single ESP8266 `grover` n=9 point at a flat 24MHz/100-reps) — the fix was
+  rate and rep selection, not a sub-sampling scheme layered on top.
+- **0 points exceed the size limit** (default 50MB/point) at the plan's
+  chosen rate/reps. If you tighten `--max-size-bytes` or add circuits with
+  longer pulses later, re-run the plan and check the `exceeds_size_limit`
+  column before assuming this still holds.
+
+**Reduced-rep procedure (the 8 flagged points):**
+1. Look up `n_reps_to_capture` and `recommended_sample_rate_hz` for that point
+   in `capture_plan.csv`.
+2. Start the LA capture, then start the sweep for just that `(circuit, n)`.
+3. Stop the capture after exactly `n_reps_to_capture` pulses (watch the LA's
+   live trace, don't wait for the firmware's `DONE` — that only fires after
+   all 100 reps). The captured file will have fewer pulses than the full
+   session; that's expected and required, not an error.
+4. Run `la_crosscheck.py` normally — it reads `n_reps_to_capture` from the
+   plan and joins against the **first** N reps of that point's `*_raw.csv`
+   (see the "join reduced captures" comment in `la_crosscheck.py` for why
+   that's a safe assumption here specifically, not a general one).
+5. If the pulse count you actually captured doesn't match the plan's
+   `n_reps_to_capture` exactly (missed the cutoff, or a glitch), the tool
+   still refuses to join rather than guessing — recapture that point, don't
+   force it with `--expected-reps` set to whatever you happened to get.
+
+### sigrok-cli command lines — UNVERIFIED
+
+`sigrok-cli` is not installed in the environment these scripts were written
+in, so **none of the following has been run, not even against sigrok's
+hardware-free `demo` driver.** Confirm the flag names against
+`sigrok-cli --help` and `sigrok-cli -O csv:help` once it's installed, before
+trusting these on a real point.
+
+Full-rate, full-reps point (e.g. `uno_h_all_n2`, 24MHz, FORMAT A one-shot):
+```bash
+# UNVERIFIED
+sigrok-cli -d <driver-name> --config samplerate=24m --triggers D0=r \
+    --samples 10000000 -O csv -o data/raw/la/uno_h_all_n2.csv
+```
+Low-rate point from the plan (e.g. 100kHz, still full 100 reps):
+```bash
+# UNVERIFIED
+sigrok-cli -d <driver-name> --config samplerate=100k --triggers D0=r \
+    --time 2s -O csv -o data/raw/la/esp8266_qft_n12.csv
+```
+Reduced-rep point (e.g. `esp8266_grover_n9`: 10kHz, 5 reps — stop manually,
+don't rely on `--samples`/`--time` matching exactly, see procedure above):
+```bash
+# UNVERIFIED
+sigrok-cli -d <driver-name> --config samplerate=10k --triggers D0=r \
+    --continuous -O csv -o data/raw/la/esp8266_grover_n9.csv
+# Ctrl-C after ~5 pulses are visible in a live view / on-device counter
+```
+FORMAT B ("changes only") export — **the actual sigrok-cli flag for this is
+unconfirmed.** PulseView's GUI has a "Compression" option on CSV export;
+sigrok-cli's CSV output module may or may not expose the same thing under a
+different name (possibly `-O csv:compress=on`, unverified). If sigrok-cli
+can't produce FORMAT B directly, capture with FORMAT A and use PulseView's
+GUI export instead for anything long enough to matter — the plan's FORMAT A
+sizes above are small enough (~0.10 GB total) that this may not even be
+necessary in practice.
+
+**`--driver <driver-name>`** is also a placeholder — it depends on which LA
+model actually gets loaned. Run `sigrok-cli --scan` once it's connected to
+find the right driver string; don't guess from the device's marketing name.
+
+## First real capture checklist
+
+Do this before touching any other point, on whichever board is easiest to
+access first (Uno is simplest — 5V logic, no WiFi to interfere, `h_all` n=2 is
+a ~284µs pulse well within a trivial FORMAT A capture):
+
+- [ ] Wire per the section above, double-check voltage tolerance for the
+      specific board
+- [ ] Capture `data/raw/la/uno_h_all_n2.csv` (full 100 reps, no reduction needed)
+- [ ] `.venv/bin/python analysis/la_pulses.py data/raw/la/uno_h_all_n2.csv`
+- [ ] Confirm: `format:` line shows the format you actually exported (if it
+      says `raw` but you exported FORMAT B, or vice versa, the tool guessed
+      wrong — **stop, don't proceed to other points until this is understood**;
+      auto-detection was written against the *documented* format, not a
+      verified real export, exactly the caveat carried over from the last
+      session)
+- [ ] Confirm: `pulses (clean): 100 / expected 100` and `is_clean: True`
+- [ ] Confirm: reported `width_us` values are in the right ballpark (tens to
+      hundreds of µs for `h_all` n=2, not micro- or milli-orders of magnitude
+      off — a wrong sample rate parsed from the header would show up here as
+      an obviously wrong width, same failure mode tested synthetically in
+      `analysis/la_test.py`)
+- [ ] Only once all of the above look right, run
+      `.venv/bin/python analysis/la_crosscheck.py` and confirm the one row it
+      produces has a small `median_relative_diff` and `flagged=False`
+- [ ] If **anything** here doesn't match — wrong pulse count, implausible
+      widths, a parse error, an unexpected format — **do not adjust
+      `la_pulses.py`'s format detection to force it through.** Get the real
+      export file into the analysis session that has hardware access, fix
+      the parser against the actual bytes, and only then continue to the
+      other 153 points. A parser that silently misparses a format it wasn't
+      actually tested against is worse than one that fails loudly.
+
+Once the first point checks out, proceed through the rest of the plan in
+`capture_plan.csv` — normal points first (100 reps at the recommended rate),
+the 8 reduced-rep `grover` points last since they need the manual stop-early
+procedure above.
 
 ## After everything
 

@@ -21,6 +21,7 @@ sys.path.insert(0, str(REPO_ROOT / "analysis"))
 
 import la_pulses as lap  # noqa: E402
 import la_crosscheck as lac  # noqa: E402
+import la_capture_plan as lcp  # noqa: E402
 
 RESULTS = []
 RATE = 24_000_000
@@ -32,14 +33,14 @@ def check(name, cond, detail=""):
     print(f"[{status}] {name}  {detail}")
 
 
-def write_raw(path, pulse_widths_us, gap_us=50.0, start_high=False, extend_trailing_high=False):
-    """สร้างไฟล์ FORMAT A (sigrok-cli raw, 1 sample/บรรทัด) จำลอง capture"""
-    period = 1.0 / RATE
+def write_raw(path, pulse_widths_us, gap_us=50.0, start_high=False, extend_trailing_high=False,
+              rate=RATE):
+    """สร้างไฟล์ FORMAT A (sigrok-cli raw, 1 sample/บรรทัด) จำลอง capture ที่ rate ใด ๆ
+    (ค่าเริ่มต้น 24MHz แต่รับ rate ต่ำเพื่อทดสอบ capture ความละเอียดต่ำได้ด้วย)"""
     levels = []
 
     def add(seconds, level):
-        n = max(1, round(seconds * period ** -1 * period))  # keep style consistent
-        n = max(1, round(seconds * RATE))
+        n = max(1, round(seconds * rate))
         levels.extend([level] * n)
 
     if not start_high:
@@ -51,7 +52,7 @@ def write_raw(path, pulse_widths_us, gap_us=50.0, start_high=False, extend_trail
         for i in range(1, 50):
             levels[-i] = 1
     with open(path, "w") as f:
-        f.write(f";Rate: {RATE}\n;Channels: D0\n")
+        f.write(f";Rate: {rate}\n;Channels: D0\n")
         f.write("\n".join(str(v) for v in levels))
         f.write("\n")
 
@@ -118,6 +119,17 @@ def test_la_pulses(scratch: Path):
     check("format B (seconds): detected as 'edges'", r.format_detected == "edges")
     check("format B (seconds): 100 clean pulses", len(r.pulses) == 100 and r.is_clean)
 
+    # --- low sample rate (100kHz): coarser resolution but still correct within it ---
+    # ใช้พัลส์ยาว 10ms (สอดคล้องกับที่ analysis/la_capture_plan.py จะแนะนำ 100kHz จริง ๆ
+    # สำหรับพัลส์ระดับนี้) resolution ที่ 100kHz = 10us ต่อ sample -> error ที่ยอมรับได้
+    # ต้องไม่เกิน ~1 sample period (10us)
+    write_raw(scratch / "low_rate_100k.csv", [10_000.0] * 20, gap_us=500.0, rate=100_000)
+    r = lap.extract_pulses(scratch / "low_rate_100k.csv", expected_reps=20)
+    check("100kHz: sample_rate parsed correctly from header", r.sample_rate_hz == 100_000, r.sample_rate_hz)
+    check("100kHz: 20 clean pulses extracted", len(r.pulses) == 20 and r.is_clean, len(r.pulses))
+    check("100kHz: width correct within 1 sample period (10us) of true 10000us",
+          abs(r.pulses[0].width_us - 10_000.0) <= 10.0, r.pulses[0].width_us)
+
     # --- mismatched sample rate: index column without --sample-rate must raise ---
     write_edges(scratch / "edges_index.csv", [284.0] * 5, as_seconds=False)
     try:
@@ -175,8 +187,12 @@ def test_la_crosscheck(scratch: Path):
     # point 5: filename that doesn't match the naming convention -> ignored, not crashed
     write_raw(la_dir / "not_a_valid_name.csv", [1.0] * 5)
 
+    # --plan ต้องชี้ไปที่ไฟล์ที่ไม่มีอยู่จริงเสมอในเทสต์นี้ (ไม่งั้น default ของ
+    # la_crosscheck.py จะไปหาไฟล์ data/raw/la/capture_plan.csv ของจริงในเครื่อง ทำให้
+    # ผลเทสต์ขึ้นกับ state ของ repo จริง ณ เวลาที่รันแทนที่จะเป็นอิสระเหมือนที่ควรจะเป็น)
+    no_plan = scratch / "no_such_plan.csv"
     sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir), "--raw-dir", str(raw_dir),
-                "--out", str(out_path), "--min-pulse-width-us", "1.0"]
+                "--out", str(out_path), "--min-pulse-width-us", "1.0", "--plan", str(no_plan)]
     lac.main()
 
     rows = {r["circuit"] + str(r["n"]): r for r in csv.DictReader(open(out_path))}
@@ -198,6 +214,132 @@ def test_la_crosscheck(scratch: Path):
     rows2 = list(csv.DictReader(open(out_path)))
     check("crosscheck: rerun appends rather than overwrites", len(rows2) == 8, len(rows2))
 
+    # --- reduced-capture join: only 5 pulses captured, must join against the FIRST 5
+    # reps of the 100-row raw CSV, refusing the old "must equal REPS" behavior ---
+    la_dir2 = scratch / "la_reduced"
+    raw_dir2 = scratch / "phase2_reduced"
+    out_path2 = scratch / "telemetry_reduced" / "la_crosscheck.csv"
+    la_dir2.mkdir(parents=True)
+    raw_dir2.mkdir(parents=True)
+
+    # full 100-rep raw CSV exists (as a real completed point would have), but only the
+    # first 5 reps' pulses were actually captured by the LA (long-pulse point)
+    mcu_full_100 = [50_000.0 + i for i in range(100)]  # deliberately varying per rep
+    with open(raw_dir2 / "esp8266_raw.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["board", "circuit", "n", "rep", "exec_time_us",
+                     "free_heap_before", "free_heap_after", "timeout_budget_s"])
+        for i, t in enumerate(mcu_full_100):
+            w.writerow(["esp8266", "grover", 9, i, t, 60000, 59000, 14400])
+    write_raw(la_dir2 / "esp8266_grover_n9.csv", [t + 0.5 for t in mcu_full_100[:5]],
+              gap_us=1000.0, rate=10_000)
+
+    # (a) explicit --expected-reps override
+    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir2), "--raw-dir", str(raw_dir2),
+                "--out", str(out_path2), "--min-pulse-width-us", "1.0",
+                "--plan", str(scratch / "no_such_plan2.csv"), "--expected-reps", "5"]
+    lac.main()
+    rows3 = list(csv.DictReader(open(out_path2)))
+    check("reduced join: 1 row written", len(rows3) == 1, len(rows3))
+    check("reduced join: expected_reps=5 recorded", rows3[0]["expected_reps"] == "5")
+    check("reduced join: n_pulses_matched=5 (not refused)", rows3[0]["n_pulses_matched"] == "5",
+          rows3[0])
+    check("reduced join: median MCU time matches first-5-reps median, not full-100 median",
+          abs(float(rows3[0]["median_mcu_exec_time_us"]) - 50_002.0) < 1.0,
+          rows3[0]["median_mcu_exec_time_us"])
+
+    # (b) same thing but via a capture_plan.csv lookup instead of --expected-reps
+    plan_path = scratch / "plan_for_reduced.csv"
+    with open(plan_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=lcp.PLAN_FIELDS)
+        w.writeheader()
+        w.writerow({"board": "esp8266", "circuit": "grover", "n": 9, "pulse_width_us": 500000,
+                    "recommended_sample_rate_hz": 10_000, "resolution_insufficient": False,
+                    "n_reps_to_capture": 5, "reduced_reps": True, "capture_duration_s": 2.5,
+                    "format_a_size_bytes": 50000, "format_b_size_bytes": 200,
+                    "recommended_format": "B", "exceeds_size_limit": False})
+    out_path3 = scratch / "telemetry_reduced2" / "la_crosscheck.csv"
+    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir2), "--raw-dir", str(raw_dir2),
+                "--out", str(out_path3), "--min-pulse-width-us", "1.0", "--plan", str(plan_path)]
+    lac.main()
+    rows4 = list(csv.DictReader(open(out_path3)))
+    check("reduced join via plan: expected_reps=5 picked up from capture_plan.csv",
+          rows4[0]["expected_reps"] == "5", rows4[0]["expected_reps"])
+    check("reduced join via plan: n_pulses_matched=5", rows4[0]["n_pulses_matched"] == "5")
+
+    # (c) a genuinely-dirty reduced capture (wrong pulse count) must still be refused
+    write_raw(la_dir2 / "esp8266_grover_n9.csv", [t + 0.5 for t in mcu_full_100[:4]],
+              gap_us=1000.0, rate=10_000)  # only 4 pulses now, still asking for 5
+    out_path4 = scratch / "telemetry_reduced3" / "la_crosscheck.csv"
+    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir2), "--raw-dir", str(raw_dir2),
+                "--out", str(out_path4), "--min-pulse-width-us", "1.0",
+                "--plan", str(scratch / "no_such_plan3.csv"), "--expected-reps", "5"]
+    lac.main()
+    rows5 = list(csv.DictReader(open(out_path4)))
+    check("reduced join: pulse-count mismatch against the reduced target is still refused",
+          rows5[0]["n_pulses_matched"] == "0" and rows5[0]["flagged"] == "True", rows5[0])
+
+
+def test_capture_plan():
+    """หน่วยทดสอบตรรกะของ analysis/la_capture_plan.py ล้วน ๆ ไม่ต้องมีไฟล์เลย —
+    ตรวจขอบเขตการเลือก rate, การลด reps, และการคำนวณขนาดไฟล์"""
+    rates = [24_000_000, 12_000_000, 6_000_000, 1_000_000, 100_000, 10_000]
+
+    # --- rate selection boundaries ---
+    # พัลส์กว้าง 10,000us (10ms): resolution 0.1% ต้องการ <= 10us/sample -> rate >= 100kHz
+    # (period 10us พอดี) และ min_samples_per_pulse=10 ต้องการ >= 10 sample/pulse ที่ 100kHz
+    # ได้ 1000 sample/pulse ผ่านสบาย ๆ -> คาดว่าได้ 100kHz (ตัวต่ำสุดที่ผ่านทั้งคู่)
+    rate, insufficient = lcp.choose_sample_rate(10_000.0, rates, 0.001, 10)
+    check("rate selection: 10ms pulse picks 100kHz (lowest that satisfies both constraints)",
+          rate == 100_000 and not insufficient, (rate, insufficient))
+
+    # พัลส์แคบมาก (0.5us): resolution 0.1% ต้องการ <= 0.0005us/sample = 2GHz -- ไม่มี rate
+    # ไหนใน list ทำได้ -> ต้อง fallback เป็น rate สูงสุด (24MHz) พร้อม flag insufficient=True
+    rate, insufficient = lcp.choose_sample_rate(0.5, rates, 0.001, 10)
+    check("rate selection: 0.5us pulse falls back to max rate with insufficient=True",
+          rate == 24_000_000 and insufficient, (rate, insufficient))
+
+    # ขอบเขตพอดี: min_samples_per_pulse บังคับ rate สูงกว่าที่ resolution อย่างเดียวจะให้
+    # พัลส์ 1000us, resolution 0.1% -> ต้องการ <= 1us/sample -> rate >= 1MHz ผ่านที่ 1MHz
+    # ด้วย resolution เพียงอย่างเดียว (1000 sample/pulse ที่ 1MHz > 10 อยู่แล้ว) ทดสอบว่า
+    # min_samples_per_pulse ที่สูงเกินจริง (เช่น 100,000) บังคับให้ต้องขยับไป rate สูงกว่า
+    rate, insufficient = lcp.choose_sample_rate(1000.0, rates, 0.001, 100_000)
+    # ที่ rate ใดก็ตามใน list, samples_per_pulse = 1000us * rate / 1e6 -- ที่ 24MHz ได้
+    # 24000 sample/pulse ซึ่งยังไม่ถึง 100,000 -> ไม่มี rate ไหนผ่าน -> fallback สูงสุด
+    check("rate selection: unreasonably high min_samples_per_pulse falls back with insufficient=True",
+          rate == 24_000_000 and insufficient, (rate, insufficient))
+
+    # --- reps reduction boundary ---
+    check("reps: exactly at threshold uses full reps (boundary is > not >=)",
+          lcp.choose_reps(1_000_000.0, 1_000_000.0, 100, 5) == 100)
+    check("reps: just above threshold reduces", lcp.choose_reps(1_000_000.1, 1_000_000.0, 100, 5) == 5)
+    check("reps: well below threshold uses full reps", lcp.choose_reps(100.0, 1_000_000.0, 100, 5) == 100)
+
+    # --- size calculation ---
+    # 100 reps, 284us pulse, chosen rate from the real selector (should be 24MHz given
+    # such a short pulse at default resolution_fraction) -> verify FORMAT A/B byte math
+    plan = lcp.plan_point("uno", "h_all", 2, rates, 0.001, 10, 1_000_000.0, 100, 5, 50_000_000)
+    expected_duration_s = plan["pulse_width_us"] * 100 * 1e-6
+    expected_format_a = expected_duration_s * plan["recommended_sample_rate_hz"] * lcp.BYTES_PER_SAMPLE_RAW
+    check("size calc: FORMAT A bytes match duration * rate * bytes_per_sample",
+          abs(plan["format_a_size_bytes"] - expected_format_a) < 1.0,
+          (plan["format_a_size_bytes"], expected_format_a))
+    check("size calc: FORMAT B bytes match 2 edges/pulse * reps * bytes_per_row",
+          plan["format_b_size_bytes"] == round(100 * 2 * lcp.BYTES_PER_EDGE_ROW_ESTIMATE),
+          plan["format_b_size_bytes"])
+    check("size calc: exceeds_size_limit=False for a tiny point with a generous limit",
+          not plan["exceeds_size_limit"])
+
+    # a deliberately tiny size limit must trip the flag
+    plan_tight = lcp.plan_point("uno", "h_all", 2, rates, 0.001, 10, 1_000_000.0, 100, 5, 10)
+    check("size calc: exceeds_size_limit=True when the limit is set absurdly low",
+          plan_tight["exceeds_size_limit"])
+
+    # a genuinely long pulse should trigger reduced reps end-to-end through plan_point
+    plan_long = lcp.plan_point("esp8266", "grover", 9, rates, 0.001, 10, 1_000_000.0, 100, 5, 50_000_000)
+    check("size calc: long-pulse point (grover n=9) gets reduced_reps=True end-to-end",
+          plan_long["reduced_reps"] and plan_long["n_reps_to_capture"] == 5, plan_long)
+
 
 def main():
     scratch = Path(tempfile.mkdtemp(prefix="la_test_"))
@@ -208,6 +350,7 @@ def main():
     try:
         test_la_pulses(scratch / "pulses")
         test_la_crosscheck(scratch / "crosscheck")
+        test_capture_plan()
     finally:
         after_la = set(real_la_dir.glob("**/*")) if real_la_dir.exists() else set()
         after_tel = set(real_telemetry_dir.glob("**/*")) if real_telemetry_dir.exists() else set()

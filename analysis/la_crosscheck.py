@@ -29,6 +29,17 @@
 #   ปนจนนับพัลส์ผิด) — ถ้า capture ไม่ ParseResult.is_clean สคริปต์นี้จะ "ปฏิเสธ" ไม่ join
 #   จุดนั้น (ข้ามพร้อมเหตุผล) แทนที่จะเดา offset เอาเอง เพราะ join ผิดตำแหน่งจะให้ผลลัพธ์
 #   ที่ดูสมเหตุสมผลแต่ผิดจริง (ตัวเลขไม่ error ออกมาให้เห็น) อันตรายกว่าการไม่มีผลลัพธ์เลย
+#
+# *** capture แบบลด rep (analysis/la_capture_plan.py แนะนำ n_reps_to_capture < REPS
+# สำหรับพัลส์ยาว) — join กับ "N rep แรก" ของ *_raw.csv เสมอ ไม่ใช่สุ่มหรือ rep สุดท้าย ***
+# เหตุผลที่ปลอดภัย: pc/shared/resume.py รับประกันแล้วว่าจุดข้อมูลที่ "เสร็จสมบูรณ์" (มีแถว
+# terminal ใน *_memory_wall.csv) มี rep 0..REPS-1 ครบชุดเดียวจาก session เดียว ไม่เคยผสม
+# 2 sessions มาต่อกัน (ดู resume.py ประกอบ) ดังนั้น "N rep แรก" ของไฟล์นั้นคือ rep 0..N-1
+# จริง ๆ ตามลำดับเวลาที่ MCU รันจริง ไม่ใช่การเดา — capture ที่ตั้งใจ capture แค่ N พัลส์แรก
+# (ปิด LA ก่อนจบ 100 rep) จึงจับคู่กับ N rep แรกของไฟล์เดียวกันได้ตรงไปตรงมา
+# ข้อควรระวังข้อเดียว: capture ต้องเริ่ม "ที่พัลส์แรกจริง ๆ" (ไม่ trigger สาย/พลาดพัลส์แรก
+# ไปกลางคัน) — ถ้า leading_truncated หรือ count_mismatch (จำนวนพัลส์ที่ได้ไม่ตรงกับ
+# n_reps_to_capture ที่ตั้งใจ capture) ก็ยัง REFUSED เหมือนเดิมทุกกรณี ไม่ join แบบเดา offset
 
 import argparse
 import csv
@@ -49,11 +60,12 @@ from la_pulses import extract_pulses  # noqa: E402
 LA_DIR = REPO_ROOT / "data" / "raw" / "la"
 RAW_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 OUT_PATH = REPO_ROOT / "data" / "raw" / "telemetry" / "la_crosscheck.csv"
+PLAN_PATH = REPO_ROOT / "data" / "raw" / "la" / "capture_plan.csv"
 
 FILENAME_RE = re.compile(r"^(uno|esp32|esp8266)_(.+)_n(\d+)\.csv$")
 
 OUT_FIELDS = [
-    "board", "circuit", "n", "n_pulses_matched",
+    "board", "circuit", "n", "expected_reps", "n_pulses_matched",
     "median_la_width_us", "la_iqr_low_us", "la_iqr_high_us",
     "median_mcu_exec_time_us", "mcu_iqr_low_us", "mcu_iqr_high_us",
     "median_abs_diff_us", "median_relative_diff",
@@ -61,6 +73,29 @@ OUT_FIELDS = [
     "flagged", "capture_format", "n_glitches",
     "leading_truncated", "trailing_truncated", "notes",
 ]
+
+
+def load_capture_plan(plan_path: Path = PLAN_PATH):
+    """โหลด n_reps_to_capture จาก analysis/la_capture_plan.py ต่อ (board,circuit,n) —
+    คืน dict ว่างถ้ายังไม่เคยรัน capture plan (fallback เป็น tm.REPS ปกติ ไม่ error)"""
+    if not plan_path.exists():
+        return {}
+    out = {}
+    with open(plan_path, newline="") as f:
+        for r in csv.DictReader(f):
+            key = (r["board"], r["circuit"], int(r["n"]))
+            out[key] = int(r["n_reps_to_capture"])
+    return out
+
+
+def resolve_expected_reps(board, circuit, n, cli_override, plan: dict):
+    """ลำดับความสำคัญ: --expected-reps บน CLI (บังคับทุกจุดในการรันนี้) > แผนจาก
+    capture_plan.csv ต่อจุด > ค่าเริ่มต้น tm.REPS (100) — ค่าเริ่มต้นคือ "เต็มจำนวน
+    เสมอ" (refuse-on-mismatch ยังเป็นพฤติกรรมเริ่มต้น) การลด reps ต้อง "เลือกเอง" ผ่าน
+    ทางใดทางหนึ่งนี้เท่านั้น ไม่มีการเดาลดจำนวนให้อัตโนมัติ"""
+    if cli_override is not None:
+        return cli_override
+    return plan.get((board, circuit, n), tm.REPS)
 
 
 def find_capture_files(la_dir: Path):
@@ -116,7 +151,8 @@ def crosscheck_one(board, circuit, n, capture_path: Path, expected_reps, min_pul
         note = f"REFUSED to join: capture not clean ({', '.join(reasons)}) — rep-order alignment unsafe"
         print(f"{board}/{circuit}/n={n}: {note}")
         return {
-            "board": board, "circuit": circuit, "n": n, "n_pulses_matched": 0,
+            "board": board, "circuit": circuit, "n": n, "expected_reps": expected_reps,
+            "n_pulses_matched": 0,
             "flagged": True, "capture_format": result.format_detected,
             "n_glitches": len(result.glitches),
             "leading_truncated": result.leading_truncated,
@@ -129,25 +165,34 @@ def crosscheck_one(board, circuit, n, capture_path: Path, expected_reps, min_pul
         note = f"no matching rows in {board}_raw.csv for circuit={circuit} n={n}"
         print(f"{board}/{circuit}/n={n}: REFUSED to join: {note}")
         return {
-            "board": board, "circuit": circuit, "n": n, "n_pulses_matched": 0,
+            "board": board, "circuit": circuit, "n": n, "expected_reps": expected_reps,
+            "n_pulses_matched": 0,
             "flagged": True, "capture_format": result.format_detected,
             "n_glitches": len(result.glitches),
             "leading_truncated": result.leading_truncated,
             "trailing_truncated": result.trailing_truncated,
             "notes": note,
         }
-    if len(mcu_times) != expected_reps:
-        note = (f"{board}_raw.csv has {len(mcu_times)} rows for circuit={circuit} n={n}, "
-                f"expected {expected_reps} — refusing rep-order join")
+    if len(mcu_times) < expected_reps:
+        # ต้องมี "อย่างน้อย" expected_reps แถวถึงจะตัดเอา N ตัวแรกได้อย่างสมเหตุสมผล —
+        # ถ้ามีน้อยกว่าที่ขอ (เช่นจุดนั้นยังไม่เสร็จ/ล้มเหลวไปแล้ว) ปฏิเสธเหมือนเดิม
+        note = (f"{board}_raw.csv has only {len(mcu_times)} row(s) for circuit={circuit} n={n}, "
+                f"need >= {expected_reps} — refusing rep-order join")
         print(f"{board}/{circuit}/n={n}: REFUSED to join: {note}")
         return {
-            "board": board, "circuit": circuit, "n": n, "n_pulses_matched": 0,
+            "board": board, "circuit": circuit, "n": n, "expected_reps": expected_reps,
+            "n_pulses_matched": 0,
             "flagged": True, "capture_format": result.format_detected,
             "n_glitches": len(result.glitches),
             "leading_truncated": result.leading_truncated,
             "trailing_truncated": result.trailing_truncated,
             "notes": note,
         }
+    # join กับ "N rep แรก" เสมอ (N = expected_reps) — ปลอดภัยเพราะ resume.py รับประกันว่า
+    # *_raw.csv ของจุดที่เสร็จสมบูรณ์เรียง rep 0..REPS-1 จาก session เดียวไม่ปนกัน (ดู
+    # หมายเหตุท้ายไฟล์ตอนต้น) ไม่ว่า expected_reps จะเท่ากับ REPS เต็ม (no-op slice) หรือ
+    # น้อยกว่า (capture ที่ตั้งใจลด rep ตาม la_capture_plan.py) ก็ใช้สูตรเดียวกัน
+    mcu_times = mcu_times[:expected_reps]
 
     la_widths = [p.width_us for p in result.pulses]
     abs_diffs = [abs(la - mcu) for la, mcu in zip(la_widths, mcu_times)]
@@ -168,7 +213,8 @@ def crosscheck_one(board, circuit, n, capture_path: Path, expected_reps, min_pul
     )
 
     return {
-        "board": board, "circuit": circuit, "n": n, "n_pulses_matched": len(la_widths),
+        "board": board, "circuit": circuit, "n": n, "expected_reps": expected_reps,
+        "n_pulses_matched": len(la_widths),
         "median_la_width_us": round(la_med, 3), "la_iqr_low_us": round(la_q1, 3),
         "la_iqr_high_us": round(la_q3, 3),
         "median_mcu_exec_time_us": round(mcu_med, 3), "mcu_iqr_low_us": round(mcu_q1, 3),
@@ -190,7 +236,14 @@ def main():
     ap.add_argument("--la-dir", type=Path, default=LA_DIR)
     ap.add_argument("--raw-dir", type=Path, default=RAW_DIR)
     ap.add_argument("--out", type=Path, default=OUT_PATH)
-    ap.add_argument("--expected-reps", type=int, default=tm.REPS)
+    ap.add_argument("--plan", type=Path, default=PLAN_PATH,
+                     help="capture_plan.csv จาก analysis/la_capture_plan.py — ใช้หา "
+                          "n_reps_to_capture ต่อจุดถ้าไม่ได้ระบุ --expected-reps มาบังคับเอง")
+    ap.add_argument("--expected-reps", type=int, default=None,
+                     help="บังคับจำนวน rep ที่คาดไว้สำหรับทุกจุดในการรันนี้ (ข้าม "
+                          "capture_plan.csv) ค่าเริ่มต้น: ดูจาก capture_plan.csv ถ้ามี "
+                          "ไม่งั้นใช้ REPS เต็ม (100) — การลด reps ยังคง refuse บนความไม่ตรง"
+                          "จำนวน/truncation/glitch เหมือนเดิมทุกกรณี ไม่ว่าจะใช้ reps เท่าไหร่")
     ap.add_argument("--min-pulse-width-us", type=float, default=1.0)
     ap.add_argument("--sample-rate", type=float, default=None,
                      help="เฉพาะไฟล์ FORMAT B ที่คอลัมน์แรกเป็น sample index")
@@ -207,6 +260,11 @@ def main():
         print(f"no capture files matching <board>_<circuit>_n<N>.csv under {args.la_dir}")
         sys.exit(0)
 
+    plan = load_capture_plan(args.plan)
+    if args.expected_reps is None and plan:
+        print(f"using per-point expected reps from {args.plan} where available "
+              f"(falling back to {tm.REPS} for points not in the plan)")
+
     args.out.parent.mkdir(parents=True, exist_ok=True)
     is_new = not args.out.exists()
     with open(args.out, "a", newline="") as f:
@@ -215,13 +273,15 @@ def main():
             w.writeheader()
             f.flush()
         for board, circuit, n, path in captures:
-            row = crosscheck_one(board, circuit, n, path, args.expected_reps,
+            expected_reps = resolve_expected_reps(board, circuit, n, args.expected_reps, plan)
+            row = crosscheck_one(board, circuit, n, path, expected_reps,
                                   args.min_pulse_width_us, args.sample_rate,
                                   args.max_relative_diff, args.raw_dir)
             w.writerow({k: row.get(k, "") for k in OUT_FIELDS})
             f.flush()
             if row.get("n_pulses_matched"):
-                print(f"{board}/{circuit}/n={n}: LA median={row['median_la_width_us']}us  "
+                print(f"{board}/{circuit}/n={n}: (expected_reps={expected_reps})  "
+                      f"LA median={row['median_la_width_us']}us  "
                       f"MCU median={row['median_mcu_exec_time_us']}us  "
                       f"rel_diff={row['median_relative_diff']:.1%}  flagged={row['flagged']}")
 
