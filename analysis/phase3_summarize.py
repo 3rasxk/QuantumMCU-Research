@@ -6,11 +6,15 @@
 
 import csv
 import glob
+import sys
 from pathlib import Path
 
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "pc"))
+from shared.timing_model import REPS  # noqa: E402
+
 RAW_DIR = REPO_ROOT / "data" / "raw" / "phase3"
 PROCESSED_DIR = REPO_ROOT / "data" / "processed" / "phase3"
 
@@ -34,6 +38,20 @@ def main():
     for r in rows:
         key = (r["board"], r["circuit"], int(r["n"]), r["baud_rate"])
         groups.setdefault(key, []).append(r)
+
+    # เกราะกัน contamination เดียวกับ phase2_summarize.py — ดูเหตุผลที่นั่น
+    over_reps = {k: len(v) for k, v in groups.items() if len(v) > REPS}
+    if over_reps:
+        print(f"error: {len(over_reps)} group(s) have more than REPS={REPS} rows — "
+              "refusing to summarize a possibly-contaminated sample.", file=sys.stderr)
+        for (board, circuit, n, baud), count in sorted(over_reps.items()):
+            print(f"  board={board} circuit={circuit} n={n} baud={baud}: {count} rows "
+                  f"found (expected <= {REPS})", file=sys.stderr)
+        print("likely cause: a sweep ran with --fresh against the wrong file, or two "
+              "sessions wrote to the same *_raw.csv concurrently. Inspect and de-duplicate "
+              "the offending rows in the raw CSV before re-running this script.",
+              file=sys.stderr)
+        sys.exit(1)
 
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     out_path = PROCESSED_DIR / "summary.csv"

@@ -37,6 +37,17 @@
 # *** จุดที่ timing_model ประเมินว่าเกินเพดาน (เช่น ESP8266 grover n=12 ~95 วันต่อจุด)
 # จะถูกข้ามพร้อม status=skipped_compute_infeasible + คอลัมน์ expected_point_s —
 # ไม่ใช่ Memory Wall แต่เป็น compute wall ที่มาถึงก่อน (--force-infeasible เพื่อดันทุรัง) ***
+#
+# *** resume (ค่าเริ่มต้น): มีแถวใน *_memory_wall.csv = จุดนั้น "เสร็จสิ้น" แล้วไม่ว่า
+# ผลจะเป็นอะไร (ok, malloc_failed, skipped_compute_infeasible, ...) — resume ข้ามได้เลย
+# ไม่ต้องแตะฮาร์ดแวร์ซ้ำ วงจรที่เคยเจอ "กำแพงจริง" แล้ว (build_or_upload_fail,
+# malloc_failed, runtime_hang_or_reset หลัง retry หมด) จะไม่ถูกลอง n ที่สูงกว่านั้นซ้ำ
+# อีก แม้ n เหล่านั้นไม่เคยมี record ก็ตาม (ตรรกะเดียวกับที่ sweep เดิม break ออกจาก
+# n-loop ทันทีที่เจอกำแพง) แถวกำพร้าใน raw CSV (จุดที่โปรเซสตายระหว่างเขียนผล ไม่มี
+# terminal record คู่กัน) จะถูกกวาดทิ้งก่อนแล้วรันจุดนั้นใหม่ทั้งหมด — ห้าม "เติม" ให้
+# ครบ 100 trial เพราะ trial จาก 2 sessions ไม่ใช่ตัวอย่างสม่ำเสมอเดียวกัน (บอร์ด reset/
+# reflash/อุณหภูมิเครื่องต่างกันระหว่าง session) ใช้ --fresh เพื่อย้ายผลลัพธ์เดิมออกไป
+# (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด — ดู pc/shared/resume.py สำหรับเหตุผลเต็ม ***
 #   3. เขียนทุกแถวลง data/raw/phase2/esp8266_raw.csv (ไฟล์ดิบ, append)
 #      และสรุปลง data/raw/phase2/esp8266_memory_wall.csv (คอลัมน์ retry_count: 0/1)
 #
@@ -65,6 +76,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
+from shared import resume as rs  # noqa: E402
+
+RESUME_KEY_SPEC = [("circuit", str), ("n", int)]
 
 FW_DIR = REPO_ROOT / "firmware" / "esp8266"
 RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase2"
@@ -166,11 +180,31 @@ def main():
     ap.add_argument("--force-infeasible", action="store_true",
                      help="พยายามรันจุดที่ timing_model บอกว่าเกินเพดานเวลาไปแล้วด้วย "
                           "(ปกติจะข้ามพร้อมบันทึกเหตุผล เพราะได้แค่ timeout เปล่า ๆ)")
+    ap.add_argument("--fresh", "--no-resume", dest="fresh", action="store_true",
+                     help="ไม่ resume จากผลลัพธ์เดิม — ย้ายไฟล์ raw/memory_wall เดิมไปเป็น "
+                          "*.pre-fresh-<timestamp>.csv (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด")
     args = ap.parse_args()
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     raw_path = RESULTS_DIR / "esp8266_raw.csv"
     wall_path = RESULTS_DIR / "esp8266_memory_wall.csv"
+
+    # resume (ค่าเริ่มต้น): มีแถวใน wall CSV = จุดนั้น "เสร็จสิ้น" แล้วไม่ว่าผลจะเป็นอะไร
+    # ข้ามได้เลย ไม่ต้องแตะฮาร์ดแวร์ซ้ำ ส่วนแถวกำพร้าใน raw CSV (จุดที่โปรเซสตายระหว่าง
+    # เขียนผล ไม่มี terminal record คู่กัน) ต้องกวาดทิ้งก่อน แล้วรันจุดนั้นใหม่ทั้งหมด — ห้าม
+    # "เติม" ให้ครบ 100 trial เพราะ trial จาก 2 sessions ไม่ใช่ตัวอย่างสม่ำเสมอเดียวกัน
+    # ดู pc/shared/resume.py สำหรับเหตุผลเต็ม
+    if args.fresh:
+        moved = rs.archive_existing(wall_path, raw_path)
+        for src, dest in moved:
+            print(f"--fresh: archived {src.name} -> {dest.name}")
+        completed = {}
+    else:
+        completed = rs.load_terminal_points(wall_path, RESUME_KEY_SPEC)
+        kept, removed, removed_keys = rs.purge_orphan_rows(raw_path, RESUME_KEY_SPEC, set(completed.keys()))
+        if removed:
+            print(f"resume: purged {removed} orphan raw row(s) from interrupted point(s) "
+                  f"{sorted(removed_keys)} — these will be redone from scratch, not topped up")
 
     raw_is_new = not raw_path.exists()
     wall_is_new = not wall_path.exists()
@@ -198,6 +232,16 @@ def main():
         print("--force-infeasible: จะพยายามรันจุดที่เกินเพดานด้วย\n")
         infeasible = set()
 
+    remaining_preview = [p for p in planned if p not in completed]
+    real_remaining = [p for p in remaining_preview if p not in infeasible]
+    est_s = sum(tm.expected_point_time_s("esp8266", c, n) for c, n in real_remaining)
+    n_inf_remaining = len(remaining_preview) - len(real_remaining)
+    remaining_human = tm.human_duration(est_s)
+    if n_inf_remaining:
+        remaining_human += f" (+{n_inf_remaining} infeasible point(s), skipped near-instantly)"
+    rs.print_resume_summary("esp8266", planned, completed, remaining_human)
+    wall_n_by_circuit = rs.known_wall_n(completed)
+
     for circuit in args.circuits:
         print(f"\n=== circuit={circuit} ===")
         n_values = n_values_for_sweep(circuit, args.n_start, args.n_max)
@@ -205,6 +249,14 @@ def main():
             print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {args.n_max}]")
             continue
         for n in n_values:
+            if (circuit, n) in completed:
+                print(f"n={n:2d}  SKIP (resume): already {completed[(circuit, n)].get('status', '?')}")
+                continue
+            if circuit in wall_n_by_circuit and n > wall_n_by_circuit[circuit]:
+                print(f"n={n:2d}  SKIP (resume): {circuit} already hit its wall at "
+                      f"n={wall_n_by_circuit[circuit]} in a previous session")
+                continue
+
             theoretical_bytes = (1 << n) * 8
             budget_s = tm.timeout_budget_s("esp8266", circuit, n)
             expected_s = tm.expected_point_time_s("esp8266", circuit, n)

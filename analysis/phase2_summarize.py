@@ -8,11 +8,15 @@
 
 import csv
 import glob
+import sys
 from pathlib import Path
 
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "pc"))
+from shared.timing_model import REPS  # noqa: E402
+
 RAW_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 PROCESSED_DIR = REPO_ROOT / "data" / "processed" / "phase2"
 
@@ -36,6 +40,24 @@ def main():
     for r in rows:
         key = (r["board"], r["circuit"], int(r["n"]))
         groups.setdefault(key, []).append(float(r["exec_time_us"]))
+
+    # เกราะกัน contamination: กลุ่มไหนมี trial เกิน REPS (100) แปลว่ามีการรันซ้ำทับกัน
+    # โดยไม่ผ่าน resume logic (เช่น รันด้วย --fresh ผิดไฟล์ หรือ 2 sessions ชี้ไปที่ไฟล์
+    # raw เดียวกันพร้อมกัน) — ไม่เดาว่าจะตัดแถวไหนทิ้ง หยุดทันทีให้คนมาตรวจสอบเอง ดีกว่า
+    # เผลอคำนวณ median จากตัวอย่างที่ปนกันโดยไม่รู้ตัว (อาจมี trial จาก 2 session ที่
+    # บอร์ด reset/reflash/อุณหภูมิต่างกันปนอยู่ในก้อนเดียว)
+    over_reps = {k: len(v) for k, v in groups.items() if len(v) > REPS}
+    if over_reps:
+        print(f"error: {len(over_reps)} group(s) have more than REPS={REPS} rows — "
+              "refusing to summarize a possibly-contaminated sample.", file=sys.stderr)
+        for (board, circuit, n), count in sorted(over_reps.items()):
+            print(f"  board={board} circuit={circuit} n={n}: {count} rows found "
+                  f"(expected <= {REPS})", file=sys.stderr)
+        print("likely cause: a sweep ran with --fresh against the wrong file, or two "
+              "sessions wrote to the same *_raw.csv concurrently. Inspect and de-duplicate "
+              "the offending rows in the raw CSV before re-running this script.",
+              file=sys.stderr)
+        sys.exit(1)
 
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     out_path = PROCESSED_DIR / "summary.csv"

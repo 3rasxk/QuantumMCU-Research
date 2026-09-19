@@ -35,6 +35,17 @@
 #
 # ข้อสังเกตที่ตัวเลขชุดนี้เปิดเผย: grover n=10 บน ESP8266 รัน local ไม่ไหวเลย (ประเมิน
 # ~1.3 วันต่อจุด) แต่ offload ได้ใน ~1.1 ชั่วโมง — เป็น crossover ที่ชัดที่สุดในชุดข้อมูล
+#
+# *** resume (ค่าเริ่มต้น): มีแถวใน <board>_session_log.csv = จุด (circuit, n, baud) นั้น
+# "เสร็จสิ้น" แล้วไม่ว่าผลจะเป็นอะไร (ok, session_incomplete, build_or_upload_fail,
+# skipped_sim_cost_infeasible) — resume ข้ามได้เลย ไม่ทำ known-wall inference แบบ Phase 2
+# ที่นี่โดยตั้งใจ: ความล้มเหลวที่ n หนึ่งของ Phase 3 มักมาจาก baud ไม่เสถียร (ปัญหาลิงก์
+# ที่แก้ได้ด้วยการเปลี่ยนสาย/พอร์ตแล้วลองที่ n เดิมใหม่) ไม่ใช่ขีดจำกัดการคำนวณที่
+# deterministic เหมือน build_or_upload_fail ของ Phase 2 จึงไม่ปลอดภัยที่จะสรุปว่า n สูง
+# กว่าจะล้มเหลวซ้ำเสมอ ลำดับการเขียน raw/meta ถูกสลับ (raw ก่อน meta) เพื่อให้ orphan
+# raw rows (กรณีโปรเซสตายกลางคัน) ตรวจจับได้แบบเดียวกับ Phase 2 — ถ้าเขียน meta ก่อนแล้ว
+# ตายก่อนเขียน raw จะได้ meta ที่อ้างว่า "เสร็จ" ทั้งที่ไม่มีข้อมูลรองรับ ใช้ --fresh เพื่อ
+# ย้ายผลลัพธ์เดิมออกไป (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด — ดู pc/shared/resume.py ***
 
 import argparse
 import glob
@@ -61,6 +72,9 @@ from protocol import FRAME_REQ_START, parse_request, pack_response  # noqa: E402
 from phase1_compare import build_qiskit_circuit  # noqa: E402
 from shared.circuit_ids import CIRCUIT_IDS, CIRCUIT_NAMES, n_values_for_sweep  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
+from shared import resume as rs  # noqa: E402
+
+RESUME_KEY_SPEC = [("circuit", str), ("n", int), ("baud_rate", int)]
 
 BOARDS = {
     "uno": {
@@ -227,6 +241,9 @@ def main():
     ap.add_argument("--force-infeasible", action="store_true",
                      help="พยายามรันจุดที่ timing_model บอกว่าเก็บครบ 100 reps ไม่ไหว "
                           "(ปกติจะข้ามพร้อมบันทึกเหตุผล)")
+    ap.add_argument("--fresh", "--no-resume", dest="fresh", action="store_true",
+                     help="ไม่ resume จากผลลัพธ์เดิม — ย้ายไฟล์ raw/session_log เดิมไปเป็น "
+                          "*.pre-fresh-<timestamp>.csv (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด")
     args = ap.parse_args()
     n_max = args.n_max if args.n_max is not None else N_SAFETY_CAP
 
@@ -236,6 +253,27 @@ def main():
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     raw_path = RESULTS_DIR / f"{args.board}_raw.csv"
     meta_path = RESULTS_DIR / f"{args.board}_session_log.csv"
+
+    # resume (ค่าเริ่มต้น): มีแถวใน session_log.csv = จุดนั้น (circuit, n, baud) "เสร็จสิ้น"
+    # แล้วไม่ว่าผลจะเป็นอะไร (ok, session_incomplete, build_or_upload_fail,
+    # skipped_sim_cost_infeasible) — ข้ามได้เลย ไม่ต้องแตะฮาร์ดแวร์/PC ซ้ำ ไม่ทำ known-wall
+    # inference แบบ Phase 2 ที่นี่ (ต่างจาก uno/esp32/esp8266_sweep.py โดยตั้งใจ): ความ
+    # "ล้มเหลว" ของ Phase 3 ที่ n หนึ่งอาจเป็นเพราะ baud ไม่เสถียร (ปัญหาลิงก์ ไม่ใช่ขีด
+    # จำกัดการคำนวณ) ซึ่งอาจหายไปได้ถ้าเปลี่ยนสาย/พอร์ตแล้วรันใหม่ที่ n เดิม — จึงไม่ปลอดภัย
+    # ที่จะสรุปเหมารวมว่า n สูงกว่าจะล้มเหลวเหมือนกันเสมอ (ต่างจาก build_or_upload_fail ของ
+    # Phase 2 ที่ deterministic จริง ๆ) แถวกำพร้าใน raw CSV (จุดที่โปรเซสตายระหว่างเขียนผล
+    # ไม่มี terminal record คู่กัน) จะถูกกวาดทิ้งก่อนแล้วรันจุดนั้นใหม่ทั้งหมด
+    if args.fresh:
+        moved = rs.archive_existing(meta_path, raw_path)
+        for src, dest in moved:
+            print(f"--fresh: archived {src.name} -> {dest.name}")
+        completed = {}
+    else:
+        completed = rs.load_terminal_points(meta_path, RESUME_KEY_SPEC)
+        kept, removed, removed_keys = rs.purge_orphan_rows(raw_path, RESUME_KEY_SPEC, set(completed.keys()))
+        if removed:
+            print(f"resume: purged {removed} orphan raw row(s) from interrupted point(s) "
+                  f"{sorted(removed_keys)} — these will be redone from scratch, not topped up")
 
     raw_is_new = not raw_path.exists()
     meta_is_new = not meta_path.exists()
@@ -255,6 +293,20 @@ def main():
         print("--force-infeasible: จะพยายามรันจุดที่เกินเพดานด้วย\n")
         infeasible = set()
 
+    # resume summary ต้องรวม baud เข้าไปใน key ด้วย (ต่างจาก preflight budget plan ด้านบน
+    # ที่ไม่สนใจ baud เพราะต้นทุน PC ไม่ขึ้นกับ baud) เนื่องจากจุดเดียวกันอาจสำเร็จที่ baud
+    # หนึ่งแต่ยังไม่เคยลองที่อีก baud หนึ่ง
+    planned_with_baud = [(c, n, b) for b in args.bauds for c in args.circuits
+                         for n in n_values_for_sweep(c, args.n_start, n_max)]
+    remaining_preview = [p for p in planned_with_baud if p not in completed]
+    real_remaining = [(c, n) for c, n, b in remaining_preview if (c, n) not in infeasible]
+    est_s = sum(tm.pc_sim_time_s(c, n) * tm.REPS for c, n in real_remaining)
+    n_inf_remaining = len(remaining_preview) - len(real_remaining)
+    remaining_human = tm.human_duration(est_s)
+    if n_inf_remaining:
+        remaining_human += f" (+{n_inf_remaining} infeasible point(s), skipped near-instantly)"
+    rs.print_resume_summary(args.board, planned_with_baud, completed, remaining_human)
+
     for baud in args.bauds:
         print(f"\n########## baud={baud} ##########")
         baud_unstable = False
@@ -269,6 +321,11 @@ def main():
                 print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {n_max}]")
                 continue
             for n in n_values:
+                if (circuit, n, baud) in completed:
+                    print(f"n={n:2d}  SKIP (resume): already "
+                          f"{completed[(circuit, n, baud)].get('status', '?')}")
+                    continue
+
                 budget_s = tm.phase3_session_budget_s(circuit, n)
                 per_req = tm.pc_sim_time_s(circuit, n)
                 expected_s = per_req * tm.REPS
@@ -309,12 +366,20 @@ def main():
                 sim_error_safe = sim_error.replace(",", ";").replace("\n", " ")
 
                 status = "ok" if (done and len(rows) > 0) else "session_incomplete"
-                meta_f.write(f"{args.board},{circuit},{n},{baud},{status},{served},{dropped},{len(rows)},{sim_error_safe},{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
-                meta_f.flush()
 
+                # เขียน raw ก่อน meta เสมอ (สลับจากลำดับเดิม) — ให้ตรงกับ pattern เดียวกับ
+                # Phase 2 (uno/esp32/esp8266_sweep.py): แถวใน meta คือ "บันทึกการตัดสิน
+                # ชะตากรรม" ที่ resume ใช้ตัดสินว่าจุดนี้เสร็จแล้วหรือยัง ถ้าเขียน meta ก่อน
+                # แล้วโปรเซสตายก่อนเขียน raw จะได้ meta ที่อ้างว่า "เสร็จ" ทั้งที่ไม่มีข้อมูล
+                # raw รองรับเลย — resume จะข้ามจุดนั้นไปทั้งที่ไม่มีข้อมูลจริง ลำดับใหม่นี้
+                # ทำให้กรณีแย่ที่สุดกลายเป็น "มี raw กำพร้าไม่มี meta คู่กัน" ซึ่ง
+                # purge_orphan_rows (pc/shared/resume.py) จัดการได้ตรง ๆ อยู่แล้ว
                 for line in rows:
                     raw_f.write(line + "\n")
                 raw_f.flush()
+
+                meta_f.write(f"{args.board},{circuit},{n},{baud},{status},{served},{dropped},{len(rows)},{sim_error_safe},{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
+                meta_f.flush()
 
                 error_rows = sum(1 for r in rows if r.split(",")[-1] == "1" or r.split(",")[-2] == "1")
                 error_rate = (error_rows / len(rows)) if rows else 1.0
