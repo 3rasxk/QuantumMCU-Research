@@ -46,6 +46,77 @@ resume logic assumes one writer at a time.
 
 ---
 
+## Run day checklist
+
+One linear pass through everything below. The detailed sections further down
+(Session A/B/C) have the actual commands and expected durations — this is
+the order to hit them in, plus what to check between each one.
+
+**Prerequisites (before touching any board):**
+- [ ] `git status` clean, or at least nothing uncommitted you'd mind losing —
+      `pc/shared/telemetry.py`'s environment metadata records the commit hash
+      and dirty flag per session, so a dirty tree at data-collection time is
+      captured either way, but a clean one is one less thing to explain later
+- [ ] Host sleep prevention on: macOS, run the whole day's commands under
+      `caffeinate -s -- <command>`, or start `caffeinate -s` in its own
+      terminal and leave it running for the day. Confirm with
+      `pmset -g assertions | grep PreventUserIdleSystemSleep` before
+      starting Session B (session lengths there make a mid-run sleep
+      expensive to redo) — this is the same check
+      `tel.check_sleep_prevention()` makes automatically per session, but
+      checking it yourself *before* a multi-hour session starts is cheaper
+      than discovering it failed in the metadata JSON afterward
+- [ ] Each board's port identified and written down (ports can renumerate
+      when boards are re-plugged or after a reflash) — see § 0 above
+- [ ] Decide LA-connected-or-not for this run. If connected: confirm wiring
+      per the Logic Analyzer procedure below and do the "First real capture
+      checklist" on one point before Session A starts. If not connected yet:
+      proceed with Sessions A/B/C now, the LA cross-check is a fully
+      separate, later pass over already-collected `*_raw.csv` files — it
+      does not need to run concurrently with data collection
+- [ ] `data/raw/phase2/` and `data/raw/phase3/` checked per § 0 — confirm
+      resume state matches what you expect (empty for a true first run,
+      or existing files if this is a continuation)
+
+**Session order** (rationale in "Session order and why" above, and see
+"Grover run order" below Session B for why boards run in this specific
+sequence within step 2):
+1. [ ] Session A — cheap circuits, all 3 boards (any order within this step)
+2. [ ] Session B — `grover`, one board at a time, **in this order: Uno,
+       then ESP32, then ESP8266** (cheapest full board first, most
+       expensive last — see rationale below)
+3. [ ] Session C — Phase 3, split by circuit, same board order logic applies
+
+**After each session:**
+- [ ] Check the printed resume/session summary — point count matches what
+      that session's expected count says (Session A/B/C sections below give
+      the exact numbers per command)
+- [ ] Spot-check the terminal-record file (`*_memory_wall.csv` or
+      `*_session_log.csv`) for the board just run — new rows present, no
+      unexpected `build_or_upload_fail`/`malloc_failed` at an n lower than
+      the known wall (would indicate a regression, not just "reached the
+      wall as expected")
+- [ ] If anything looks wrong, stop here and investigate before starting the
+      next session — don't chain sessions blindly on a bad prior result
+
+**Stop conditions (stop and investigate, don't push through):**
+- A resume summary skips more or fewer points than you expect for that
+  exact command
+- A point fails with `build_or_upload_fail` at an n where a *previous*
+  session already succeeded (regression, not a new wall)
+- The host's sleep-prevention check reports `prevented: false` partway
+  through a long Session B run (check the environment metadata JSON for
+  that session — if sleep occurred, that session's timing is suspect and
+  should be treated as unreliable, not just slow)
+- Any point's `failure_type` is something other than the expected set for
+  its circumstance (e.g. `crc` or `sim` appearing during Phase 2, which
+  only Phase 3 should ever produce)
+- You are not sure *why* something happened. Guessing and continuing risks
+  hours of data that can't be told apart from good data later — stopping to
+  check now is cheap by comparison
+
+---
+
 ## Session A — cheap circuits, all boards
 
 Run these three back to back (or in any order — independent files):
@@ -79,6 +150,53 @@ count at the top — it should show most points already done.
 
 Run these as **three separate sessions**, not one after another in a single
 sitting unless you have the time budgeted — ESP8266's alone is ~4 hours.
+
+### Grover run order — why Uno, then ESP32, then ESP8266
+
+`grover` is ~83% of the whole run's estimated time, so its internal ordering
+matters more than any other circuit's. Two ordering questions, both already
+answered by the commands below, spelled out here so the reasoning survives
+if these numbers are ever re-measured and the order needs re-checking:
+
+1. **Within one board's session, shortest points already run first** — the
+   sweep loop walks `n` ascending (`n_values_for_sweep`), and `grover`'s
+   per-point cost grows roughly ~7-10x per step in `n` (see the per-n
+   durations in "Total budget" below). This means an interruption at *any*
+   point in a board's grover session has already banked every cheaper point
+   for that board — the only point ever at risk of being lost to an
+   interruption is the single most expensive one in progress, never a
+   cheap one waiting behind it. No change needed here; this falls out of
+   the existing n-ascending sweep order for free.
+
+2. **Across the three boards' sessions, run cheapest-total-board first:
+   Uno (~43 min) → ESP32 (~2.0h) → ESP8266 (~4.2h).** This is the order the
+   commands are already listed in below — the reasoning: if the run gets
+   cut short after Session B starts (schedule, hardware issue, anything),
+   this order guarantees the *maximum number of complete board datasets*
+   for the *minimum elapsed time*. Two boards' full grover scaling curves
+   (Uno + ESP32, ~2.7h combined) are a genuinely analyzable result on their
+   own — a cross-board comparison missing only the slowest board — whereas
+   spending that same 2.7h budget starting with ESP8266 would leave it
+   *still incomplete* (2.7h in, ESP8266 alone needs 4.2h) and both other
+   boards untouched: strictly worse under any stopping point.
+
+**If cross-board comparison at *matched* n matters more than any board's
+*complete* curve** (e.g. you want an early n=2..8 comparison across all
+three boards specifically, and can live with Uno/ESP32 being "done" only up
+to whatever n ESP8266 has reached so far): run single-n slices interleaved
+across boards instead — `--n-start K --n-max K` for the same `K` on all
+three boards before moving to `K+1`. This costs no extra reflashes (a
+reflash already happens once per `(circuit, n)` regardless of how wide a
+range `--n-max` spans in one invocation — see "Reflash cost" below), it's
+purely a different sequencing of the same commands, and resume handles the
+resulting partial per-board state exactly like any other interruption. This
+alternative is **not** the default recommendation — most analysis on this
+kind of scaling data benefits more from complete per-board curves than
+from early matched-n snapshots — but it's the right call if the priority
+for this specific run is early cross-board comparison over per-board
+completeness. Not implemented as a script option; if chosen, run the
+commands below with `--n-max` set to a single value at a time, in board
+round-robin, by hand.
 
 ```bash
 .venv/bin/python pc/phase2_sweep/uno_sweep.py --port /dev/cu.usbmodemXXXX \

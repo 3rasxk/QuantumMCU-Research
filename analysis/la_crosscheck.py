@@ -64,27 +64,43 @@ PLAN_PATH = REPO_ROOT / "data" / "raw" / "la" / "capture_plan.csv"
 
 FILENAME_RE = re.compile(r"^(uno|esp32|esp8266)_(.+)_n(\d+)\.csv$")
 
+# micros() resolution ต่อบอร์ด (จริง ไม่ใช่ค่าประมาณลอย ๆ): Arduino Uno ใช้ timer0
+# prescale 64 ที่ 16MHz นับทีละ 4us ต่อ tick ส่วน ESP8266/ESP32 ใช้ hardware cycle
+# counter ความละเอียด ~1us — threshold แบบ "relative อย่างเดียว" จะ flag จุดที่พัลส์
+# สั้นมาก (เช่น h_all n=2 บาง MCU) ผิดพลาดได้ง่าย เพราะความต่างแค่ 1 tick ของ micros()
+# เองก็ทำให้ relative diff พุ่งสูงเกิน threshold ได้ทั้งที่ค่าจริง ๆ ใกล้เคียงที่สุดเท่าที่
+# micros() จะวัดได้แล้ว — ต้องเกินทั้งสอง (relative เกิน threshold AND absolute เกิน
+# floor นี้) ถึงจะถือว่าเป็นความต่างที่มีนัยสำคัญจริง ไม่ใช่ quantization noise ของ micros()
+DEFAULT_ABS_FLOOR_US = {"uno": 4.0, "esp8266": 1.0, "esp32": 1.0}
+
 OUT_FIELDS = [
     "board", "circuit", "n", "expected_reps", "n_pulses_matched",
     "median_la_width_us", "la_iqr_low_us", "la_iqr_high_us",
     "median_mcu_exec_time_us", "mcu_iqr_low_us", "mcu_iqr_high_us",
     "median_abs_diff_us", "median_relative_diff",
     "max_abs_diff_us", "max_relative_diff",
+    "abs_floor_us", "resolution_insufficient", "status",
     "flagged", "capture_format", "n_glitches",
     "leading_truncated", "trailing_truncated", "notes",
 ]
 
 
 def load_capture_plan(plan_path: Path = PLAN_PATH):
-    """โหลด n_reps_to_capture จาก analysis/la_capture_plan.py ต่อ (board,circuit,n) —
-    คืน dict ว่างถ้ายังไม่เคยรัน capture plan (fallback เป็น tm.REPS ปกติ ไม่ error)"""
+    """โหลดแผนจาก analysis/la_capture_plan.py ต่อ (board,circuit,n) — คืน dict ว่างถ้า
+    ยังไม่เคยรัน capture plan (fallback เป็น tm.REPS/resolution_insufficient=False ปกติ
+    ไม่ error) ค่าที่เก็บต่อจุด: n_reps_to_capture (int) และ resolution_insufficient
+    (bool — จุดที่พัลส์แคบเกินกว่าจะวัดได้แม่นด้วย rate สูงสุดใน rate list แม้แต่ตอนวางแผน,
+    ดู la_capture_plan.choose_sample_rate)"""
     if not plan_path.exists():
         return {}
     out = {}
     with open(plan_path, newline="") as f:
         for r in csv.DictReader(f):
             key = (r["board"], r["circuit"], int(r["n"]))
-            out[key] = int(r["n_reps_to_capture"])
+            out[key] = {
+                "n_reps_to_capture": int(r["n_reps_to_capture"]),
+                "resolution_insufficient": r["resolution_insufficient"] == "True",
+            }
     return out
 
 
@@ -95,7 +111,16 @@ def resolve_expected_reps(board, circuit, n, cli_override, plan: dict):
     ทางใดทางหนึ่งนี้เท่านั้น ไม่มีการเดาลดจำนวนให้อัตโนมัติ"""
     if cli_override is not None:
         return cli_override
-    return plan.get((board, circuit, n), tm.REPS)
+    entry = plan.get((board, circuit, n))
+    return entry["n_reps_to_capture"] if entry else tm.REPS
+
+
+def resolve_resolution_insufficient(board, circuit, n, plan: dict):
+    """True ถ้า capture plan ทำเครื่องหมายจุดนี้ไว้ว่า resolution ไม่พอแม้ที่ rate สูงสุด
+    (ดู la_capture_plan.py) — ถ้าไม่มี plan หรือจุดนี้ไม่อยู่ใน plan ถือว่า False (ไม่
+    ทราบ ไม่ใช่ "ทราบว่าไม่พอ") ไม่ควรเดาเป็น True เพราะจะไปกลบผลการ flag จริงโดยไม่จำเป็น"""
+    entry = plan.get((board, circuit, n))
+    return entry["resolution_insufficient"] if entry else False
 
 
 def find_capture_files(la_dir: Path):
@@ -133,7 +158,8 @@ def _iqr(values):
 
 
 def crosscheck_one(board, circuit, n, capture_path: Path, expected_reps, min_pulse_width_us,
-                    sample_rate_hint, max_relative_diff, raw_dir=RAW_DIR):
+                    sample_rate_hint, max_relative_diff, abs_floor_us, resolution_insufficient,
+                    raw_dir=RAW_DIR):
     result = extract_pulses(capture_path, expected_reps=expected_reps,
                              min_pulse_width_us=min_pulse_width_us,
                              sample_rate_hz_hint=sample_rate_hint)
@@ -153,6 +179,8 @@ def crosscheck_one(board, circuit, n, capture_path: Path, expected_reps, min_pul
         return {
             "board": board, "circuit": circuit, "n": n, "expected_reps": expected_reps,
             "n_pulses_matched": 0,
+            "abs_floor_us": abs_floor_us, "resolution_insufficient": resolution_insufficient,
+            "status": "refused",
             "flagged": True, "capture_format": result.format_detected,
             "n_glitches": len(result.glitches),
             "leading_truncated": result.leading_truncated,
@@ -167,6 +195,8 @@ def crosscheck_one(board, circuit, n, capture_path: Path, expected_reps, min_pul
         return {
             "board": board, "circuit": circuit, "n": n, "expected_reps": expected_reps,
             "n_pulses_matched": 0,
+            "abs_floor_us": abs_floor_us, "resolution_insufficient": resolution_insufficient,
+            "status": "refused",
             "flagged": True, "capture_format": result.format_detected,
             "n_glitches": len(result.glitches),
             "leading_truncated": result.leading_truncated,
@@ -182,6 +212,8 @@ def crosscheck_one(board, circuit, n, capture_path: Path, expected_reps, min_pul
         return {
             "board": board, "circuit": circuit, "n": n, "expected_reps": expected_reps,
             "n_pulses_matched": 0,
+            "abs_floor_us": abs_floor_us, "resolution_insufficient": resolution_insufficient,
+            "status": "refused",
             "flagged": True, "capture_format": result.format_detected,
             "n_glitches": len(result.glitches),
             "leading_truncated": result.leading_truncated,
@@ -207,10 +239,28 @@ def crosscheck_one(board, circuit, n, capture_path: Path, expected_reps, min_pul
     max_abs_diff = max(abs_diffs)
     max_rel_diff = max(rel_diffs) if rel_diffs else float("nan")
 
-    flagged = med_rel_diff > max_relative_diff
-    note = "" if not flagged else (
-        f"median relative diff {med_rel_diff:.1%} exceeds threshold {max_relative_diff:.1%}"
-    )
+    # threshold ต้องเกินทั้ง relative (สัดส่วน) และ absolute floor (ความละเอียด micros()
+    # ของบอร์ดนั้น) พร้อมกัน — relative อย่างเดียว flag ผิดจุดพัลส์สั้นที่ต่างกันแค่ 1 tick
+    # ของ micros() เอง (เช่น 4us บน Uno) ซึ่งเป็น quantization noise ไม่ใช่ความคลาดเคลื่อนจริง
+    exceeds_relative = med_rel_diff > max_relative_diff
+    exceeds_absolute = med_abs_diff > abs_floor_us
+
+    if resolution_insufficient:
+        # capture plan บอกไว้แล้วว่าจุดนี้แคบเกินกว่า LA (ที่ rate สูงสุดใน rate list) จะ
+        # วัดได้แม่นพอ — ความต่างที่เห็นอาจมาจากความหยาบของ LA เอง ไม่ใช่ micros() ผิด
+        # รายงานเป็น "limited by micros() resolution" แทนการฟันธง pass/fail
+        flagged = False
+        status = "limited_by_micros_resolution"
+        note = (f"resolution_insufficient per capture plan — LA sample rate cannot resolve "
+                f"this pulse width finely enough to judge pass/fail; median_abs_diff="
+                f"{med_abs_diff:.2f}us median_rel_diff={med_rel_diff:.1%} shown for reference only")
+    else:
+        flagged = exceeds_relative and exceeds_absolute
+        status = "flagged" if flagged else "pass"
+        note = "" if not flagged else (
+            f"median relative diff {med_rel_diff:.1%} exceeds threshold {max_relative_diff:.1%} "
+            f"AND median abs diff {med_abs_diff:.2f}us exceeds {board} micros() floor {abs_floor_us:.2f}us"
+        )
 
     return {
         "board": board, "circuit": circuit, "n": n, "expected_reps": expected_reps,
@@ -223,6 +273,8 @@ def crosscheck_one(board, circuit, n, capture_path: Path, expected_reps, min_pul
         "median_relative_diff": round(med_rel_diff, 5),
         "max_abs_diff_us": round(max_abs_diff, 3),
         "max_relative_diff": round(max_rel_diff, 5),
+        "abs_floor_us": abs_floor_us, "resolution_insufficient": resolution_insufficient,
+        "status": status,
         "flagged": flagged, "capture_format": result.format_detected,
         "n_glitches": len(result.glitches),
         "leading_truncated": result.leading_truncated,
@@ -249,7 +301,20 @@ def main():
                      help="เฉพาะไฟล์ FORMAT B ที่คอลัมน์แรกเป็น sample index")
     ap.add_argument("--max-relative-diff", type=float, default=0.05,
                      help="threshold สัดส่วนความต่าง (median) ที่ถือว่าต้อง flag ค่าเริ่มต้น 5%%")
+    ap.add_argument("--abs-floor-uno-us", type=float, default=DEFAULT_ABS_FLOOR_US["uno"],
+                     help="micros() resolution floor สำหรับ Uno (us) — ค่าเริ่มต้น 4us "
+                          "(timer0 prescale 64 @ 16MHz)")
+    ap.add_argument("--abs-floor-esp8266-us", type=float, default=DEFAULT_ABS_FLOOR_US["esp8266"],
+                     help="micros() resolution floor สำหรับ ESP8266 (us) ค่าเริ่มต้น 1us")
+    ap.add_argument("--abs-floor-esp32-us", type=float, default=DEFAULT_ABS_FLOOR_US["esp32"],
+                     help="micros() resolution floor สำหรับ ESP32 (us) ค่าเริ่มต้น 1us")
     args = ap.parse_args()
+
+    abs_floor_by_board = {
+        "uno": args.abs_floor_uno_us,
+        "esp8266": args.abs_floor_esp8266_us,
+        "esp32": args.abs_floor_esp32_us,
+    }
 
     if not args.la_dir.exists():
         print(f"error: {args.la_dir} not found — nothing to cross-check yet", file=sys.stderr)
@@ -274,16 +339,18 @@ def main():
             f.flush()
         for board, circuit, n, path in captures:
             expected_reps = resolve_expected_reps(board, circuit, n, args.expected_reps, plan)
+            resolution_insufficient = resolve_resolution_insufficient(board, circuit, n, plan)
             row = crosscheck_one(board, circuit, n, path, expected_reps,
                                   args.min_pulse_width_us, args.sample_rate,
-                                  args.max_relative_diff, args.raw_dir)
+                                  args.max_relative_diff, abs_floor_by_board[board],
+                                  resolution_insufficient, args.raw_dir)
             w.writerow({k: row.get(k, "") for k in OUT_FIELDS})
             f.flush()
             if row.get("n_pulses_matched"):
                 print(f"{board}/{circuit}/n={n}: (expected_reps={expected_reps})  "
                       f"LA median={row['median_la_width_us']}us  "
                       f"MCU median={row['median_mcu_exec_time_us']}us  "
-                      f"rel_diff={row['median_relative_diff']:.1%}  flagged={row['flagged']}")
+                      f"rel_diff={row['median_relative_diff']:.1%}  status={row['status']}")
 
     print(f"\nresults -> {args.out}")
 

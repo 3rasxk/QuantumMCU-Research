@@ -208,6 +208,10 @@ def test_la_crosscheck(scratch: Path):
           rows["bell_ghz2"]["flagged"] == "True")
     check("crosscheck: missing raw data refused with clear note",
           "no matching rows" in rows["grover6"]["notes"])
+    check("crosscheck: status field: pass/flagged/refused/refused",
+          [rows["h_all2"]["status"], rows["qft3"]["status"],
+           rows["bell_ghz2"]["status"], rows["grover6"]["status"]] ==
+          ["pass", "flagged", "refused", "refused"])
 
     # re-running must APPEND, not overwrite (matches every other telemetry file's contract)
     lac.main()
@@ -278,6 +282,77 @@ def test_la_crosscheck(scratch: Path):
     rows5 = list(csv.DictReader(open(out_path4)))
     check("reduced join: pulse-count mismatch against the reduced target is still refused",
           rows5[0]["n_pulses_matched"] == "0" and rows5[0]["flagged"] == "True", rows5[0])
+
+    # --- dual-threshold (relative AND absolute floor) boundary cases ---
+    # (A) Uno, short pulse: 3us abs diff, 150% relative diff. Relative alone would flag
+    # this (way over the 5% default threshold), but 3us is BELOW Uno's 4us micros()
+    # tick floor -- this is exactly the quantization-noise case the floor exists for.
+    # Expect: NOT flagged.
+    la_dir_b = scratch / "la_boundary"
+    raw_dir_b = scratch / "phase2_boundary"
+    la_dir_b.mkdir(parents=True)
+    raw_dir_b.mkdir(parents=True)
+    write_raw(la_dir_b / "uno_h_all_n1.csv", [5.0] * 100)
+    with open(raw_dir_b / "uno_raw.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["board", "circuit", "n", "rep", "exec_time_us",
+                     "free_heap_before", "free_heap_after", "timeout_budget_s"])
+        for i in range(100):
+            w.writerow(["uno", "h_all", 1, i, 2.0, 1000, 999, 90])
+
+    # (B) ESP8266, same 3us abs diff / 150% relative diff -- but ESP8266's floor is 1us,
+    # so the same magnitude of difference DOES exceed its floor. Expect: flagged.
+    write_raw(la_dir_b / "esp8266_h_all_n1.csv", [5.0] * 100)
+    with open(raw_dir_b / "esp8266_raw.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["board", "circuit", "n", "rep", "exec_time_us",
+                     "free_heap_before", "free_heap_after", "timeout_budget_s"])
+        for i in range(100):
+            w.writerow(["esp8266", "h_all", 1, i, 2.0, 60000, 59000, 90])
+
+    # (C) ESP32, long pulse flagged resolution_insufficient in the capture plan: a big
+    # diff (20ms, 10% relative -- would otherwise flag) must be reported as
+    # "limited_by_micros_resolution" instead of pass/fail.
+    write_raw(la_dir_b / "esp32_grover_n14.csv", [220_000.0] * 3, gap_us=1000.0, rate=1_000)
+    with open(raw_dir_b / "esp32_raw.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["board", "circuit", "n", "rep", "exec_time_us",
+                     "free_heap_before", "free_heap_after", "timeout_budget_s"])
+        for i in range(3):
+            w.writerow(["esp32", "grover", 14, i, 200_000.0, 100000, 99000, 14400])
+    plan_path_b = scratch / "plan_boundary.csv"
+    with open(plan_path_b, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=lcp.PLAN_FIELDS)
+        w.writeheader()
+        w.writerow({"board": "esp32", "circuit": "grover", "n": 14, "pulse_width_us": 200000,
+                    "recommended_sample_rate_hz": 1000, "resolution_insufficient": True,
+                    "n_reps_to_capture": 3, "reduced_reps": True, "capture_duration_s": 0.6,
+                    "format_a_size_bytes": 1200, "format_b_size_bytes": 120,
+                    "recommended_format": "B", "exceeds_size_limit": False})
+
+    out_path_b = scratch / "telemetry_boundary" / "la_crosscheck.csv"
+    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir_b), "--raw-dir", str(raw_dir_b),
+                "--out", str(out_path_b), "--min-pulse-width-us", "1.0",
+                "--plan", str(plan_path_b)]
+    lac.main()
+    rowsb = {r["board"] + r["circuit"] + str(r["n"]): r for r in csv.DictReader(open(out_path_b))}
+
+    uno_b = rowsb["unoh_all1"]
+    check("boundary: Uno 3us abs diff below its 4us floor -> NOT flagged",
+          uno_b["flagged"] == "False" and uno_b["status"] == "pass", uno_b)
+    check("boundary: Uno abs_floor_us recorded as 4.0", float(uno_b["abs_floor_us"]) == 4.0)
+
+    esp_b = rowsb["esp8266h_all1"]
+    check("boundary: ESP8266 same 3us abs diff exceeds its 1us floor -> flagged",
+          esp_b["flagged"] == "True" and esp_b["status"] == "flagged", esp_b)
+    check("boundary: ESP8266 abs_floor_us recorded as 1.0", float(esp_b["abs_floor_us"]) == 1.0)
+
+    grover_b = rowsb["esp32grover14"]
+    check("boundary: resolution_insufficient point reported as limited, not pass/fail",
+          grover_b["status"] == "limited_by_micros_resolution" and grover_b["flagged"] == "False",
+          grover_b)
+    check("boundary: resolution_insufficient flag itself carried through from the plan",
+          grover_b["resolution_insufficient"] == "True")
 
 
 def test_capture_plan():
