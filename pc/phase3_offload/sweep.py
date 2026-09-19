@@ -73,8 +73,10 @@ from phase1_compare import build_qiskit_circuit  # noqa: E402
 from shared.circuit_ids import CIRCUIT_IDS, CIRCUIT_NAMES, n_values_for_sweep  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
+from shared import telemetry as tel  # noqa: E402
 
 RESUME_KEY_SPEC = [("circuit", str), ("n", int), ("baud_rate", int)]
+BOOT_WAIT_S = 1.5  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
 
 BOARDS = {
     "uno": {
@@ -121,24 +123,48 @@ def find_port(board: str, hint: str) -> str:
 
 
 def build_and_upload(board: str, circuit: str, n: int, baud: int, port_hint: str):
+    """แยก compile กับ upload เป็นสอง subprocess (เดิมเป็นคำสั่งเดียว `-t upload`) เพื่อ
+    จับเวลาแยกกันได้จริง — ดู uno_sweep.py::build_and_upload สำหรับเหตุผลเต็ม
+
+    คืน dict (ไม่ใช่ tuple)"""
     cfg = BOARDS[board]
     port = find_port(board, port_hint)
     env = os.environ.copy()
     env.update({"N_QUBITS": str(n), "CIRCUIT_ID": str(CIRCUIT_IDS[circuit]), "BAUD_RATE": str(baud)})
 
+    t0 = time.perf_counter()
+    try:
+        proc = subprocess.run(
+            [PIO, "run", "-e", cfg["env"]],
+            cwd=str(cfg["fw_dir"]), env=env, capture_output=True, text=True, timeout=150,
+        )
+        c_stdout, c_stderr, c_rc = proc.stdout, proc.stderr, proc.returncode
+    except subprocess.TimeoutExpired as e:
+        c_stdout = (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
+        c_stderr = "pio run (compile) timed out after 150s"
+        c_rc = -1
+    compile_s = time.perf_counter() - t0
+
+    if c_rc != 0:
+        return {"ok": False, "log": c_stdout[-3000:] + c_stderr[-1500:], "port": port,
+                "compile_s": compile_s, "upload_s": 0.0}
+
+    t0 = time.perf_counter()
     try:
         proc = subprocess.run(
             [PIO, "run", "-e", cfg["env"], "-t", "upload", "--upload-port", port],
             cwd=str(cfg["fw_dir"]), env=env, capture_output=True, text=True, timeout=150,
         )
-        stdout, stderr, returncode = proc.stdout, proc.stderr, proc.returncode
+        u_stdout, u_stderr, u_rc = proc.stdout, proc.stderr, proc.returncode
     except subprocess.TimeoutExpired as e:
-        stdout = (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
-        stderr = "pio run timed out after 150s"
-        returncode = -1
+        u_stdout = (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
+        u_stderr = "pio run (upload) timed out after 150s"
+        u_rc = -1
+    upload_s = time.perf_counter() - t0
 
-    ok = returncode == 0
-    return ok, stdout[-3000:] + stderr[-1500:], port
+    ok = u_rc == 0
+    return {"ok": ok, "log": u_stdout[-3000:] + u_stderr[-1500:], "port": port,
+            "compile_s": compile_s, "upload_s": upload_s}
 
 
 def read_exact(ser, n, deadline):
@@ -165,7 +191,13 @@ def simulate_and_sample(sim, n_qubits: int, circuit_id: int) -> int:
 
 
 def run_offload_session(ser, sim, session_timeout_s):
-    """สตรีมไบต์เดียว รับมือทั้งเฟรมไบนารีและบรรทัด CSV ข้อความ (ดู docstring บนไฟล์)"""
+    """สตรีมไบต์เดียว รับมือทั้งเฟรมไบนารีและบรรทัด CSV ข้อความ (ดู docstring บนไฟล์)
+
+    เพิ่ม pc_sim_durations (list ของเวลาที่ simulate_and_sample ใช้ต่อคำขอ) และ
+    bytes_transferred สำหรับ telemetry — จับเวลาด้วย perf_counter "รอบ" การเรียก
+    simulate_and_sample() เท่านั้น ไม่แตะภายในฟังก์ชันนั้นเลย และไม่กระทบ e2e_latency_us
+    ที่ MCU วัดเอง (ตัวเลขนั้นมาจาก micros() ฝั่ง MCU ล้วน ๆ อยู่แล้ว การจับเวลาฝั่ง PC
+    นี้แค่ "อ่านเพิ่ม" ไม่ได้เปลี่ยนจังหวะการตอบสนองต่อเฟรมแต่อย่างใด)"""
     old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
     signal.alarm(session_timeout_s)
     text_buf = bytearray()
@@ -175,6 +207,8 @@ def run_offload_session(ser, sim, session_timeout_s):
     frames_served = 0
     frames_dropped_bad_crc = 0
     last_sim_error = ""
+    pc_sim_durations = []
+    bytes_transferred = 0
     try:
         deadline = time.time() + session_timeout_s
         while time.time() < deadline and not done:
@@ -187,12 +221,14 @@ def run_offload_session(ser, sim, session_timeout_s):
                 rest = read_exact(ser, 3, time.time() + 2.0)
                 if len(rest) < 3:
                     continue
+                bytes_transferred += 4  # เฟรม request เสมอ 4 byte ไม่ว่าจะ parse ผ่านหรือไม่
                 frame = bytes([byte]) + rest
                 parsed = parse_request(frame)
                 if parsed is None:
                     frames_dropped_bad_crc += 1
                     continue  # CRC ผิด: ไม่ตอบ ปล่อยให้ MCU timeout รอบนั้น (ข้อมูลจริง)
                 n_qubits, circuit_id = parsed
+                sim_t0 = time.perf_counter()
                 try:
                     outcome = simulate_and_sample(sim, n_qubits, circuit_id)
                 except Exception as e:
@@ -200,7 +236,9 @@ def run_offload_session(ser, sim, session_timeout_s):
                     # ตามที่วัดได้จริง ไม่ใช่แค่ "ล้มเหลว" เฉย ๆ
                     last_sim_error = f"{type(e).__name__}: {e}"
                     continue
+                pc_sim_durations.append(time.perf_counter() - sim_t0)
                 ser.write(pack_response(outcome))
+                bytes_transferred += 6  # เฟรม response เสมอ 6 byte
                 frames_served += 1
             else:
                 if byte == 0x0A:
@@ -217,9 +255,10 @@ def run_offload_session(ser, sim, session_timeout_s):
                     pass
                 else:
                     text_buf.append(byte)
-        return done, csv_rows, frames_served, frames_dropped_bad_crc, last_sim_error
+        return done, csv_rows, frames_served, frames_dropped_bad_crc, last_sim_error, pc_sim_durations, bytes_transferred
     except HardTimeout:
-        return False, csv_rows, frames_served, frames_dropped_bad_crc, last_sim_error or "hard_timeout"
+        return (False, csv_rows, frames_served, frames_dropped_bad_crc,
+                last_sim_error or "hard_timeout", pc_sim_durations, bytes_transferred)
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGALRM, old_handler)
@@ -307,6 +346,33 @@ def main():
         remaining_human += f" (+{n_inf_remaining} infeasible point(s), skipped near-instantly)"
     rs.print_resume_summary(args.board, planned_with_baud, completed, remaining_human)
 
+    # telemetry: session wrapper + environment metadata ครั้งเดียวตอนเริ่ม session —
+    # ดู pc/shared/telemetry.py และ uno_sweep.py สำหรับ schema เต็ม/เหตุผล
+    resumed_from_previous = bool(completed)
+    last_end = tel.last_session_end_utc(args.board, 3) if resumed_from_previous else None
+    session = tel.SessionRecorder(phase=3, board=args.board, circuits=args.circuits,
+                                   resumed_from_previous=resumed_from_previous,
+                                   estimated_total_s=round(est_s, 1))
+    with session:
+        if last_end is not None:
+            from datetime import datetime as _dt, timezone as _tz
+            gap = (_dt.now(_tz.utc) - last_end).total_seconds()
+            if gap > 0:
+                session.note_interruption_gap(gap)
+        env_path = tel.write_environment_metadata(
+            session.session_id, args.board, args.port, args.bauds[0], None,
+            BOARDS[args.board]["fw_dir"] / "src_offload")
+        session.env_json_path = str(env_path)
+
+        _sweep_body(args, n_max, completed, infeasible, raw_f, meta_f, sim, session)
+
+    raw_f.close()
+    meta_f.close()
+    print(f"\nraw -> {raw_path}\nsession log -> {meta_path}")
+    print(f"telemetry -> {tel.SESSIONS_CSV}, {tel.POINTS_CSV}")
+
+
+def _sweep_body(args, n_max, completed, infeasible, raw_f, meta_f, sim, session):
     for baud in args.bauds:
         print(f"\n########## baud={baud} ##########")
         baud_unstable = False
@@ -324,6 +390,7 @@ def main():
                 if (circuit, n, baud) in completed:
                     print(f"n={n:2d}  SKIP (resume): already "
                           f"{completed[(circuit, n, baud)].get('status', '?')}")
+                    session.note_point(resumed_skip=True)
                     continue
 
                 budget_s = tm.phase3_session_budget_s(circuit, n)
@@ -340,29 +407,54 @@ def main():
                     meta_f.write(f"{args.board},{circuit},{n},{baud},skipped_sim_cost_infeasible,"
                                  f"0,0,0,,{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
                     meta_f.flush()
+                    tel.write_point_row({
+                        "session_id": session.session_id, "phase": 3, "board": args.board,
+                        "circuit": circuit, "n": n, "baud": baud, "attempt_index": 0,
+                        "start_utc": ts, "end_utc": ts, "wall_s": 0,
+                        "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                        "status": "skipped",
+                    })
+                    session.note_point(status="skipped")
                     continue
 
                 print(f"n={n:2d}  budget={budget_s}s ({per_req:.2f}s/request)  ", end="", flush=True)
 
-                ok, log, used_port = build_and_upload(args.board, circuit, n, baud, args.port)
-                args.port = used_port
+                attempt_start = datetime.now(timezone.utc).isoformat()
+                result = build_and_upload(args.board, circuit, n, baud, args.port)
+                args.port = result["port"]
                 ts = datetime.now(timezone.utc).isoformat()
+                reflash_s = result["compile_s"] + result["upload_s"]
 
-                if not ok:
+                if not result["ok"]:
                     print("UPLOAD/BUILD FAIL")
                     meta_f.write(f"{args.board},{circuit},{n},{baud},build_or_upload_fail,0,0,0,,{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
                     meta_f.flush()
-                    print(log[-600:])
+                    print(result["log"][-600:])
+                    tel.write_point_row({
+                        "session_id": session.session_id, "phase": 3, "board": args.board,
+                        "circuit": circuit, "n": n, "baud": baud, "attempt_index": 0,
+                        "start_utc": attempt_start, "end_utc": ts, "wall_s": round(reflash_s, 3),
+                        "build_compile_s": round(result["compile_s"], 3),
+                        "upload_s": round(result["upload_s"], 3),
+                        "retry_count": 0, "timeout_hit": False,
+                        "failure_type": "build", "failure_message": result["log"][-300:],
+                        "status": "failed",
+                    })
+                    session.note_point(reflash_s=reflash_s, status="failed")
                     break
 
-                time.sleep(1.5)
+                time.sleep(BOOT_WAIT_S)
                 port = find_port(args.board, args.port)
+                exec_t0 = time.perf_counter()
                 with serial.Serial(port, baud, timeout=1) as ser:
                     ser.dtr = False
                     ser.rts = False
                     time.sleep(0.3)
                     ser.reset_input_buffer()
-                    done, rows, served, dropped, sim_error = run_offload_session(ser, sim, budget_s)
+                    (done, rows, served, dropped, sim_error,
+                     pc_sim_durations, bytes_transferred) = run_offload_session(ser, sim, budget_s)
+                device_exec_s = time.perf_counter() - exec_t0
+                attempt_end = datetime.now(timezone.utc).isoformat()
                 sim_error_safe = sim_error.replace(",", ";").replace("\n", " ")
 
                 status = "ok" if (done and len(rows) > 0) else "session_incomplete"
@@ -380,6 +472,45 @@ def main():
 
                 meta_f.write(f"{args.board},{circuit},{n},{baud},{status},{served},{dropped},{len(rows)},{sim_error_safe},{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
                 meta_f.flush()
+
+                # per-rep round-trip latency: ใช้ตัวเลขที่ MCU วัดเอง (e2e_latency_us,
+                # คอลัมน์ที่ 6 ของแต่ละบรรทัด CSV) ไม่วัดซ้ำฝั่ง PC — micros() ของ MCU
+                # ครอบทั้งรอบ write+read จริง ๆ ที่อุปกรณ์เห็น เชื่อถือได้กว่าประมาณจาก PC
+                latencies_us = []
+                for line in rows:
+                    parts = line.split(",")
+                    if len(parts) >= 6:
+                        try:
+                            latencies_us.append(float(parts[5]))
+                        except ValueError:
+                            pass
+                avg_latency_s = (sum(latencies_us) / len(latencies_us) / 1e6) if latencies_us else ""
+                pc_sim_total = sum(pc_sim_durations)
+                pc_sim_median = (sorted(pc_sim_durations)[len(pc_sim_durations) // 2]
+                                 if pc_sim_durations else "")
+                # raw CSV: ...,e2e_latency_us,crc_error,timed_out — crc_error คือ index -2
+                # เสมอ (ก่อนหน้า timed_out ตัวสุดท้าย) รวม dropped (CRC ผิดที่ฝั่ง PC เห็น
+                # ก่อนตอบด้วยซ้ำ, ไม่มีในแถว rows เลยเพราะ MCU ก็ timeout ไปเงียบ ๆ)
+                crc_error_count = dropped + sum(1 for line in rows if line.split(",")[-2] == "1")
+                tel.write_point_row({
+                    "session_id": session.session_id, "phase": 3, "board": args.board,
+                    "circuit": circuit, "n": n, "baud": baud, "attempt_index": 0,
+                    "start_utc": attempt_start, "end_utc": attempt_end,
+                    "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
+                    "build_compile_s": round(result["compile_s"], 3),
+                    "upload_s": round(result["upload_s"], 3),
+                    "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
+                    "pc_sim_s_total": round(pc_sim_total, 3),
+                    "pc_sim_s_median": round(pc_sim_median, 4) if pc_sim_median != "" else "",
+                    "serial_transfer_s_total": round(max(device_exec_s - pc_sim_total, 0.0), 3),
+                    "avg_round_trip_latency_s": round(avg_latency_s, 6) if avg_latency_s != "" else "",
+                    "crc_error_count": crc_error_count, "bytes_transferred": bytes_transferred,
+                    "retry_count": 0, "timeout_hit": not done,
+                    "failure_type": "none" if status == "ok" else "serial",
+                    "failure_message": sim_error_safe, "status": status,
+                })
+                session.note_point(device_s=device_exec_s, reflash_s=reflash_s,
+                                    status="ok" if status == "ok" else "failed")
 
                 error_rows = sum(1 for r in rows if r.split(",")[-1] == "1" or r.split(",")[-2] == "1")
                 error_rate = (error_rows / len(rows)) if rows else 1.0
@@ -400,10 +531,6 @@ def main():
                         print(f"พบขีดจำกัดจริงของวงจร {circuit} ที่ n={n} (baud={baud} ยังถือว่าเสถียร)")
                     break
                 n_succeeded += 1
-
-    raw_f.close()
-    meta_f.close()
-    print(f"\nraw -> {raw_path}\nsession log -> {meta_path}")
 
 
 if __name__ == "__main__":

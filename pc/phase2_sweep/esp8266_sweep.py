@@ -77,6 +77,7 @@ sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
+from shared import telemetry as tel  # noqa: E402
 
 RESUME_KEY_SPEC = [("circuit", str), ("n", int)]
 
@@ -85,6 +86,8 @@ RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 PIO = os.environ.get("PIO_PATH") or shutil.which("pio")
 
 BAUD = 115200
+F_CPU = 80000000  # เมตาดาต้าเท่านั้น ไม่ได้ใช้คำนวณอะไร
+BOOT_WAIT_S = 1.5  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
 # เวลารอสูงสุดต่อจุดข้อมูลไม่ใช่ค่าคงที่อีกต่อไป — คำนวณต่อ (circuit, n) จาก
 # pc/shared/timing_model.timeout_budget_s() ดูเหตุผลใน header ของไฟล์นี้
 
@@ -100,23 +103,48 @@ def find_esp_port(hint: str) -> str:
 
 
 def build_and_upload(circuit: str, n: int, port_hint: str):
+    """แยก compile กับ upload เป็นสอง subprocess (เดิมเป็นคำสั่งเดียว `-t upload`) เพื่อ
+    จับเวลาแยกกันได้จริง — ดู uno_sweep.py::build_and_upload สำหรับเหตุผลเต็ม เรื่อง
+    dependency tracking ของ PlatformIO ที่ทำให้พฤติกรรมจริงไม่เปลี่ยนจากเดิม
+
+    คืน dict (ไม่ใช่ tuple) เพราะจำนวนค่าที่ต้องส่งกลับเพิ่มขึ้น"""
     port = find_esp_port(port_hint)
     env = os.environ.copy()
     env.update({"N_QUBITS": str(n), "CIRCUIT_ID": str(CIRCUIT_IDS[circuit])})
 
+    t0 = time.perf_counter()
+    try:
+        proc = subprocess.run(
+            [PIO, "run", "-e", "nodemcuv2"],
+            cwd=str(FW_DIR), env=env, capture_output=True, text=True, timeout=120,
+        )
+        c_stdout, c_stderr, c_rc = proc.stdout, proc.stderr, proc.returncode
+    except subprocess.TimeoutExpired as e:
+        c_stdout = (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
+        c_stderr = "pio run (compile) timed out after 120s"
+        c_rc = -1
+    compile_s = time.perf_counter() - t0
+
+    if c_rc != 0:
+        return {"ok": False, "log": c_stdout[-4000:] + c_stderr[-2000:], "port": port,
+                "compile_s": compile_s, "upload_s": 0.0}
+
+    t0 = time.perf_counter()
     try:
         proc = subprocess.run(
             [PIO, "run", "-e", "nodemcuv2", "-t", "upload", "--upload-port", port],
             cwd=str(FW_DIR), env=env, capture_output=True, text=True, timeout=120,
         )
-        stdout, stderr, returncode = proc.stdout, proc.stderr, proc.returncode
+        u_stdout, u_stderr, u_rc = proc.stdout, proc.stderr, proc.returncode
     except subprocess.TimeoutExpired as e:
-        stdout = (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
-        stderr = "pio run timed out after 120s (stuck esptool / stuck port)"
-        returncode = -1
+        u_stdout = (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
+        u_stderr = "pio run (upload) timed out after 120s (stuck esptool / stuck port)"
+        u_rc = -1
+    upload_s = time.perf_counter() - t0
 
-    ok = returncode == 0
-    return ok, stdout[-4000:] + stderr[-2000:], port
+    ok = u_rc == 0
+    return {"ok": ok, "log": u_stdout[-4000:] + u_stderr[-2000:], "port": port,
+            "compile_s": compile_s, "upload_s": upload_s}
 
 
 class HardTimeout(Exception):
@@ -242,6 +270,34 @@ def main():
     rs.print_resume_summary("esp8266", planned, completed, remaining_human)
     wall_n_by_circuit = rs.known_wall_n(completed)
 
+    # telemetry: session wrapper + environment metadata ครั้งเดียวตอนเริ่ม session —
+    # ดู pc/shared/telemetry.py และ uno_sweep.py สำหรับ schema เต็ม/เหตุผล
+    resumed_from_previous = bool(completed)
+    last_end = tel.last_session_end_utc("esp8266", 2) if resumed_from_previous else None
+    session = tel.SessionRecorder(phase=2, board="esp8266", circuits=args.circuits,
+                                   resumed_from_previous=resumed_from_previous,
+                                   estimated_total_s=round(est_s, 1))
+    with session:
+        if last_end is not None:
+            from datetime import datetime as _dt, timezone as _tz
+            gap = (_dt.now(_tz.utc) - last_end).total_seconds()
+            if gap > 0:
+                session.note_interruption_gap(gap)
+        env_path = tel.write_environment_metadata(
+            session.session_id, "esp8266", args.port, BAUD, F_CPU, FW_DIR / "src")
+        session.env_json_path = str(env_path)
+
+        _sweep_body(args, completed, wall_n_by_circuit, infeasible,
+                    raw_w, raw_f, wall_w, wall_f, session)
+
+    raw_f.close()
+    wall_f.close()
+    print(f"\nraw -> {raw_path}\nmemory wall -> {wall_path}")
+    print(f"telemetry -> {tel.SESSIONS_CSV}, {tel.POINTS_CSV}")
+
+
+def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
+                 raw_w, raw_f, wall_w, wall_f, session):
     for circuit in args.circuits:
         print(f"\n=== circuit={circuit} ===")
         n_values = n_values_for_sweep(circuit, args.n_start, args.n_max)
@@ -251,10 +307,12 @@ def main():
         for n in n_values:
             if (circuit, n) in completed:
                 print(f"n={n:2d}  SKIP (resume): already {completed[(circuit, n)].get('status', '?')}")
+                session.note_point(resumed_skip=True)
                 continue
             if circuit in wall_n_by_circuit and n > wall_n_by_circuit[circuit]:
                 print(f"n={n:2d}  SKIP (resume): {circuit} already hit its wall at "
                       f"n={wall_n_by_circuit[circuit]} in a previous session")
+                session.note_point(resumed_skip=True)
                 continue
 
             theoretical_bytes = (1 << n) * 8
@@ -273,10 +331,20 @@ def main():
                                   "skipped_compute_infeasible", ts, 0,
                                   budget_s, round(expected_s, 1), "n/a"])
                 wall_f.flush()
+                tel.write_point_row({
+                    "session_id": session.session_id, "phase": 2, "board": "esp8266",
+                    "circuit": circuit, "n": n, "attempt_index": 0,
+                    "start_utc": ts, "end_utc": ts, "wall_s": 0,
+                    "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                    "status": "skipped",
+                })
+                session.note_point(status="skipped")
                 continue
 
             wall_found = False
             retry_used = 0
+            point_device_s = 0.0
+            point_reflash_s = 0.0
 
             # attempt 0 = ครั้งแรก, attempt 1 = retry เดียว — เฉพาะ runtime_hang_or_reset
             # เท่านั้นที่ retry ได้ (อาจเป็นสายหลุด/USB glitch ชั่วคราว) build/upload fail
@@ -293,22 +361,40 @@ def main():
                 if attempt == 1:
                     print("(retry) ", end="", flush=True)
 
-                ok, log, used_port = build_and_upload(circuit, n, args.port)
+                attempt_start = datetime.now(timezone.utc).isoformat()
+                result = build_and_upload(circuit, n, args.port)
                 ts = datetime.now(timezone.utc).isoformat()
-                args.port = used_port
+                args.port = result["port"]
+                reflash_s = result["compile_s"] + result["upload_s"]
+                point_reflash_s += reflash_s
 
-                if not ok:
+                if not result["ok"]:
                     print("UPLOAD/BUILD FAIL")
                     wall_w.writerow(["esp8266", circuit, n, theoretical_bytes, None, None,
                                       "build_or_upload_fail", ts, retry_used,
                                       budget_s, round(expected_s, 1), retry_policy])
                     wall_f.flush()
-                    print(log[-800:])
+                    print(result["log"][-800:])
+                    tel.write_point_row({
+                        "session_id": session.session_id, "phase": 2, "board": "esp8266",
+                        "circuit": circuit, "n": n, "attempt_index": attempt,
+                        "start_utc": attempt_start, "end_utc": ts, "wall_s": round(reflash_s, 3),
+                        "build_compile_s": round(result["compile_s"], 3),
+                        "upload_s": round(result["upload_s"], 3),
+                        "retry_count": retry_used, "timeout_hit": False,
+                        "failure_type": "build", "failure_message": result["log"][-300:],
+                        "status": "failed",
+                    })
+                    session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
                     wall_found = True
                     break
 
-                time.sleep(1.5)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
+                time.sleep(BOOT_WAIT_S)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
+                exec_t0 = time.perf_counter()
                 done, rows, malloc_failed, note = read_serial_trials(find_esp_port(args.port), budget_s)
+                device_exec_s = time.perf_counter() - exec_t0
+                point_device_s += device_exec_s
+                attempt_end = datetime.now(timezone.utc).isoformat()
 
                 if malloc_failed:
                     print(f"MALLOC_FAILED -> Memory Wall found (n={n})")
@@ -316,6 +402,18 @@ def main():
                                       "malloc_failed", ts, retry_used,
                                       budget_s, round(expected_s, 1), retry_policy])
                     wall_f.flush()
+                    tel.write_point_row({
+                        "session_id": session.session_id, "phase": 2, "board": "esp8266",
+                        "circuit": circuit, "n": n, "attempt_index": attempt,
+                        "start_utc": attempt_start, "end_utc": attempt_end,
+                        "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
+                        "build_compile_s": round(result["compile_s"], 3),
+                        "upload_s": round(result["upload_s"], 3),
+                        "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
+                        "retry_count": retry_used, "timeout_hit": False,
+                        "failure_type": "malloc", "status": "failed",
+                    })
+                    session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
                     wall_found = True
                     break
 
@@ -329,9 +427,33 @@ def main():
                     wall_f.flush()
                     suffix = f"  (succeeded after {retry_used} retry)" if retry_used else ""
                     print(f"OK  trials_captured={len(rows)}{suffix}")
+                    tel.write_point_row({
+                        "session_id": session.session_id, "phase": 2, "board": "esp8266",
+                        "circuit": circuit, "n": n, "attempt_index": attempt,
+                        "start_utc": attempt_start, "end_utc": attempt_end,
+                        "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
+                        "build_compile_s": round(result["compile_s"], 3),
+                        "upload_s": round(result["upload_s"], 3),
+                        "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
+                        "retry_count": retry_used, "timeout_hit": False,
+                        "failure_type": "none", "status": "ok",
+                    })
+                    session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="ok")
                     break
 
                 status = f"runtime_hang_or_reset({note})"
+                tel.write_point_row({
+                    "session_id": session.session_id, "phase": 2, "board": "esp8266",
+                    "circuit": circuit, "n": n, "attempt_index": attempt,
+                    "start_utc": attempt_start, "end_utc": attempt_end,
+                    "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
+                    "build_compile_s": round(result["compile_s"], 3),
+                    "upload_s": round(result["upload_s"], 3),
+                    "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
+                    "retry_count": retry_used, "timeout_hit": True,
+                    "failure_type": "hang", "failure_message": note,
+                    "status": "failed" if not (attempt == 0 and may_retry) else "retrying",
+                })
                 if attempt == 0 and may_retry:
                     retry_used = 1
                     print(f"NO 'DONE' within {budget_s}s -> {status}  "
@@ -345,14 +467,11 @@ def main():
                                   status, ts, retry_used,
                                       budget_s, round(expected_s, 1), retry_policy])
                 wall_f.flush()
+                session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
                 wall_found = True
 
             if wall_found:
                 break
-
-    raw_f.close()
-    wall_f.close()
-    print(f"\nraw -> {raw_path}\nmemory wall -> {wall_path}")
 
 
 if __name__ == "__main__":
