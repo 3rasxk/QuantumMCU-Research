@@ -225,6 +225,102 @@ trusting the 13.9h total, time one real build+upload cycle per board
 real number. This was not done as part of producing this checklist — it
 requires touching hardware, which this session was not authorized to do.
 
+---
+
+## Logic Analyzer procedure (for when the loaned LA arrives)
+
+Analysis tooling for this already exists and is tested against synthetic
+captures (`analysis/la_pulses.py`, `analysis/la_crosscheck.py` — see
+`run_log.md`). Nothing below has been run against a real capture yet — verify
+against one real file before trusting the tool on a full session.
+
+**Wiring:**
+- [ ] LA channel probe → the board's `GPIO_TIMING_PIN`: **Uno pin 7**,
+      **ESP8266 pin 5 (D1 on NodeMCU)**, **ESP32 pin 4** (each board's own
+      `firmware/<board>/src/main.cpp` — different pin per board, confirm
+      against that file if it's ever changed)
+- [ ] LA ground → common GND with the board (share ground with the USB/serial
+      connection already in use, don't add a second ground path)
+- [ ] **Check LA input voltage tolerance before connecting anything.** Uno's
+      GPIO is 5V logic; ESP8266/ESP32 are 3.3V logic. If your LA is a 3.3V-only
+      input (many cheap 8-channel 24MHz clones are, or have a fixed threshold
+      that doesn't tolerate 5V), connecting it directly to the Uno's pin 7 can
+      damage the LA input. Confirm the datasheet/spec explicitly before the
+      first Uno capture — if in doubt, use a level shifter or a resistor
+      divider, don't assume a "5V tolerant" claim without checking the source.
+
+**Trigger:** rising edge on the timing pin, one-shot per capture (not
+repeating/streaming trigger) — the pin only toggles predictably within a
+single sweep-script invocation's 100-rep loop.
+
+**Capture: one file per data point**, saved as:
+```
+data/raw/la/<board>_<circuit>_n<N>.csv
+```
+e.g. `data/raw/la/uno_h_all_n2.csv`, `data/raw/la/esp32_grover_n10.csv` — this
+naming convention is load-bearing: `la_crosscheck.py` parses board/circuit/n
+directly from the filename, no other metadata is read. One capture must cover
+the *entire* 100-rep loop for that point (100 pulses in one file), not one
+capture per rep.
+
+Start the capture, then run the sweep script for just that one `(circuit, n)`
+so the capture window lines up with the loop; stop the capture once the
+firmware's `DONE` line appears on serial (or a couple seconds after, extra
+idle time at the end doesn't hurt — extra idle time at the *start*, before the
+first rising edge, doesn't hurt either. What breaks the tool is the capture
+window cutting into a pulse, not extra silence around it).
+
+**Export format:** two are supported (auto-detected by `la_pulses.py`, see its
+module docstring for the exact byte-level format of each):
+- **FORMAT A** — `sigrok-cli -O csv` default (raw, one sample per line at full
+  rate). Simple, but see the capture-memory note below before using it for
+  anything but the shortest points.
+- **FORMAT B** — PulseView's "changes only" CSV export (one row per edge, not
+  per sample). Far smaller for anything but trivial durations — **use this one
+  by default**, reserve FORMAT A for quick sanity captures only.
+
+**Capture memory / file size limits — real numbers, not implemented as
+sub-sampling here:**
+
+FORMAT A's file size and required LA sample buffer scale directly with
+capture *duration* at 24MHz, independent of how few pulses are in it. A
+measured 33ms synthetic capture (100 pulses at ~284µs + gaps) produced a
+1.6MB FORMAT A file — roughly 48MB per second of capture duration. Applying
+that to the actual per-point durations already established in this
+checklist's cost table:
+
+| Board | Circuit | n | REPS=100 duration | FORMAT A file size (raw estimate) |
+|---|---|---|---|---|
+| Uno | grover | 6 | 4.9 min | ~14 GB |
+| Uno | grover | 7 | 35.6 min | ~103 GB |
+| ESP8266 | grover | 7 | 3.0 min | ~9 GB |
+| ESP8266 | grover | 8 | 26.0 min | ~75 GB |
+| ESP8266 | grover | 9 | 3.6 h | **~627 GB** |
+| ESP32 | grover | 9 | 11.7 min | ~34 GB |
+| ESP32 | grover | 10 | 1.7 h | ~296 GB |
+
+**Any `grover` point at n≥5 on any board, and effectively every point above a
+few seconds of device time, needs FORMAT B, not FORMAT A** — FORMAT B's size
+depends only on pulse *count* (always ~200 rows for a 100-rep capture, KB not
+GB), not duration, so it doesn't have this problem in principle.
+
+What FORMAT B does **not** solve: the LA's own onboard capture buffer and USB
+streaming bandwidth *while capturing* are still bounded by real-time
+constraints at 24MHz — a cheap LA may simply be unable to *hold* multiple
+minutes to hours of samples in flight regardless of what format it exports to
+afterward, since the reduction to "changes only" typically happens in the
+export step, after the full-rate capture already had to fit somewhere. For
+the ESP8266 n=9 (3.6h) and ESP32 n=10 (1.7h) points specifically, and likely
+several of the multi-minute ones above, **this means a straight one-shot
+24MHz capture for the full 100-rep session is probably not possible on
+typical hardware, and those points would need a sub-sampling strategy** — for
+example, a reduced sample rate (trading pulse-width resolution for capturable
+duration) or capturing only a subset of the 100 reps for those specific
+points rather than the full set. Neither is implemented here; check the
+LA's actual specs (onboard memory, max streaming rate) once it arrives before
+deciding, and treat those specific points as a known gap in LA coverage if no
+workaround is practical in the time available.
+
 ## After everything
 
 ```bash
