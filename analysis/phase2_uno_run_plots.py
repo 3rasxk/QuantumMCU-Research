@@ -176,7 +176,11 @@ def plot_exec_time_vs_n(board, circuit):
     ps.style_axes(ax, log_y=True)
     ax.set_xlabel("Number of qubits, n (qubits)")
     ax.set_ylabel("Execution time per rep (µs, log scale)")
-    ax.legend(loc="upper left")
+    # legend moved outside the plot area (as with outcomes_vs_n/time_per_point) --
+    # a fixed "upper left" collided with the data for steane_encode's single-point
+    # chart, where the narrow x/y range put the model marker directly under the
+    # legend box (found via the required visual self-check, not code review)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=2)
 
     commit_note = f"commit {collection_commit(board, circuit)}"
     _finish(fig, ax, board, circuit, "per-rep execution time vs n", commit_note)
