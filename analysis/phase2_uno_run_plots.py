@@ -297,8 +297,13 @@ def plot_cumulative(board):
             vals = [float(r["exec_time_us"]) for r in raw
                     if int(r["n"]) == n and not is_warmup(int(r["rep"]))]
             medians.append(float(np.median(vals)) if vals else float("nan"))
+        # circuits deliberately don't borrow board hues (colour means board everywhere
+        # else in this project) -- grey ink + marker + linestyle is the established
+        # secondary encoding for telling circuits apart (see plot_style.py), so both
+        # CIRCUIT_MARKER and CIRCUIT_LINESTYLE must be used together, not just marker
         ax.plot(ok_ns, medians, marker=ps.CIRCUIT_MARKER[circuit], color=ps.CIRCUIT_INK[circuit],
-                linewidth=1.6, markersize=6, markeredgecolor="white", markeredgewidth=0.6,
+                linestyle=ps.CIRCUIT_LINESTYLE[circuit], linewidth=1.6, markersize=6,
+                markeredgecolor="white", markeredgewidth=0.6,
                 label=ps.CIRCUIT_LABEL[circuit], zorder=3)
         if wall_ns:
             # wall point itself has no raw trials (no exec_time_us to plot) -- anchor
