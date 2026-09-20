@@ -17,9 +17,9 @@
 #
 # หมายเหตุการ mock: ใช้รูปแบบเดียวกับ
 # telemetry_test.py::test_mocked_uno_sweep_dry_run — reload uno_sweep, ชี้
-# RESULTS_DIR/telemetry paths ไปที่ scratch dir แล้ว monkeypatch
-# build_and_upload/read_serial_trials/lac.* เป็นฟังก์ชันปลอมทั้งหมด ไม่แตะ
-# ฮาร์ดแวร์หรือ data/raw/ ของจริงเลย
+# paths.REPO_ROOT ไปที่ scratch dir (จุดเดียวที่ต้อง redirect ตั้งแต่ 2026-09-20,
+# ดู pc/shared/paths.py) แล้ว monkeypatch build_and_upload/read_serial_trials/
+# lac.* เป็นฟังก์ชันปลอมทั้งหมด ไม่แตะฮาร์ดแวร์หรือ data/raw/ ของจริงเลย
 
 import csv
 import shutil
@@ -49,18 +49,12 @@ def _fresh_uno_sweep(scratch: Path):
     importlib.reload(us)
     from shared import telemetry as tel
     from shared import la_capture as lac
+    from shared import paths as sp
 
     sweep_dir = scratch
     sweep_dir.mkdir(parents=True, exist_ok=True)
-    us.RESULTS_DIR = sweep_dir
-    tel.TELEMETRY_DIR = sweep_dir / "telemetry"
-    tel.SESSIONS_CSV = tel.TELEMETRY_DIR / "sessions.csv"
-    tel.POINTS_CSV = tel.TELEMETRY_DIR / "points.csv"
-    tel.ENV_DIR = tel.TELEMETRY_DIR / "env"
-    lac.LA_DIR = sweep_dir / "la"
-    lac.PLAN_PATH = lac.LA_DIR / "capture_plan.csv"
-    lac.ISSUES_LOG = lac.LA_DIR / "capture_issues.log"
-    return us, tel, lac
+    sp.REPO_ROOT = sweep_dir
+    return us, tel, lac, sp
 
 
 def _install_fake_build_and_upload(us, order):
@@ -108,7 +102,7 @@ SESSIONS_TS_COLS = ["session_id", "start_utc", "end_utc", "env_json_path"]
 
 
 def test_flag_off_zero_la_calls(scratch: Path):
-    us, tel, lac = _fresh_uno_sweep(scratch / "off")
+    us, tel, lac, sp = _fresh_uno_sweep(scratch / "off")
     order = []
     _install_fake_build_and_upload(us, order)
     _install_fake_read_serial_trials(us, order)
@@ -126,15 +120,15 @@ def test_flag_off_zero_la_calls(scratch: Path):
     _run(us, la=False)
 
     check("flag off: zero calls into la_capture", lac_calls == [], lac_calls)
-    raw_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_raw.csv")))
+    raw_rows = list(csv.DictReader(open(sp.raw_csv_path("uno", "h_all"))))
     check("flag off: 100 raw rows written", len(raw_rows) == 100, len(raw_rows))
-    wall_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_memory_wall.csv")))
+    wall_rows = list(csv.DictReader(open(sp.memory_wall_csv_path("uno", "h_all"))))
     check("flag off: wall status=ok", wall_rows[0]["status"] == "ok", wall_rows[0]["status"])
     return raw_rows, wall_rows
 
 
 def test_flag_on_missing_sigrok_matches_baseline(scratch: Path, baseline_raw, baseline_wall):
-    us, tel, lac = _fresh_uno_sweep(scratch / "missing_sigrok")
+    us, tel, lac, sp = _fresh_uno_sweep(scratch / "missing_sigrok")
     order = []
     _install_fake_build_and_upload(us, order)
     _install_fake_read_serial_trials(us, order)
@@ -152,8 +146,8 @@ def test_flag_on_missing_sigrok_matches_baseline(scratch: Path, baseline_raw, ba
 
     _run(us, la=True)
 
-    raw_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_raw.csv")))
-    wall_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_memory_wall.csv")))
+    raw_rows = list(csv.DictReader(open(sp.raw_csv_path("uno", "h_all"))))
+    wall_rows = list(csv.DictReader(open(sp.memory_wall_csv_path("uno", "h_all"))))
     check("missing sigrok: continues without capture (no crash, no la_* calls)", True)
     check("missing sigrok: raw rows match flag-off baseline",
           raw_rows == baseline_raw, "mismatch" if raw_rows != baseline_raw else "")
@@ -165,7 +159,7 @@ def test_flag_on_missing_sigrok_matches_baseline(scratch: Path, baseline_raw, ba
 
 
 def test_flag_on_clean_capture(scratch: Path, baseline_raw, baseline_wall):
-    us, tel, lac = _fresh_uno_sweep(scratch / "clean_capture")
+    us, tel, lac, sp = _fresh_uno_sweep(scratch / "clean_capture")
     order = []
     _install_fake_build_and_upload(us, order)
     _install_fake_read_serial_trials(us, order)
@@ -211,8 +205,8 @@ def test_flag_on_clean_capture(scratch: Path, baseline_raw, baseline_wall):
           len(analysis_calls) == 1 and analysis_calls[0][4] == 100, analysis_calls)
     check("clean capture: no issues logged", issues == [], issues)
 
-    raw_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_raw.csv")))
-    wall_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_memory_wall.csv")))
+    raw_rows = list(csv.DictReader(open(sp.raw_csv_path("uno", "h_all"))))
+    wall_rows = list(csv.DictReader(open(sp.memory_wall_csv_path("uno", "h_all"))))
     check("clean capture: raw rows match flag-off baseline (LA wiring doesn't change data)",
           raw_rows == baseline_raw)
     check("clean capture: wall status matches flag-off baseline",
@@ -221,7 +215,7 @@ def test_flag_on_clean_capture(scratch: Path, baseline_raw, baseline_wall):
 
 
 def test_flag_on_capture_failure_does_not_affect_micros_data(scratch: Path, baseline_raw, baseline_wall):
-    us, tel, lac = _fresh_uno_sweep(scratch / "capture_fail")
+    us, tel, lac, sp = _fresh_uno_sweep(scratch / "capture_fail")
     order = []
     _install_fake_build_and_upload(us, order)
     _install_fake_read_serial_trials(us, order)
@@ -240,8 +234,8 @@ def test_flag_on_capture_failure_does_not_affect_micros_data(scratch: Path, base
 
     _run(us, la=True)
 
-    raw_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_raw.csv")))
-    wall_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_memory_wall.csv")))
+    raw_rows = list(csv.DictReader(open(sp.raw_csv_path("uno", "h_all"))))
+    wall_rows = list(csv.DictReader(open(sp.memory_wall_csv_path("uno", "h_all"))))
     check("capture failure: run_analysis is never called on a failed capture",
           analysis_calls == [], analysis_calls)
     check("capture failure: raw (micros()) data unaffected, matches flag-off baseline",
@@ -256,7 +250,7 @@ def test_flag_on_capture_failure_does_not_affect_micros_data(scratch: Path, base
 def test_flag_on_missing_plan_entry_skips_capture(scratch: Path, baseline_raw):
     """No data/raw/la/capture_plan.csv entry for this point -> log and skip
     capture for it, still complete the point normally (no crash, no guessing)."""
-    us, tel, lac = _fresh_uno_sweep(scratch / "no_plan")
+    us, tel, lac, sp = _fresh_uno_sweep(scratch / "no_plan")
     order = []
     _install_fake_build_and_upload(us, order)
     _install_fake_read_serial_trials(us, order)
@@ -271,8 +265,8 @@ def test_flag_on_missing_plan_entry_skips_capture(scratch: Path, baseline_raw):
     _run(us, la=True)
 
     check("no plan entry: capture skipped and logged, point still completes",
-          any("no data/raw/la/capture_plan.csv entry" in m for m in issues), issues)
-    raw_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_raw.csv")))
+          any("no capture_plan.csv entry" in m for m in issues), issues)
+    raw_rows = list(csv.DictReader(open(sp.raw_csv_path("uno", "h_all"))))
     check("no plan entry: raw rows still match flag-off baseline", raw_rows == baseline_raw)
 
 

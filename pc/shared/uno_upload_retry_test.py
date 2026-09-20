@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # uno_upload_retry_test.py — self-contained tests for standing operator
 # decisions 1 and 2 (2026-09-20, see run_log.md) as implemented in
-# pc/phase2_sweep/uno_sweep.py:
+# pc/phase2_sweep/uno_sweep.py, PLUS the per-board-per-algorithm path layout
+# (pc/shared/paths.py) that same commit's follow-up migration introduced:
 #
 #   decision 1 (upload failures): up to UPLOAD_MAX_ATTEMPTS (3) attempts total
 #   per n for an upload-stage failure (avrdude never got a working handshake).
@@ -17,6 +18,14 @@
 #   observed behaviour) but never retried, and the final status is forced to
 #   build_overflow regardless of run outcome. A hang/reset WITHOUT that
 #   evidence is NOT a wall (runtime_hang_or_reset, for the owner to review).
+#
+#   path layout: every circuit in --circuits is now its own directory (own
+#   raw.csv/memory_wall.csv/points.csv/sessions.csv/env/) under
+#   data/raw/<board>/<circuit>/phase<N>/ (pc/shared/paths.py) instead of one
+#   shared file per board across all circuits -- redirected in tests by
+#   setting paths.REPO_ROOT to a scratch dir, the same mechanism every caller
+#   uses (paths.py's functions read REPO_ROOT as a module global at call time,
+#   same late-binding fix telemetry.py already used for its own paths).
 #
 # Root-cause coverage: read_serial_trials() must close its pyserial handle on
 # the hard_timeout path (see pc/phase2_sweep/uno_sweep.py read_serial_trials),
@@ -58,20 +67,16 @@ def _fresh_uno_sweep(scratch: Path):
     import uno_sweep as us
     importlib.reload(us)
     from shared import telemetry as tel
-    from shared import la_capture as lac
+    from shared import paths as sp
 
     scratch.mkdir(parents=True, exist_ok=True)
-    us.RESULTS_DIR = scratch
-    tel.TELEMETRY_DIR = scratch / "telemetry"
-    tel.SESSIONS_CSV = tel.TELEMETRY_DIR / "sessions.csv"
-    tel.POINTS_CSV = tel.TELEMETRY_DIR / "points.csv"
-    tel.ENV_DIR = tel.TELEMETRY_DIR / "env"
-    lac.LA_DIR = scratch / "la"
-    lac.PLAN_PATH = lac.LA_DIR / "capture_plan.csv"
-    lac.ISSUES_LOG = lac.LA_DIR / "capture_issues.log"
+    # single redirection point for every path this sweep touches (raw/wall/
+    # points/sessions/env/la, all derived from paths.py) -- late-bound at call
+    # time inside each paths.py function, same fix telemetry.py already uses
+    sp.REPO_ROOT = scratch
     us.find_uno_port = lambda hint: "/dev/fake"
     us.port_still_enumerated = lambda: True
-    return us, tel
+    return us, tel, sp
 
 
 def _install_read_serial_trials(us, n_rows=100, done=True):
@@ -105,8 +110,16 @@ def _ok_result(ram_pct=12.0, ram_bytes=234):
             "timed_out": False}
 
 
+def _wall_rows(sp, circuit):
+    return list(csv.DictReader(open(sp.memory_wall_csv_path("uno", circuit))))
+
+
+def _points_rows(sp, circuit):
+    return list(csv.DictReader(open(sp.points_csv_path("uno", circuit))))
+
+
 def test_upload_failure_retries_and_succeeds_on_third_attempt(scratch: Path):
-    us, tel = _fresh_uno_sweep(scratch / "retry_succeeds_attempt3")
+    us, tel, sp = _fresh_uno_sweep(scratch / "retry_succeeds_attempt3")
     _install_read_serial_trials(us)
 
     calls = []
@@ -125,12 +138,12 @@ def test_upload_failure_retries_and_succeeds_on_third_attempt(scratch: Path):
     check("attempt3 success: n=3 (same circuit) still attempted -- circuit NOT abandoned",
           ("h_all", 3) in calls, calls)
 
-    wall_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_memory_wall.csv")))
+    wall_rows = _wall_rows(sp, "h_all")
     row = [r for r in wall_rows if r["circuit"] == "h_all" and r["n"] == "2"][0]
     check("attempt3 success: n=2 ends up recorded ok", row["status"] == "ok", row)
     check("attempt3 success: retry_count=2 recorded", row["retry_count"] == "2", row["retry_count"])
 
-    pts = list(csv.DictReader(open(tel.POINTS_CSV)))
+    pts = _points_rows(sp, "h_all")
     n2_rows = [r for r in pts if r["n"] == "2"]
     check("attempt3 success: 3 telemetry rows for n=2 (one per attempt)",
           len(n2_rows) == 3, len(n2_rows))
@@ -144,7 +157,7 @@ def test_upload_failure_retries_and_succeeds_on_third_attempt(scratch: Path):
 
 
 def test_upload_failure_exhausts_all_3_then_continues_to_next_n(scratch: Path):
-    us, tel = _fresh_uno_sweep(scratch / "exhaust_continues")
+    us, tel, sp = _fresh_uno_sweep(scratch / "exhaust_continues")
     _install_read_serial_trials(us)
 
     calls = []
@@ -166,7 +179,7 @@ def test_upload_failure_exhausts_all_3_then_continues_to_next_n(scratch: Path):
     check("exhaust-continues: n=4 in the SAME circuit IS also attempted",
           ("h_all", 4) in calls, calls)
 
-    wall_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_memory_wall.csv")))
+    wall_rows = _wall_rows(sp, "h_all")
     row = [r for r in wall_rows if r["circuit"] == "h_all" and r["n"] == "2"][0]
     check("exhaust-continues: final status is build_or_upload_fail (no new status value)",
           row["status"] == "build_or_upload_fail", row["status"])
@@ -177,7 +190,7 @@ def test_upload_failure_exhausts_all_3_then_continues_to_next_n(scratch: Path):
 
 
 def test_two_consecutive_n_exhaustions_stop_the_whole_run(scratch: Path):
-    us, tel = _fresh_uno_sweep(scratch / "consecutive_stop")
+    us, tel, sp = _fresh_uno_sweep(scratch / "consecutive_stop")
     _install_read_serial_trials(us)
 
     calls = []
@@ -203,7 +216,7 @@ def test_two_consecutive_n_exhaustions_stop_the_whole_run(scratch: Path):
 
 
 def test_port_closed_after_hard_timeout(scratch: Path):
-    us, tel = _fresh_uno_sweep(scratch / "hard_timeout_close")
+    us, tel, sp = _fresh_uno_sweep(scratch / "hard_timeout_close")
 
     state = {"closed": False, "is_open": True}
 
@@ -231,7 +244,7 @@ def test_port_closed_after_hard_timeout(scratch: Path):
 
 
 def test_hard_timeout_triggers_settle_before_next_build_and_upload(scratch: Path):
-    us, tel = _fresh_uno_sweep(scratch / "hard_timeout_settle")
+    us, tel, sp = _fresh_uno_sweep(scratch / "hard_timeout_settle")
 
     slept = []
     real_sleep = us.time.sleep
@@ -257,7 +270,7 @@ def test_hard_timeout_triggers_settle_before_next_build_and_upload(scratch: Path
 
 
 def test_compile_ram_wall_stops_climbing_despite_successful_build(scratch: Path):
-    us, tel = _fresh_uno_sweep(scratch / "ram_wall")
+    us, tel, sp = _fresh_uno_sweep(scratch / "ram_wall")
     _install_read_serial_trials(us)
 
     calls = []
@@ -279,7 +292,7 @@ def test_compile_ram_wall_stops_climbing_despite_successful_build(scratch: Path)
     check("ram wall: next circuit still attempted",
           ("bell_ghz", 8) in calls, calls)
 
-    wall_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_memory_wall.csv")))
+    wall_rows = _wall_rows(sp, "h_all")
     row = [r for r in wall_rows if r["circuit"] == "h_all" and r["n"] == "8"][0]
     check("ram wall: status forced to build_overflow despite ok=True/done=True",
           row["status"] == "build_overflow", row["status"])
@@ -288,7 +301,7 @@ def test_compile_ram_wall_stops_climbing_despite_successful_build(scratch: Path)
     check("ram wall: retry_count=0 (never retried)", row["retry_count"] == "0", row["retry_count"])
 
     raw_rows = list(csv.DictReader(
-        open(us.RESULTS_DIR / "uno_raw.csv"),
+        open(sp.raw_csv_path("uno", "h_all")),
         fieldnames=["board", "circuit", "n", "rep", "exec_time_us",
                     "free_heap_before", "free_heap_after", "timeout_budget_s"]))
     check("ram wall: the single observed run's raw trial data is still kept",
@@ -296,7 +309,7 @@ def test_compile_ram_wall_stops_climbing_despite_successful_build(scratch: Path)
 
 
 def test_hang_without_ram_evidence_is_not_a_wall(scratch: Path):
-    us, tel = _fresh_uno_sweep(scratch / "hang_not_wall")
+    us, tel, sp = _fresh_uno_sweep(scratch / "hang_not_wall")
     _install_read_serial_trials(us, done=False)  # never sends DONE -> hang
     us.build_and_upload = lambda circuit, n, port_hint, build_timeout_s=None: _ok_result(ram_pct=45.0)
 
@@ -313,7 +326,7 @@ def test_hang_without_ram_evidence_is_not_a_wall(scratch: Path):
 
     check("hang: retried once (2 read attempts) before giving up", calls["n"] == 2, calls["n"])
 
-    wall_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_memory_wall.csv")))
+    wall_rows = _wall_rows(sp, "h_all")
     row = [r for r in wall_rows if r["circuit"] == "h_all" and r["n"] == "2"][0]
     check("hang: status is runtime_hang_or_reset, NOT build_overflow",
           row["status"].startswith("runtime_hang_or_reset"), row["status"])
@@ -328,7 +341,7 @@ def test_hang_without_ram_evidence_is_not_a_wall(scratch: Path):
 
 
 def test_build_overflow_deterministic_never_retries(scratch: Path):
-    us, tel = _fresh_uno_sweep(scratch / "overflow")
+    us, tel, sp = _fresh_uno_sweep(scratch / "overflow")
     _install_read_serial_trials(us)
     calls = []
 
@@ -350,7 +363,7 @@ def test_build_overflow_deterministic_never_retries(scratch: Path):
     check("build_overflow: next circuit still attempted",
           ("bell_ghz", 8) in calls, calls)
 
-    wall_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_memory_wall.csv")))
+    wall_rows = _wall_rows(sp, "h_all")
     row = [r for r in wall_rows if r["circuit"] == "h_all" and r["n"] == "8"][0]
     check("build_overflow: status stays build_overflow, retry_count=0",
           row["status"] == "build_overflow" and row["retry_count"] == "0", row)
@@ -360,7 +373,7 @@ def test_upload_failure_retries_regardless_of_budget_rule(scratch: Path):
     """Decision 1's 3-attempt upload retry is NOT gated by the budget rule
     (RETRY_MAX_BUDGET_S) the way the hang/build_timeout retry is -- reflash
     time doesn't scale with n the way device-run time does."""
-    us, tel = _fresh_uno_sweep(scratch / "upload_retry_ignores_budget")
+    us, tel, sp = _fresh_uno_sweep(scratch / "upload_retry_ignores_budget")
     _install_read_serial_trials(us)
     us.tm.retry_allowed = lambda budget_s: False  # force may_retry=False regardless of budget
 
@@ -377,13 +390,13 @@ def test_upload_failure_retries_regardless_of_budget_rule(scratch: Path):
 
     check("upload retry ignores budget rule: retried despite may_retry=False",
           calls.count(("h_all", 2)) == 2, calls)
-    wall_rows = list(csv.DictReader(open(us.RESULTS_DIR / "uno_memory_wall.csv")))
+    wall_rows = _wall_rows(sp, "h_all")
     row = [r for r in wall_rows if r["circuit"] == "h_all" and r["n"] == "2"][0]
     check("upload retry ignores budget rule: ends up ok", row["status"] == "ok", row["status"])
 
 
 def test_resume_skips_completed_points_on_second_invocation(scratch: Path):
-    us, tel = _fresh_uno_sweep(scratch / "resume")
+    us, tel, sp = _fresh_uno_sweep(scratch / "resume")
     _install_read_serial_trials(us)
     us.build_and_upload = lambda circuit, n, port_hint, build_timeout_s=None: _ok_result()
 
@@ -401,10 +414,83 @@ def test_resume_skips_completed_points_on_second_invocation(scratch: Path):
     check("resume: second invocation touches hardware zero times (everything skipped)",
           calls == [], calls)
 
-    pts = list(csv.DictReader(open(tel.POINTS_CSV)))
+    pts = _points_rows(sp, "h_all")
     second_session_statuses = [r["status"] for r in pts if r["session_id"]][-2:]
     check("resume: skip rows use skipped_resume (existing status value, no new one)",
           all(s == "skipped_resume" for s in second_session_statuses), second_session_statuses)
+
+
+def test_paths_helper_resolves_per_board_per_algorithm_layout(scratch: Path):
+    """pc/shared/paths.py itself: every function resolves to
+    data/raw/<board>/<circuit>/phase<N>/... under whatever REPO_ROOT is set to
+    at call time (not at import/def time -- the same late-binding requirement
+    telemetry.py's write_point_row docstring documents)."""
+    from shared import paths as sp
+    root = scratch / "paths_helper"
+    sp.REPO_ROOT = root
+
+    check("paths: raw_dir",
+          sp.raw_dir("uno", "h_all", phase=2) == root / "data/raw/uno/h_all/phase2")
+    check("paths: raw_csv_path",
+          sp.raw_csv_path("uno", "h_all", phase=2) == root / "data/raw/uno/h_all/phase2/raw.csv")
+    check("paths: memory_wall_csv_path",
+          sp.memory_wall_csv_path("uno", "h_all", phase=2)
+          == root / "data/raw/uno/h_all/phase2/memory_wall.csv")
+    check("paths: points_csv_path",
+          sp.points_csv_path("uno", "h_all", phase=2)
+          == root / "data/raw/uno/h_all/phase2/points.csv")
+    check("paths: sessions_csv_path",
+          sp.sessions_csv_path("uno", "h_all", phase=2)
+          == root / "data/raw/uno/h_all/phase2/sessions.csv")
+    check("paths: env_dir",
+          sp.env_dir("uno", "h_all", phase=2) == root / "data/raw/uno/h_all/phase2/env")
+    check("paths: la_dir",
+          sp.la_dir("uno", "h_all", phase=2) == root / "data/raw/uno/h_all/phase2/la")
+    check("paths: figures_dir per-circuit",
+          sp.figures_dir("uno", "h_all") == root / "data/figures/uno/h_all")
+    check("paths: figures_dir cumulative (circuit=None)",
+          sp.figures_dir("uno") == root / "data/figures/uno")
+
+    # late-binding check: re-point REPO_ROOT and confirm a function called
+    # WITHOUT re-importing picks up the new value (this is the exact bug class
+    # find_plan_entry() had before its 2026-09-20 fix -- see la_capture.py)
+    root2 = scratch / "paths_helper_2"
+    sp.REPO_ROOT = root2
+    check("paths: REPO_ROOT reassignment takes effect without reimport (late-bound)",
+          sp.raw_csv_path("uno", "h_all", phase=2) == root2 / "data/raw/uno/h_all/phase2/raw.csv")
+
+
+def test_two_algorithms_get_two_separate_directories_and_nothing_leaks(scratch: Path):
+    """Mocked dry run of two algorithms in one invocation: confirms each gets
+    its own data/raw/uno/<circuit>/phase2/ directory (raw.csv, memory_wall.csv,
+    points.csv, sessions.csv, env/*.json all present and non-empty for both),
+    and that nothing is written anywhere else under data/raw/uno/ (no stray
+    files outside the two expected per-circuit trees)."""
+    us, tel, sp = _fresh_uno_sweep(scratch / "two_algorithms")
+    _install_read_serial_trials(us, n_rows=5)
+    us.build_and_upload = lambda circuit, n, port_hint, build_timeout_s=None: _ok_result()
+
+    _run(us, ["h_all", "bell_ghz"], 2, 2)
+
+    uno_root = sp.REPO_ROOT / "data" / "raw" / "uno"
+    all_files = sorted(p.relative_to(uno_root) for p in uno_root.rglob("*") if p.is_file())
+    expected_prefixes = ("h_all/phase2/", "bell_ghz/phase2/")
+    check("two algorithms: at least raw.csv+memory_wall.csv+points.csv+sessions.csv+1 env "
+          "json exist for BOTH circuits",
+          all((sp.raw_dir("uno", c, 2) / f).exists()
+              for c in ("h_all", "bell_ghz")
+              for f in ("raw.csv", "memory_wall.csv", "points.csv", "sessions.csv"))
+          and len(list(sp.env_dir("uno", "h_all", 2).glob("*.json"))) >= 1
+          and len(list(sp.env_dir("uno", "bell_ghz", 2).glob("*.json"))) >= 1)
+    check("two algorithms: every file under data/raw/uno/ lives under one of the two "
+          "circuits' own phase2/ directory -- nothing leaked elsewhere",
+          all(str(f).startswith(expected_prefixes) for f in all_files), all_files)
+    check("two algorithms: h_all's raw.csv contains only h_all rows (no cross-contamination)",
+          all(row["circuit"] == "h_all"
+              for row in csv.DictReader(open(sp.raw_csv_path("uno", "h_all")))))
+    check("two algorithms: bell_ghz's raw.csv contains only bell_ghz rows (no cross-contamination)",
+          all(row["circuit"] == "bell_ghz"
+              for row in csv.DictReader(open(sp.raw_csv_path("uno", "bell_ghz")))))
 
 
 def main():
@@ -420,6 +506,8 @@ def main():
         test_build_overflow_deterministic_never_retries(scratch)
         test_upload_failure_retries_regardless_of_budget_rule(scratch)
         test_resume_skips_completed_points_on_second_invocation(scratch)
+        test_paths_helper_resolves_per_board_per_algorithm_layout(scratch)
+        test_two_algorithms_get_two_separate_directories_and_nothing_leaks(scratch)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

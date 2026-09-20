@@ -168,6 +168,21 @@ def save_figure(fig, out_dir: Path, stem: str):
     return paths
 
 
+def save_figure_png_only(fig, out_dir: Path, stem: str):
+    """บันทึกเฉพาะ PNG 300 DPI (ไม่มี SVG) — ใช้สำหรับ data/figures/<board>/<algorithm>/
+    ที่ต้องมีแต่ .png เท่านั้น (2026-09-20, ดู run_log.md "per-board per-algorithm
+    layout") ต่างจาก save_figure() ปกติที่ยังเขียน SVG คู่กันเสมอสำหรับกราฟเก่า
+    (data/figures/phase2/) ซึ่งไม่ได้อยู่ในข้อกำหนด PNG-only นี้"""
+    import matplotlib.pyplot as plt
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{stem}.png"
+    fig.savefig(path, bbox_inches="tight", pad_inches=0.08, dpi=RASTER_DPI)
+    print(f"figure -> {path}")
+    plt.close(fig)
+    return [path]
+
+
 def _quartiles(values):
     import numpy as np
 

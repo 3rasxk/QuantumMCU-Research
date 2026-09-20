@@ -22,9 +22,25 @@ sys.path.insert(0, str(REPO_ROOT / "analysis"))
 import la_pulses as lap  # noqa: E402
 import la_crosscheck as lac  # noqa: E402
 import la_capture_plan as lcp  # noqa: E402
+from shared import paths as sp  # noqa: E402
 
 RESULTS = []
 RATE = 24_000_000
+
+
+def _write_raw_rows(board, circuit, phase, rows):
+    """Append rows to (board, circuit)'s own raw.csv under whatever sp.REPO_ROOT
+    is currently set to -- 2026-09-20 layout change means each (board, circuit)
+    has its own file now, not one shared raw_dir/<board>_raw.csv."""
+    path = sp.raw_csv_path(board, circuit, phase=phase)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    is_new = not path.exists()
+    with open(path, "a", newline="") as f:
+        w = csv.writer(f)
+        if is_new:
+            w.writerow(["board", "circuit", "n", "rep", "exec_time_us",
+                        "free_heap_before", "free_heap_after", "timeout_budget_s"])
+        w.writerows(rows)
 
 
 def check(name, cond, detail=""):
@@ -150,36 +166,27 @@ def test_la_pulses(scratch: Path):
 
 
 def test_la_crosscheck(scratch: Path):
+    sp.REPO_ROOT = scratch / "group1"
     la_dir = scratch / "la"
-    raw_dir = scratch / "phase2"
     out_path = scratch / "telemetry" / "la_crosscheck.csv"
     la_dir.mkdir(parents=True)
-    raw_dir.mkdir(parents=True)
 
     # point 1: clean, LA and MCU agree closely -> not flagged
     mcu_1 = [284.0] * 100
     write_raw(la_dir / "uno_h_all_n2.csv", [284.05] * 100)
-    with open(raw_dir / "uno_raw.csv", "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["board", "circuit", "n", "rep", "exec_time_us",
-                     "free_heap_before", "free_heap_after", "timeout_budget_s"])
-        for i, t in enumerate(mcu_1):
-            w.writerow(["uno", "h_all", 2, i, t, 1000, 999, 90])
+    _write_raw_rows("uno", "h_all", 2, [["uno", "h_all", 2, i, t, 1000, 999, 90]
+                                         for i, t in enumerate(mcu_1)])
 
     # point 2: systematic 20% diff -> flagged
     write_raw(la_dir / "uno_qft_n3.csv", [1932.0 * 1.2] * 100)
-    with open(raw_dir / "uno_raw.csv", "a", newline="") as f:
-        w = csv.writer(f)
-        for i in range(100):
-            w.writerow(["uno", "qft", 3, i, 1932.0, 1000, 999, 90])
+    _write_raw_rows("uno", "qft", 2, [["uno", "qft", 3, i, 1932.0, 1000, 999, 90]
+                                       for i in range(100)])
 
     # point 3: dirty capture (glitch) -> refused
     widths_3 = [150.0] * 50 + [0.02] + [150.0] * 49
     write_raw(la_dir / "uno_bell_ghz_n2.csv", widths_3)
-    with open(raw_dir / "uno_raw.csv", "a", newline="") as f:
-        w = csv.writer(f)
-        for i in range(100):
-            w.writerow(["uno", "bell_ghz", 2, i, 150.0, 1000, 999, 90])
+    _write_raw_rows("uno", "bell_ghz", 2, [["uno", "bell_ghz", 2, i, 150.0, 1000, 999, 90]
+                                            for i in range(100)])
 
     # point 4: capture exists, no matching raw data -> refused
     write_raw(la_dir / "esp32_grover_n6.csv", [292.8] * 100)
@@ -188,10 +195,10 @@ def test_la_crosscheck(scratch: Path):
     write_raw(la_dir / "not_a_valid_name.csv", [1.0] * 5)
 
     # --plan ต้องชี้ไปที่ไฟล์ที่ไม่มีอยู่จริงเสมอในเทสต์นี้ (ไม่งั้น default ของ
-    # la_crosscheck.py จะไปหาไฟล์ data/raw/la/capture_plan.csv ของจริงในเครื่อง ทำให้
+    # la_crosscheck.py จะไปหาไฟล์ capture_plan.csv ข้าง --la-dir ของจริงในเครื่อง ทำให้
     # ผลเทสต์ขึ้นกับ state ของ repo จริง ณ เวลาที่รันแทนที่จะเป็นอิสระเหมือนที่ควรจะเป็น)
     no_plan = scratch / "no_such_plan.csv"
-    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir), "--raw-dir", str(raw_dir),
+    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir),
                 "--out", str(out_path), "--min-pulse-width-us", "1.0", "--plan", str(no_plan)]
     lac.main()
 
@@ -220,26 +227,21 @@ def test_la_crosscheck(scratch: Path):
 
     # --- reduced-capture join: only 5 pulses captured, must join against the FIRST 5
     # reps of the 100-row raw CSV, refusing the old "must equal REPS" behavior ---
+    sp.REPO_ROOT = scratch / "group2"
     la_dir2 = scratch / "la_reduced"
-    raw_dir2 = scratch / "phase2_reduced"
     out_path2 = scratch / "telemetry_reduced" / "la_crosscheck.csv"
     la_dir2.mkdir(parents=True)
-    raw_dir2.mkdir(parents=True)
 
     # full 100-rep raw CSV exists (as a real completed point would have), but only the
     # first 5 reps' pulses were actually captured by the LA (long-pulse point)
     mcu_full_100 = [50_000.0 + i for i in range(100)]  # deliberately varying per rep
-    with open(raw_dir2 / "esp8266_raw.csv", "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["board", "circuit", "n", "rep", "exec_time_us",
-                     "free_heap_before", "free_heap_after", "timeout_budget_s"])
-        for i, t in enumerate(mcu_full_100):
-            w.writerow(["esp8266", "grover", 9, i, t, 60000, 59000, 14400])
+    _write_raw_rows("esp8266", "grover", 2, [["esp8266", "grover", 9, i, t, 60000, 59000, 14400]
+                                              for i, t in enumerate(mcu_full_100)])
     write_raw(la_dir2 / "esp8266_grover_n9.csv", [t + 0.5 for t in mcu_full_100[:5]],
               gap_us=1000.0, rate=10_000)
 
     # (a) explicit --expected-reps override
-    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir2), "--raw-dir", str(raw_dir2),
+    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir2),
                 "--out", str(out_path2), "--min-pulse-width-us", "1.0",
                 "--plan", str(scratch / "no_such_plan2.csv"), "--expected-reps", "5"]
     lac.main()
@@ -263,7 +265,7 @@ def test_la_crosscheck(scratch: Path):
                     "format_a_size_bytes": 50000, "format_b_size_bytes": 200,
                     "recommended_format": "B", "exceeds_size_limit": False})
     out_path3 = scratch / "telemetry_reduced2" / "la_crosscheck.csv"
-    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir2), "--raw-dir", str(raw_dir2),
+    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir2),
                 "--out", str(out_path3), "--min-pulse-width-us", "1.0", "--plan", str(plan_path)]
     lac.main()
     rows4 = list(csv.DictReader(open(out_path3)))
@@ -275,7 +277,7 @@ def test_la_crosscheck(scratch: Path):
     write_raw(la_dir2 / "esp8266_grover_n9.csv", [t + 0.5 for t in mcu_full_100[:4]],
               gap_us=1000.0, rate=10_000)  # only 4 pulses now, still asking for 5
     out_path4 = scratch / "telemetry_reduced3" / "la_crosscheck.csv"
-    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir2), "--raw-dir", str(raw_dir2),
+    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir2),
                 "--out", str(out_path4), "--min-pulse-width-us", "1.0",
                 "--plan", str(scratch / "no_such_plan3.csv"), "--expected-reps", "5"]
     lac.main()
@@ -288,38 +290,25 @@ def test_la_crosscheck(scratch: Path):
     # this (way over the 5% default threshold), but 3us is BELOW Uno's 4us micros()
     # tick floor -- this is exactly the quantization-noise case the floor exists for.
     # Expect: NOT flagged.
+    sp.REPO_ROOT = scratch / "group3"
     la_dir_b = scratch / "la_boundary"
-    raw_dir_b = scratch / "phase2_boundary"
     la_dir_b.mkdir(parents=True)
-    raw_dir_b.mkdir(parents=True)
     write_raw(la_dir_b / "uno_h_all_n1.csv", [5.0] * 100)
-    with open(raw_dir_b / "uno_raw.csv", "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["board", "circuit", "n", "rep", "exec_time_us",
-                     "free_heap_before", "free_heap_after", "timeout_budget_s"])
-        for i in range(100):
-            w.writerow(["uno", "h_all", 1, i, 2.0, 1000, 999, 90])
+    _write_raw_rows("uno", "h_all", 2, [["uno", "h_all", 1, i, 2.0, 1000, 999, 90]
+                                         for i in range(100)])
 
     # (B) ESP8266, same 3us abs diff / 150% relative diff -- but ESP8266's floor is 1us,
     # so the same magnitude of difference DOES exceed its floor. Expect: flagged.
     write_raw(la_dir_b / "esp8266_h_all_n1.csv", [5.0] * 100)
-    with open(raw_dir_b / "esp8266_raw.csv", "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["board", "circuit", "n", "rep", "exec_time_us",
-                     "free_heap_before", "free_heap_after", "timeout_budget_s"])
-        for i in range(100):
-            w.writerow(["esp8266", "h_all", 1, i, 2.0, 60000, 59000, 90])
+    _write_raw_rows("esp8266", "h_all", 2, [["esp8266", "h_all", 1, i, 2.0, 60000, 59000, 90]
+                                             for i in range(100)])
 
     # (C) ESP32, long pulse flagged resolution_insufficient in the capture plan: a big
     # diff (20ms, 10% relative -- would otherwise flag) must be reported as
     # "limited_by_micros_resolution" instead of pass/fail.
     write_raw(la_dir_b / "esp32_grover_n14.csv", [220_000.0] * 3, gap_us=1000.0, rate=1_000)
-    with open(raw_dir_b / "esp32_raw.csv", "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["board", "circuit", "n", "rep", "exec_time_us",
-                     "free_heap_before", "free_heap_after", "timeout_budget_s"])
-        for i in range(3):
-            w.writerow(["esp32", "grover", 14, i, 200_000.0, 100000, 99000, 14400])
+    _write_raw_rows("esp32", "grover", 2, [["esp32", "grover", 14, i, 200_000.0, 100000, 99000, 14400]
+                                            for i in range(3)])
     plan_path_b = scratch / "plan_boundary.csv"
     with open(plan_path_b, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=lcp.PLAN_FIELDS)
@@ -331,7 +320,7 @@ def test_la_crosscheck(scratch: Path):
                     "recommended_format": "B", "exceeds_size_limit": False})
 
     out_path_b = scratch / "telemetry_boundary" / "la_crosscheck.csv"
-    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir_b), "--raw-dir", str(raw_dir_b),
+    sys.argv = ["la_crosscheck.py", "--la-dir", str(la_dir_b),
                 "--out", str(out_path_b), "--min-pulse-width-us", "1.0",
                 "--plan", str(plan_path_b)]
     lac.main()
@@ -418,19 +407,33 @@ def test_capture_plan():
 
 def main():
     scratch = Path(tempfile.mkdtemp(prefix="la_test_"))
+    # legacy flat-layout paths (pre-2026-09-20) -- nothing writes here anymore, kept
+    # as a belt-and-suspenders check
     real_la_dir = REPO_ROOT / "data" / "raw" / "la"
     real_telemetry_dir = REPO_ROOT / "data" / "raw" / "telemetry"
+    # current per-board-per-algorithm real data root (pc/shared/paths.py) -- every
+    # sp.REPO_ROOT reassignment in this file must be undone by test isolation
+    # (scratch dirs), never left pointed at the real repo
+    real_raw_root = REPO_ROOT / "data" / "raw"
+    real_boards = {"uno", "esp8266", "esp32"}
     before_la = set(real_la_dir.glob("**/*")) if real_la_dir.exists() else set()
     before_tel = set(real_telemetry_dir.glob("**/*")) if real_telemetry_dir.exists() else set()
+    before_raw = {p for b in real_boards for p in (real_raw_root / b).glob("**/*")
+                  if (real_raw_root / b).exists()}
     try:
         test_la_pulses(scratch / "pulses")
         test_la_crosscheck(scratch / "crosscheck")
         test_capture_plan()
     finally:
+        sp.REPO_ROOT = REPO_ROOT  # restore before the real-directory check below
         after_la = set(real_la_dir.glob("**/*")) if real_la_dir.exists() else set()
         after_tel = set(real_telemetry_dir.glob("**/*")) if real_telemetry_dir.exists() else set()
+        after_raw = {p for b in real_boards for p in (real_raw_root / b).glob("**/*")
+                     if (real_raw_root / b).exists()}
         check("no test run touched the real data/raw/la/ directory", after_la == before_la)
         check("no test run touched the real data/raw/telemetry/ directory", after_tel == before_tel)
+        check("no test run touched the real data/raw/<board>/ directories",
+              after_raw == before_raw, after_raw - before_raw)
         shutil.rmtree(scratch, ignore_errors=True)
 
     n_fail = sum(1 for _, s in RESULTS if s == "FAIL")

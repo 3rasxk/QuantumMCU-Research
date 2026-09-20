@@ -62,7 +62,6 @@ import numpy as np
 import serial
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase3"
 PIO = os.environ.get("PIO_PATH") or shutil.which("pio")
 
 sys.path.insert(0, str(REPO_ROOT / "analysis"))
@@ -74,6 +73,7 @@ from shared.circuit_ids import CIRCUIT_IDS, CIRCUIT_NAMES, n_values_for_sweep  #
 from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
+from shared import paths as sp  # noqa: E402
 
 RESUME_KEY_SPEC = [("circuit", str), ("n", int), ("baud_rate", int)]
 BOOT_WAIT_S = 1.5  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
@@ -299,9 +299,33 @@ def main():
     from qiskit_aer import AerSimulator
     sim = AerSimulator(method="statevector")
 
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    raw_path = RESULTS_DIR / f"{args.board}_raw.csv"
-    meta_path = RESULTS_DIR / f"{args.board}_session_log.csv"
+    for circuit in args.circuits:
+        print(f"\n=== circuit={circuit} ===")
+        _run_circuit(args, circuit, n_max, sim)
+
+
+def _run_circuit(args, circuit, n_max, sim):
+    """One algorithm's directory/files/telemetry session — see pc/shared/paths.py
+    and uno_sweep.py's module docstring for the per-board-per-algorithm layout
+    this replaced (2026-09-20, run_log.md). Every baud in --bauds is still swept
+    for this one circuit (baud is a data dimension within one algorithm's
+    directory, not a separate algorithm) -- only the "skip every later circuit
+    once a baud is found unstable" cross-circuit shortcut was dropped, since
+    circuits are now fully independent calls; each circuit now probes every
+    configured baud on its own. Disclosed in run_log.md, not a correctness
+    change -- Phase 3 has no collected data yet either way."""
+    n_values = n_values_for_sweep(circuit, args.n_start, n_max)
+    if not n_values:
+        print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {n_max}]")
+        return
+
+    raw_directory = sp.raw_dir(args.board, circuit, phase=3)
+    raw_directory.mkdir(parents=True, exist_ok=True)
+    raw_path = sp.raw_csv_path(args.board, circuit, phase=3)
+    meta_path = sp.session_log_csv_path(args.board, circuit, phase=3)
+    points_csv = sp.points_csv_path(args.board, circuit, phase=3)
+    sessions_csv = sp.sessions_csv_path(args.board, circuit, phase=3)
+    env_directory = sp.env_dir(args.board, circuit, phase=3)
 
     # resume (ค่าเริ่มต้น): มีแถวใน session_log.csv = จุดนั้น (circuit, n, baud) "เสร็จสิ้น"
     # แล้วไม่ว่าผลจะเป็นอะไร (ok, session_incomplete, build_or_upload_fail,
@@ -333,236 +357,230 @@ def main():
     if meta_is_new:
         meta_f.write("board,circuit,n,baud_rate,status,frames_served,frames_dropped_bad_crc,rows_captured,last_sim_error,timestamp_utc,session_timeout_budget_s,expected_session_s,pc_sim_s_per_request\n")
 
-    # preflight: ต้นทุนของ Phase 3 อยู่ฝั่ง PC ทั้งหมด จึงไม่ขึ้นกับบอร์ด — แผนเดียวกัน
-    # ใช้ได้ทุกบอร์ด แสดงก่อนเริ่มเพื่อให้เห็นว่าจุดไหนเก็บครบ 100 reps ไม่ไหว
-    planned = [(c, n) for c in args.circuits
-               for n in n_values_for_sweep(c, args.n_start, n_max)]
-    infeasible = tm.print_budget_plan(args.board, planned, phase=3)
-    if args.force_infeasible:
-        print("--force-infeasible: จะพยายามรันจุดที่เกินเพดานด้วย\n")
-        infeasible = set()
+    try:
+        # preflight: ต้นทุนของ Phase 3 อยู่ฝั่ง PC ทั้งหมด จึงไม่ขึ้นกับบอร์ด — แผนเดียวกัน
+        # ใช้ได้ทุกบอร์ด แสดงก่อนเริ่มเพื่อให้เห็นว่าจุดไหนเก็บครบ 100 reps ไม่ไหว
+        planned = [(circuit, n) for n in n_values]
+        infeasible = tm.print_budget_plan(args.board, planned, phase=3)
+        if args.force_infeasible:
+            print("--force-infeasible: จะพยายามรันจุดที่เกินเพดานด้วย\n")
+            infeasible = set()
 
-    # resume summary ต้องรวม baud เข้าไปใน key ด้วย (ต่างจาก preflight budget plan ด้านบน
-    # ที่ไม่สนใจ baud เพราะต้นทุน PC ไม่ขึ้นกับ baud) เนื่องจากจุดเดียวกันอาจสำเร็จที่ baud
-    # หนึ่งแต่ยังไม่เคยลองที่อีก baud หนึ่ง
-    planned_with_baud = [(c, n, b) for b in args.bauds for c in args.circuits
-                         for n in n_values_for_sweep(c, args.n_start, n_max)]
-    remaining_preview = [p for p in planned_with_baud if p not in completed]
-    real_remaining = [(c, n) for c, n, b in remaining_preview if (c, n) not in infeasible]
-    est_s = sum(tm.pc_sim_time_s(c, n) * tm.REPS for c, n in real_remaining)
-    n_inf_remaining = len(remaining_preview) - len(real_remaining)
-    remaining_human = tm.human_duration(est_s)
-    if n_inf_remaining:
-        remaining_human += f" (+{n_inf_remaining} infeasible point(s), skipped near-instantly)"
-    rs.print_resume_summary(args.board, planned_with_baud, completed, remaining_human)
+        # resume summary ต้องรวม baud เข้าไปใน key ด้วย (ต่างจาก preflight budget plan ด้านบน
+        # ที่ไม่สนใจ baud เพราะต้นทุน PC ไม่ขึ้นกับ baud) เนื่องจากจุดเดียวกันอาจสำเร็จที่ baud
+        # หนึ่งแต่ยังไม่เคยลองที่อีก baud หนึ่ง
+        planned_with_baud = [(circuit, n, b) for b in args.bauds for n in n_values]
+        remaining_preview = [p for p in planned_with_baud if p not in completed]
+        real_remaining = [(c, n) for c, n, b in remaining_preview if (c, n) not in infeasible]
+        est_s = sum(tm.pc_sim_time_s(c, n) * tm.REPS for c, n in real_remaining)
+        n_inf_remaining = len(remaining_preview) - len(real_remaining)
+        remaining_human = tm.human_duration(est_s)
+        if n_inf_remaining:
+            remaining_human += f" (+{n_inf_remaining} infeasible point(s), skipped near-instantly)"
+        rs.print_resume_summary(args.board, planned_with_baud, completed, remaining_human)
 
-    # telemetry: session wrapper + environment metadata ครั้งเดียวตอนเริ่ม session —
-    # ดู pc/shared/telemetry.py และ uno_sweep.py สำหรับ schema เต็ม/เหตุผล
-    resumed_from_previous = bool(completed)
-    last_end = tel.last_session_end_utc(args.board, 3) if resumed_from_previous else None
-    session = tel.SessionRecorder(phase=3, board=args.board, circuits=args.circuits,
-                                   resumed_from_previous=resumed_from_previous,
-                                   estimated_total_s=round(est_s, 1))
-    with session:
-        if last_end is not None:
-            from datetime import datetime as _dt, timezone as _tz
-            gap = (_dt.now(_tz.utc) - last_end).total_seconds()
-            if gap > 0:
-                session.note_interruption_gap(gap)
-        env_path = tel.write_environment_metadata(
-            session.session_id, args.board, args.port, args.bauds[0], None,
-            BOARDS[args.board]["fw_dir"] / "src_offload",
-            pio_project_dir=BOARDS[args.board]["fw_dir"],
-            pio_env=BOARDS[args.board]["env"])
-        session.env_json_path = str(env_path)
+        # telemetry: session wrapper + environment metadata ครั้งเดียวตอน circuit นี้เริ่ม —
+        # ดู pc/shared/telemetry.py และ uno_sweep.py สำหรับ schema เต็ม/เหตุผล
+        resumed_from_previous = bool(completed)
+        last_end = (tel.last_session_end_utc(args.board, 3, sessions_csv=sessions_csv)
+                    if resumed_from_previous else None)
+        session = tel.SessionRecorder(phase=3, board=args.board, circuits=[circuit],
+                                       resumed_from_previous=resumed_from_previous,
+                                       estimated_total_s=round(est_s, 1),
+                                       sessions_csv=sessions_csv)
+        with session:
+            if last_end is not None:
+                from datetime import datetime as _dt, timezone as _tz
+                gap = (_dt.now(_tz.utc) - last_end).total_seconds()
+                if gap > 0:
+                    session.note_interruption_gap(gap)
+            env_path = tel.write_environment_metadata(
+                session.session_id, args.board, args.port, args.bauds[0], None,
+                BOARDS[args.board]["fw_dir"] / "src_offload",
+                env_dir=env_directory,
+                pio_project_dir=BOARDS[args.board]["fw_dir"],
+                pio_env=BOARDS[args.board]["env"])
+            session.env_json_path = str(env_path)
 
-        _sweep_body(args, n_max, completed, infeasible, raw_f, meta_f, sim, session)
+            _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f,
+                        sim, session, points_csv)
+    finally:
+        raw_f.close()
+        meta_f.close()
 
-    raw_f.close()
-    meta_f.close()
     print(f"\nraw -> {raw_path}\nsession log -> {meta_path}")
-    print(f"telemetry -> {tel.SESSIONS_CSV}, {tel.POINTS_CSV}")
+    print(f"telemetry -> {sessions_csv}, {points_csv}")
 
 
-def _sweep_body(args, n_max, completed, infeasible, raw_f, meta_f, sim, session):
+def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, sim, session, points_csv):
     for baud in args.bauds:
         print(f"\n########## baud={baud} ##########")
-        baud_unstable = False
-        for circuit in args.circuits:
-            if baud_unstable:
-                print(f"ข้าม circuit={circuit} เพราะ baud={baud} ไม่เสถียรจากรอบก่อนหน้าแล้ว")
-                continue
-            print(f"\n=== circuit={circuit} ===")
-            n_succeeded = 0
-            n_values = n_values_for_sweep(circuit, args.n_start, n_max)
-            if not n_values:
-                print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {n_max}]")
-                continue
-            for n in n_values:
-                if (circuit, n, baud) in completed:
-                    print(f"n={n:2d}  SKIP (resume): already "
-                          f"{completed[(circuit, n, baud)].get('status', '?')}")
-                    skip_ts = datetime.now(timezone.utc).isoformat()
-                    tel.write_point_row({
-                        "session_id": session.session_id, "phase": 3, "board": args.board,
-                        "circuit": circuit, "n": n, "baud": baud, "attempt_index": 0,
-                        "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
-                        "retry_count": 0, "timeout_hit": False, "failure_type": "none",
-                        "status": "skipped_resume",
-                    })
-                    session.note_point(status="skipped_resume")
-                    continue
-
-                budget_s = tm.phase3_session_budget_s(circuit, n)
-                per_req = tm.pc_sim_time_s(circuit, n)
-                expected_s = per_req * tm.REPS
-                ts = datetime.now(timezone.utc).isoformat()
-
-                if (circuit, n) in infeasible:
-                    # ไม่ใช่ปัญหาของลิงก์ serial หรือของบอร์ด — เป็นต้นทุนการจำลองฝั่ง PC
-                    # ล้วน ๆ (ไม่ cache โดยตั้งใจ) บันทึกค่าประมาณไว้ให้อ่านออกว่าทำไมถึงข้าม
-                    print(f"n={n:2d}  SKIP: PC-side sim needs {tm.human_duration(expected_s)} "
-                          f"for {tm.REPS} reps ({per_req:.1f}s/request, uncached) "
-                          f"> ceiling {tm.PHASE3_CEILING_S}s")
-                    meta_f.write(f"{args.board},{circuit},{n},{baud},skipped_sim_cost_infeasible,"
-                                 f"0,0,0,,{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
-                    meta_f.flush()
-                    tel.write_point_row({
-                        "session_id": session.session_id, "phase": 3, "board": args.board,
-                        "circuit": circuit, "n": n, "baud": baud, "attempt_index": 0,
-                        "start_utc": ts, "end_utc": ts, "wall_s": 0,
-                        "retry_count": 0, "timeout_hit": False, "failure_type": "none",
-                        "status": "skipped_sim_cost_infeasible",
-                    })
-                    session.note_point(status="skipped_sim_cost_infeasible")
-                    continue
-
-                print(f"n={n:2d}  budget={budget_s}s ({per_req:.2f}s/request)  ", end="", flush=True)
-
-                attempt_start = datetime.now(timezone.utc).isoformat()
-                result = build_and_upload(args.board, circuit, n, baud, args.port, args.build_timeout_s)
-                args.port = result["port"]
-                ts = datetime.now(timezone.utc).isoformat()
-                reflash_s = result["compile_s"] + result["upload_s"]
-
-                if not result["ok"]:
-                    # timeout ของ toolchain ไม่ใช่ความล้มเหลวของบอร์ด และไม่ใช่กำแพง
-                    # (Phase 3 ไม่มี known-wall inference อยู่แล้ว แต่ยังต้องแยกให้ชัดในข้อมูล)
-                    build_status = rs.classify_build_failure(
-                        result["log"], None, result.get("timed_out", False))
-                    is_timeout = build_status == "build_timeout"
-                    print("BUILD TIMEOUT -> toolchain/host problem, NOT a board failure"
-                          if is_timeout else "UPLOAD/BUILD FAIL")
-                    meta_f.write(f"{args.board},{circuit},{n},{baud},{build_status},0,0,0,,{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
-                    meta_f.flush()
-                    print(result["log"][-600:])
-                    tel.write_point_row({
-                        "session_id": session.session_id, "phase": 3, "board": args.board,
-                        "circuit": circuit, "n": n, "baud": baud, "attempt_index": 0,
-                        "start_utc": attempt_start, "end_utc": ts, "wall_s": round(reflash_s, 3),
-                        "build_compile_s": round(result["compile_s"], 3),
-                        "upload_s": round(result["upload_s"], 3),
-                        "retry_count": 0, "timeout_hit": is_timeout,
-                        "failure_type": "build_timeout" if is_timeout else "build",
-                        "failure_message": result["log"][-300:],
-                        "status": "failed",
-                    })
-                    session.note_point(reflash_s=reflash_s, status="failed")
-                    break
-
-                time.sleep(BOOT_WAIT_S)
-                port = find_port(args.board, args.port)
-                exec_t0 = time.perf_counter()
-                with serial.Serial(port, baud, timeout=1) as ser:
-                    ser.dtr = False
-                    ser.rts = False
-                    time.sleep(0.3)
-                    ser.reset_input_buffer()
-                    (done, rows, served, dropped, sim_error,
-                     pc_sim_durations, bytes_transferred) = run_offload_session(ser, sim, budget_s)
-                device_exec_s = time.perf_counter() - exec_t0
-                attempt_end = datetime.now(timezone.utc).isoformat()
-                sim_error_safe = sim_error.replace(",", ";").replace("\n", " ")
-
-                status = "ok" if (done and len(rows) > 0) else "session_incomplete"
-
-                # เขียน raw ก่อน meta เสมอ (สลับจากลำดับเดิม) — ให้ตรงกับ pattern เดียวกับ
-                # Phase 2 (uno/esp32/esp8266_sweep.py): แถวใน meta คือ "บันทึกการตัดสิน
-                # ชะตากรรม" ที่ resume ใช้ตัดสินว่าจุดนี้เสร็จแล้วหรือยัง ถ้าเขียน meta ก่อน
-                # แล้วโปรเซสตายก่อนเขียน raw จะได้ meta ที่อ้างว่า "เสร็จ" ทั้งที่ไม่มีข้อมูล
-                # raw รองรับเลย — resume จะข้ามจุดนั้นไปทั้งที่ไม่มีข้อมูลจริง ลำดับใหม่นี้
-                # ทำให้กรณีแย่ที่สุดกลายเป็น "มี raw กำพร้าไม่มี meta คู่กัน" ซึ่ง
-                # purge_orphan_rows (pc/shared/resume.py) จัดการได้ตรง ๆ อยู่แล้ว
-                for line in rows:
-                    raw_f.write(line + "\n")
-                raw_f.flush()
-
-                meta_f.write(f"{args.board},{circuit},{n},{baud},{status},{served},{dropped},{len(rows)},{sim_error_safe},{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
-                meta_f.flush()
-
-                # per-rep round-trip latency: ใช้ตัวเลขที่ MCU วัดเอง (e2e_latency_us,
-                # คอลัมน์ที่ 6 ของแต่ละบรรทัด CSV) ไม่วัดซ้ำฝั่ง PC — micros() ของ MCU
-                # ครอบทั้งรอบ write+read จริง ๆ ที่อุปกรณ์เห็น เชื่อถือได้กว่าประมาณจาก PC
-                latencies_us = []
-                for line in rows:
-                    parts = line.split(",")
-                    if len(parts) >= 6:
-                        try:
-                            latencies_us.append(float(parts[5]))
-                        except ValueError:
-                            pass
-                avg_latency_s = (sum(latencies_us) / len(latencies_us) / 1e6) if latencies_us else ""
-                pc_sim_total = sum(pc_sim_durations)
-                pc_sim_median = (sorted(pc_sim_durations)[len(pc_sim_durations) // 2]
-                                 if pc_sim_durations else "")
-                # raw CSV: ...,e2e_latency_us,crc_error,timed_out — crc_error คือ index -2
-                # เสมอ (ก่อนหน้า timed_out ตัวสุดท้าย) รวม dropped (CRC ผิดที่ฝั่ง PC เห็น
-                # ก่อนตอบด้วยซ้ำ, ไม่มีในแถว rows เลยเพราะ MCU ก็ timeout ไปเงียบ ๆ)
-                crc_error_count = dropped + sum(1 for line in rows if line.split(",")[-2] == "1")
+        n_succeeded = 0
+        for n in n_values:
+            if (circuit, n, baud) in completed:
+                print(f"n={n:2d}  SKIP (resume): already "
+                      f"{completed[(circuit, n, baud)].get('status', '?')}")
+                skip_ts = datetime.now(timezone.utc).isoformat()
                 tel.write_point_row({
                     "session_id": session.session_id, "phase": 3, "board": args.board,
                     "circuit": circuit, "n": n, "baud": baud, "attempt_index": 0,
-                    "start_utc": attempt_start, "end_utc": attempt_end,
-                    "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
+                    "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
+                    "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                    "status": "skipped_resume",
+                }, points_csv)
+                session.note_point(status="skipped_resume")
+                continue
+
+            budget_s = tm.phase3_session_budget_s(circuit, n)
+            per_req = tm.pc_sim_time_s(circuit, n)
+            expected_s = per_req * tm.REPS
+            ts = datetime.now(timezone.utc).isoformat()
+
+            if (circuit, n) in infeasible:
+                # ไม่ใช่ปัญหาของลิงก์ serial หรือของบอร์ด — เป็นต้นทุนการจำลองฝั่ง PC
+                # ล้วน ๆ (ไม่ cache โดยตั้งใจ) บันทึกค่าประมาณไว้ให้อ่านออกว่าทำไมถึงข้าม
+                print(f"n={n:2d}  SKIP: PC-side sim needs {tm.human_duration(expected_s)} "
+                      f"for {tm.REPS} reps ({per_req:.1f}s/request, uncached) "
+                      f"> ceiling {tm.PHASE3_CEILING_S}s")
+                meta_f.write(f"{args.board},{circuit},{n},{baud},skipped_sim_cost_infeasible,"
+                             f"0,0,0,,{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
+                meta_f.flush()
+                tel.write_point_row({
+                    "session_id": session.session_id, "phase": 3, "board": args.board,
+                    "circuit": circuit, "n": n, "baud": baud, "attempt_index": 0,
+                    "start_utc": ts, "end_utc": ts, "wall_s": 0,
+                    "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                    "status": "skipped_sim_cost_infeasible",
+                }, points_csv)
+                session.note_point(status="skipped_sim_cost_infeasible")
+                continue
+
+            print(f"n={n:2d}  budget={budget_s}s ({per_req:.2f}s/request)  ", end="", flush=True)
+
+            attempt_start = datetime.now(timezone.utc).isoformat()
+            result = build_and_upload(args.board, circuit, n, baud, args.port, args.build_timeout_s)
+            args.port = result["port"]
+            ts = datetime.now(timezone.utc).isoformat()
+            reflash_s = result["compile_s"] + result["upload_s"]
+
+            if not result["ok"]:
+                # timeout ของ toolchain ไม่ใช่ความล้มเหลวของบอร์ด และไม่ใช่กำแพง
+                # (Phase 3 ไม่มี known-wall inference อยู่แล้ว แต่ยังต้องแยกให้ชัดในข้อมูล)
+                build_status = rs.classify_build_failure(
+                    result["log"], None, result.get("timed_out", False))
+                is_timeout = build_status == "build_timeout"
+                print("BUILD TIMEOUT -> toolchain/host problem, NOT a board failure"
+                      if is_timeout else "UPLOAD/BUILD FAIL")
+                meta_f.write(f"{args.board},{circuit},{n},{baud},{build_status},0,0,0,,{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
+                meta_f.flush()
+                print(result["log"][-600:])
+                tel.write_point_row({
+                    "session_id": session.session_id, "phase": 3, "board": args.board,
+                    "circuit": circuit, "n": n, "baud": baud, "attempt_index": 0,
+                    "start_utc": attempt_start, "end_utc": ts, "wall_s": round(reflash_s, 3),
                     "build_compile_s": round(result["compile_s"], 3),
                     "upload_s": round(result["upload_s"], 3),
-                    "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
-                    "pc_sim_s_total": round(pc_sim_total, 3),
-                    "pc_sim_s_median": round(pc_sim_median, 4) if pc_sim_median != "" else "",
-                    "serial_transfer_s_total": round(max(device_exec_s - pc_sim_total, 0.0), 3),
-                    "avg_round_trip_latency_s": round(avg_latency_s, 6) if avg_latency_s != "" else "",
-                    "crc_error_count": crc_error_count, "bytes_transferred": bytes_transferred,
-                    "retry_count": 0, "timeout_hit": not done,
-                    "failure_type": "none" if status == "ok" else "serial",
-                    # points.csv status ใช้ enum ของมันเอง (telemetry.STATUS_TYPES: ok/failed
-                    # เท่านั้นสำหรับผลจริง ไม่มี "session_incomplete") — session_log.csv
-                    # (meta_f ด้านบน) ยังเก็บ "session_incomplete" แบบเดิมเป็นบันทึกฝั่ง resume
-                    # ที่ละเอียดกว่า สองไฟล์นี้ตอบคำถามคนละคำถาม ไม่ต้องใช้ค่าเดียวกัน
-                    "failure_message": sim_error_safe,
-                    "status": "ok" if status == "ok" else "failed",
-                })
-                session.note_point(device_s=device_exec_s, reflash_s=reflash_s,
-                                    status="ok" if status == "ok" else "failed")
+                    "retry_count": 0, "timeout_hit": is_timeout,
+                    "failure_type": "build_timeout" if is_timeout else "build",
+                    "failure_message": result["log"][-300:],
+                    "status": "failed",
+                }, points_csv)
+                session.note_point(reflash_s=reflash_s, status="failed")
+                break
 
-                error_rows = sum(1 for r in rows if r.split(",")[-1] == "1" or r.split(",")[-2] == "1")
-                error_rate = (error_rows / len(rows)) if rows else 1.0
-                err_note = f"  sim_error={sim_error_safe}" if sim_error_safe else ""
-                print(f"status={status}  rows={len(rows)}  crc_dropped={dropped}  error_rate={error_rate:.0%}{err_note}")
+            time.sleep(BOOT_WAIT_S)
+            port = find_port(args.board, args.port)
+            exec_t0 = time.perf_counter()
+            with serial.Serial(port, baud, timeout=1) as ser:
+                ser.dtr = False
+                ser.rts = False
+                time.sleep(0.3)
+                ser.reset_input_buffer()
+                (done, rows, served, dropped, sim_error,
+                 pc_sim_durations, bytes_transferred) = run_offload_session(ser, sim, budget_s)
+            device_exec_s = time.perf_counter() - exec_t0
+            attempt_end = datetime.now(timezone.utc).isoformat()
+            sim_error_safe = sim_error.replace(",", ";").replace("\n", " ")
 
-                failed = (not done) or error_rate > 0.5
-                if failed:
-                    if n_succeeded == 0:
-                        # ล้มเหลวตั้งแต่ n แรกที่ทดสอบของ baud นี้ = ปัญหาการเชื่อมต่อ/สาย
-                        # ไม่ใช่ขีดจำกัดการคำนวณ -> ข้าม baud นี้ไปเลยทุกวงจร
-                        print(f"baud={baud} ไม่เสถียรตั้งแต่ n={n} (จุดแรกของวงจรนี้) — ข้าม baud นี้ทั้งหมด")
-                        baud_unstable = True
-                    else:
-                        # เคยสำเร็จมาก่อนหน้านี้แล้วเพิ่งมาล้มที่ n สูง = เจอขีดจำกัดจริง
-                        # ฝั่ง PC (เวลาจำลอง/หน่วยความจำ Qiskit Aer) ไม่ใช่ปัญหา baud
-                        # -> หยุดแค่วงจรนี้ ไปวงจรถัดไปตามปกติ
-                        print(f"พบขีดจำกัดจริงของวงจร {circuit} ที่ n={n} (baud={baud} ยังถือว่าเสถียร)")
-                    break
-                n_succeeded += 1
+            status = "ok" if (done and len(rows) > 0) else "session_incomplete"
+
+            # เขียน raw ก่อน meta เสมอ (สลับจากลำดับเดิม) — ให้ตรงกับ pattern เดียวกับ
+            # Phase 2 (uno/esp32/esp8266_sweep.py): แถวใน meta คือ "บันทึกการตัดสิน
+            # ชะตากรรม" ที่ resume ใช้ตัดสินว่าจุดนี้เสร็จแล้วหรือยัง ถ้าเขียน meta ก่อน
+            # แล้วโปรเซสตายก่อนเขียน raw จะได้ meta ที่อ้างว่า "เสร็จ" ทั้งที่ไม่มีข้อมูล
+            # raw รองรับเลย — resume จะข้ามจุดนั้นไปทั้งที่ไม่มีข้อมูลจริง ลำดับใหม่นี้
+            # ทำให้กรณีแย่ที่สุดกลายเป็น "มี raw กำพร้าไม่มี meta คู่กัน" ซึ่ง
+            # purge_orphan_rows (pc/shared/resume.py) จัดการได้ตรง ๆ อยู่แล้ว
+            for line in rows:
+                raw_f.write(line + "\n")
+            raw_f.flush()
+
+            meta_f.write(f"{args.board},{circuit},{n},{baud},{status},{served},{dropped},{len(rows)},{sim_error_safe},{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
+            meta_f.flush()
+
+            # per-rep round-trip latency: ใช้ตัวเลขที่ MCU วัดเอง (e2e_latency_us,
+            # คอลัมน์ที่ 6 ของแต่ละบรรทัด CSV) ไม่วัดซ้ำฝั่ง PC — micros() ของ MCU
+            # ครอบทั้งรอบ write+read จริง ๆ ที่อุปกรณ์เห็น เชื่อถือได้กว่าประมาณจาก PC
+            latencies_us = []
+            for line in rows:
+                parts = line.split(",")
+                if len(parts) >= 6:
+                    try:
+                        latencies_us.append(float(parts[5]))
+                    except ValueError:
+                        pass
+            avg_latency_s = (sum(latencies_us) / len(latencies_us) / 1e6) if latencies_us else ""
+            pc_sim_total = sum(pc_sim_durations)
+            pc_sim_median = (sorted(pc_sim_durations)[len(pc_sim_durations) // 2]
+                             if pc_sim_durations else "")
+            # raw CSV: ...,e2e_latency_us,crc_error,timed_out — crc_error คือ index -2
+            # เสมอ (ก่อนหน้า timed_out ตัวสุดท้าย) รวม dropped (CRC ผิดที่ฝั่ง PC เห็น
+            # ก่อนตอบด้วยซ้ำ, ไม่มีในแถว rows เลยเพราะ MCU ก็ timeout ไปเงียบ ๆ)
+            crc_error_count = dropped + sum(1 for line in rows if line.split(",")[-2] == "1")
+            tel.write_point_row({
+                "session_id": session.session_id, "phase": 3, "board": args.board,
+                "circuit": circuit, "n": n, "baud": baud, "attempt_index": 0,
+                "start_utc": attempt_start, "end_utc": attempt_end,
+                "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
+                "build_compile_s": round(result["compile_s"], 3),
+                "upload_s": round(result["upload_s"], 3),
+                "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
+                "pc_sim_s_total": round(pc_sim_total, 3),
+                "pc_sim_s_median": round(pc_sim_median, 4) if pc_sim_median != "" else "",
+                "serial_transfer_s_total": round(max(device_exec_s - pc_sim_total, 0.0), 3),
+                "avg_round_trip_latency_s": round(avg_latency_s, 6) if avg_latency_s != "" else "",
+                "crc_error_count": crc_error_count, "bytes_transferred": bytes_transferred,
+                "retry_count": 0, "timeout_hit": not done,
+                "failure_type": "none" if status == "ok" else "serial",
+                # points.csv status ใช้ enum ของมันเอง (telemetry.STATUS_TYPES: ok/failed
+                # เท่านั้นสำหรับผลจริง ไม่มี "session_incomplete") — session_log.csv
+                # (meta_f ด้านบน) ยังเก็บ "session_incomplete" แบบเดิมเป็นบันทึกฝั่ง resume
+                # ที่ละเอียดกว่า สองไฟล์นี้ตอบคำถามคนละคำถาม ไม่ต้องใช้ค่าเดียวกัน
+                "failure_message": sim_error_safe,
+                "status": "ok" if status == "ok" else "failed",
+            }, points_csv)
+            session.note_point(device_s=device_exec_s, reflash_s=reflash_s,
+                                status="ok" if status == "ok" else "failed")
+
+            error_rows = sum(1 for r in rows if r.split(",")[-1] == "1" or r.split(",")[-2] == "1")
+            error_rate = (error_rows / len(rows)) if rows else 1.0
+            err_note = f"  sim_error={sim_error_safe}" if sim_error_safe else ""
+            print(f"status={status}  rows={len(rows)}  crc_dropped={dropped}  error_rate={error_rate:.0%}{err_note}")
+
+            failed = (not done) or error_rate > 0.5
+            if failed:
+                if n_succeeded == 0:
+                    # ล้มเหลวตั้งแต่ n แรกที่ทดสอบของ baud นี้ = ปัญหาการเชื่อมต่อ/สาย
+                    # ไม่ใช่ขีดจำกัดการคำนวณ -> ข้าม baud นี้ (แค่ของ circuit นี้ — ดู
+                    # _run_circuit docstring: ไม่ข้าม circuit อื่นอีกต่อไป)
+                    print(f"baud={baud} ไม่เสถียรตั้งแต่ n={n} (จุดแรกของวงจรนี้) — ข้าม baud นี้")
+                else:
+                    # เคยสำเร็จมาก่อนหน้านี้แล้วเพิ่งมาล้มที่ n สูง = เจอขีดจำกัดจริง
+                    # ฝั่ง PC (เวลาจำลอง/หน่วยความจำ Qiskit Aer) ไม่ใช่ปัญหา baud
+                    # -> หยุดแค่ baud นี้ ไป baud ถัดไปตามปกติ
+                    print(f"พบขีดจำกัดจริงของวงจร {circuit} ที่ n={n} (baud={baud} ยังถือว่าเสถียร)")
+                break
+            n_succeeded += 1
 
 
 if __name__ == "__main__":

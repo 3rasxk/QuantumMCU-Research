@@ -19,7 +19,7 @@
 #      *** ข้อแตกต่างจากวิธีวัดของ dataset n=30: รอบนั้นไม่มี retry เลย ล้มเหลวครั้งแรก
 #      ที่ n ไหนก็ถือเป็นกำแพงทันที รอบ n=100 นี้ผ่อนเกณฑ์ให้ทนความล้มเหลวชั่วคราวได้ 1
 #      ครั้ง — ทำให้ตัวเลข Memory Wall ระหว่างสอง dataset "ไม่ได้เปรียบเทียบกันตรง ๆ
-#      ได้ทันที" ต้องดูคอลัมน์ retry_count ใน *_memory_wall.csv ประกอบ (ดู run_log.md) ***
+#      ได้ทันที" ต้องดูคอลัมน์ retry_count ใน memory_wall.csv ประกอบ (ดู run_log.md) ***
 #      *** นโยบาย retry เพิ่มเติมสำหรับรอบ 6 วงจร: retry เฉพาะจุดที่ timeout budget
 #      <= 600 วินาที เท่านั้น จุดที่แพงกว่านั้น (grover n สูง) จะไม่ retry เพราะต้นทุน
 #      ของ retry แปรผันตาม budget แต่ประโยชน์คงที่ — ที่ 70 วินาทีคุ้ม แต่การจ่ายเพิ่ม
@@ -32,7 +32,7 @@
 #      ลงคอลัมน์ expected_point_s — ไม่ใช่ Memory Wall แต่เป็น compute wall ที่มาถึงก่อน
 #      (ใช้ --force-infeasible ถ้าต้องการดันทุรังรันจริง ๆ)
 #
-# *** resume (ค่าเริ่มต้น): มีแถวใน uno_memory_wall.csv = จุดนั้น "เสร็จสิ้น" แล้วไม่ว่า
+# *** resume (ค่าเริ่มต้น): มีแถวใน memory_wall.csv = จุดนั้น "เสร็จสิ้น" แล้วไม่ว่า
 # ผลจะเป็นอะไร (ok, build_or_upload_fail, skipped_compute_infeasible, ...) — resume ข้าม
 # ได้เลย ไม่ต้องแตะฮาร์ดแวร์ซ้ำ วงจรที่เคยเจอ "กำแพงจริง" แล้ว (build_or_upload_fail,
 # runtime_hang_or_reset หลัง retry หมด) จะไม่ถูกลอง n ที่สูงกว่านั้นซ้ำอีก แม้ n เหล่านั้น
@@ -42,10 +42,12 @@
 # จาก 2 sessions ไม่ใช่ตัวอย่างสม่ำเสมอเดียวกัน (บอร์ด reset/reflash/อุณหภูมิเครื่องต่างกัน
 # ระหว่าง session) ใช้ --fresh เพื่อย้ายผลลัพธ์เดิมออกไป (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด
 # — ดู pc/shared/resume.py สำหรับเหตุผลเต็ม ***
-#   4. เขียนทุกแถวลง data/raw/phase2/uno_raw.csv (ไฟล์ดิบ ไม่ทับข้อมูลเดิม, append)
-#      และสรุป Memory Wall ต่อจุดข้อมูลลง data/raw/phase2/uno_memory_wall.csv
-#      (คอลัมน์ retry_count: 0 = สำเร็จ/ล้มเหลวตั้งแต่ครั้งแรก, 1 = ต้อง retry ก่อนได้
-#      ผลลัพธ์นี้ — ไม่ว่าผลจะเป็น ok หรือ wall จริงก็ตาม)
+#   4. เขียนทุกแถวลง data/raw/uno/<circuit>/phase2/raw.csv (ไฟล์ดิบ ไม่ทับข้อมูลเดิม,
+#      append) และสรุป Memory Wall ต่อจุดข้อมูลลง .../phase2/memory_wall.csv (คอลัมน์
+#      retry_count: 0 = สำเร็จ/ล้มเหลวตั้งแต่ครั้งแรก, 1+ = ต้อง retry ก่อนได้ผลลัพธ์นี้
+#      — ไม่ว่าผลจะเป็น ok หรือ wall จริงก็ตาม) — เส้นทางนี้มาจาก pc/shared/paths.py
+#      (2026-09-20: ย้ายจาก data/raw/phase2/uno_*.csv ที่ทุกวงจรใช้ไฟล์เดียวกันมาเป็น
+#      หนึ่งไดเรกทอรีต่อ (board, circuit) ดู run_log.md "per-board per-algorithm layout")
 #
 # การใช้งาน:
 #   .venv/bin/python pc/phase2_sweep/uno_sweep.py --port /dev/cu.usbmodemXXXX \
@@ -53,6 +55,14 @@
 #
 # steane_encode คงที่ที่ n=7 เสมอ (pc/shared/circuit_ids.n_values_for_sweep จัดการ
 # ให้อัตโนมัติ) — ถ้า n=7 ไม่อยู่ใน [n-start, n-max] ที่ขอ จะข้ามวงจรนี้ไปเฉย ๆ
+#
+# แต่ละ circuit ใน --circuits ตอนนี้เป็น session ของตัวเอง (ไดเรกทอรี/sessions.csv/
+# points.csv/env json แยกกันคนละชุด — ดู pc/shared/paths.py) ไม่ใช่ session เดียวที่
+# ครอบทุกวงจรเหมือนเดิม เพราะ standing decision 3 (2026-09-20, run_log.md) กำหนดให้รัน
+# ทีละวงจรอยู่แล้วในทางปฏิบัติ ผลคือ pending_settle (ดู UPLOAD_SYNC_FAILURE_MARKERS
+# ด้านล่าง) ไม่ข้าม circuit boundary อีกต่อไปแม้จะยังอยู่ใน process เดียวกัน — ยังคง
+# ทำงานถูกต้องข้าม n boundary ภายในวงจรเดียวกัน และไม่ได้กระทบการรันจริงเลยเพราะ
+# ปกติมีแค่ 1 circuit ต่อการเรียกอยู่แล้ว
 
 import argparse
 import csv
@@ -76,11 +86,11 @@ from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
 from shared import la_capture as lac  # noqa: E402
+from shared import paths as sp  # noqa: E402
 
 RESUME_KEY_SPEC = [("circuit", str), ("n", int)]
 
 FW_DIR = REPO_ROOT / "firmware" / "uno"
-RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 PIO = os.environ.get("PIO_PATH") or shutil.which("pio")
 
 BAUD = 115200
@@ -341,15 +351,16 @@ def main():
                           "เรียก sigrok-cli เลยแม้แต่ครั้งเดียว) UNVERIFIED: sigrok-cli "
                           "command lines ไม่เคยรันกับฮาร์ดแวร์จริง (ดู "
                           "pc/shared/la_capture.py และ run_checklist.md ส่วน 'sigrok-cli "
-                          "command lines — UNVERIFIED') ต้องมี "
-                          "data/raw/la/capture_plan.csv อยู่แล้ว (จาก "
-                          "analysis/la_capture_plan.py) และ sigrok-cli บน PATH พร้อม "
-                          "อุปกรณ์ที่ตรวจเจอ ไม่งั้นจะรันต่อโดยไม่ capture (ไม่ใช่ error)")
+                          "command lines — UNVERIFIED') ต้องมี capture_plan.csv อยู่แล้วใน "
+                          "la/ ของ circuit นั้น (จาก analysis/la_capture_plan.py) และ "
+                          "sigrok-cli บน PATH พร้อมอุปกรณ์ที่ตรวจเจอ ไม่งั้นจะรันต่อโดยไม่ "
+                          "capture (ไม่ใช่ error)")
     args = ap.parse_args()
 
     # --la ปิด (ค่าเริ่มต้น): la_active คงเป็น False เสมอ ไม่มีการเรียก lac.* แม้แต่ครั้ง
     # เดียวตลอดทั้งการรัน — พฤติกรรมจึงเหมือนก่อนมี flag นี้ทุกประการ (ดู
-    # pc/shared/la_capture_test.py "flag off = unchanged behavior")
+    # pc/shared/la_capture_test.py "flag off = unchanged behavior") ตรวจ sigrok-cli
+    # ครั้งเดียวต่อ process (ไม่ผูกกับ circuit ใดวงจรหนึ่ง)
     la_active = False
     if args.la:
         scan = lac.check_sigrok()
@@ -358,9 +369,52 @@ def main():
         if not la_active:
             print("[la] continuing WITHOUT capture (sigrok-cli unavailable or no device found)")
 
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    raw_path = RESULTS_DIR / "uno_raw.csv"
-    wall_path = RESULTS_DIR / "uno_memory_wall.csv"
+    try:
+        for circuit in args.circuits:
+            print(f"\n=== circuit={circuit} ===")
+            _run_circuit(args, circuit, la_active)
+    except ConsecutiveUploadFailuresError as e:
+        # standing decision 1 (2026-09-20): stop the whole run, don't crash past
+        # the point of having flushed everything collected so far (_run_circuit's
+        # own try/finally already closed that circuit's raw/wall file handles and
+        # its SessionRecorder's __exit__ already wrote a session row noting the
+        # exception before it got here).
+        print(f"\n!!! STOPPING RUN: {e}")
+        print(f"raw -> {sp.raw_csv_path('uno', e.circuit)}\n"
+              f"memory wall -> {sp.memory_wall_csv_path('uno', e.circuit)}")
+        print(f"telemetry -> {sp.sessions_csv_path('uno', e.circuit)}, "
+              f"{sp.points_csv_path('uno', e.circuit)}")
+        sys.exit(2)
+
+
+def _run_circuit(args, circuit, la_active):
+    """Set up this one algorithm's directory/files/telemetry session, run its
+    sweep, and close everything down again — one call per circuit in
+    args.circuits. Each circuit is now a fully independent unit (own raw dir,
+    own points.csv/sessions.csv/env json — see pc/shared/paths.py), matching
+    standing decision 3 (one algorithm at a time)."""
+    n_values = n_values_for_sweep(circuit, args.n_start, args.n_max)
+    if not n_values:
+        print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {args.n_max}]")
+        return
+
+    raw_directory = sp.raw_dir("uno", circuit, phase=2)
+    raw_directory.mkdir(parents=True, exist_ok=True)
+    raw_path = sp.raw_csv_path("uno", circuit)
+    wall_path = sp.memory_wall_csv_path("uno", circuit)
+    points_csv = sp.points_csv_path("uno", circuit)
+    sessions_csv = sp.sessions_csv_path("uno", circuit)
+    env_directory = sp.env_dir("uno", circuit)
+
+    if la_active:
+        # per-circuit LA dir/plan/issues-log — reassigning these module attributes
+        # is the same redirection mechanism the tests already use (see
+        # la_capture_test.py); load_plan_entry() resolves plan_path=None at call
+        # time, not at def time, so this reassignment actually takes effect (a
+        # latent bug fixed 2026-09-20 during this migration — see its docstring)
+        lac.LA_DIR = sp.la_dir("uno", circuit, phase=2)
+        lac.PLAN_PATH = lac.LA_DIR / "capture_plan.csv"
+        lac.ISSUES_LOG = lac.LA_DIR / "capture_issues.log"
 
     # resume (ค่าเริ่มต้น): มีแถวใน wall CSV = จุดนั้น "เสร็จสิ้น" แล้วไม่ว่าผลจะเป็นอะไร
     # (ok, build_or_upload_fail, skipped_compute_infeasible, ...) ข้ามได้เลย ไม่ต้องแตะ
@@ -396,37 +450,38 @@ def main():
             "timeout_budget_s", "expected_point_s", "retry_policy",
         ])
 
-    # preflight: โชว์ budget ของทุกจุดก่อนเริ่ม ให้คนกดรันเห็นว่าจุดไหนแพง/จุดไหนทำไม่ได้
-    # ตั้งแต่ก่อนเริ่ม ไม่ใช่ไปเจอตอนชั่วโมงที่หก
-    planned = [(c, n) for c in args.circuits
-               for n in n_values_for_sweep(c, args.n_start, args.n_max)]
-    infeasible = tm.print_budget_plan("uno", planned, phase=2)
-    if args.force_infeasible:
-        print("--force-infeasible: จะพยายามรันจุดที่เกินเพดานด้วย\n")
-        infeasible = set()
-
-    # resume summary: เวลาที่เหลือประมาณจากจุดที่ "เหลือและทำได้จริง" เท่านั้น — จุดที่
-    # infeasible ถูกข้ามเกือบจะทันที (แค่พิมพ์แล้วบันทึก) จึงไม่นับรวมเวลาประเมินมหาศาล
-    # ของมัน (เช่น 95 วัน) ปนเข้าไปในตัวเลข "เหลืออีกกี่ชั่วโมง" ที่ผู้ใช้จะดูจริง
-    remaining_preview = [p for p in planned if p not in completed]
-    real_remaining = [p for p in remaining_preview if p not in infeasible]
-    est_s = sum(tm.expected_point_time_s("uno", c, n) for c, n in real_remaining)
-    n_inf_remaining = len(remaining_preview) - len(real_remaining)
-    remaining_human = tm.human_duration(est_s)
-    if n_inf_remaining:
-        remaining_human += f" (+{n_inf_remaining} infeasible point(s), skipped near-instantly)"
-    rs.print_resume_summary("uno", planned, completed, remaining_human)
-    wall_n_by_circuit = rs.known_wall_n(completed)
-
-    # telemetry: session wrapper + environment metadata ครั้งเดียวตอนเริ่ม session
-    # (ไม่ใช่ต่อจุด) — ดู pc/shared/telemetry.py สำหรับ schema เต็มและเหตุผลที่แยกจาก
-    # *_raw.csv/*_memory_wall.csv เดิมโดยสิ้นเชิง (ไม่แตะ resume logic ที่ทดสอบแล้ว)
-    resumed_from_previous = bool(completed)
-    last_end = tel.last_session_end_utc("uno", 2) if resumed_from_previous else None
-    session = tel.SessionRecorder(phase=2, board="uno", circuits=args.circuits,
-                                   resumed_from_previous=resumed_from_previous,
-                                   estimated_total_s=round(est_s, 1))
     try:
+        # preflight: โชว์ budget ของทุกจุดก่อนเริ่ม ให้คนกดรันเห็นว่าจุดไหนแพง/จุดไหนทำไม่ได้
+        # ตั้งแต่ก่อนเริ่ม ไม่ใช่ไปเจอตอนชั่วโมงที่หก
+        planned = [(circuit, n) for n in n_values]
+        infeasible = tm.print_budget_plan("uno", planned, phase=2)
+        if args.force_infeasible:
+            print("--force-infeasible: จะพยายามรันจุดที่เกินเพดานด้วย\n")
+            infeasible = set()
+
+        # resume summary: เวลาที่เหลือประมาณจากจุดที่ "เหลือและทำได้จริง" เท่านั้น — จุดที่
+        # infeasible ถูกข้ามเกือบจะทันที (แค่พิมพ์แล้วบันทึก) จึงไม่นับรวมเวลาประเมินมหาศาล
+        # ของมัน (เช่น 95 วัน) ปนเข้าไปในตัวเลข "เหลืออีกกี่ชั่วโมง" ที่ผู้ใช้จะดูจริง
+        remaining_preview = [p for p in planned if p not in completed]
+        real_remaining = [p for p in remaining_preview if p not in infeasible]
+        est_s = sum(tm.expected_point_time_s("uno", c, n) for c, n in real_remaining)
+        n_inf_remaining = len(remaining_preview) - len(real_remaining)
+        remaining_human = tm.human_duration(est_s)
+        if n_inf_remaining:
+            remaining_human += f" (+{n_inf_remaining} infeasible point(s), skipped near-instantly)"
+        rs.print_resume_summary("uno", planned, completed, remaining_human)
+        wall_n_by_circuit = rs.known_wall_n(completed)
+
+        # telemetry: session wrapper + environment metadata ครั้งเดียวตอน circuit นี้เริ่ม
+        # (ไม่ใช่ต่อจุด) — ดู pc/shared/telemetry.py สำหรับ schema เต็มและเหตุผลที่แยกจาก
+        # raw.csv/memory_wall.csv เดิมโดยสิ้นเชิง (ไม่แตะ resume logic ที่ทดสอบแล้ว)
+        resumed_from_previous = bool(completed)
+        last_end = (tel.last_session_end_utc("uno", 2, sessions_csv=sessions_csv)
+                    if resumed_from_previous else None)
+        session = tel.SessionRecorder(phase=2, board="uno", circuits=[circuit],
+                                       resumed_from_previous=resumed_from_previous,
+                                       estimated_total_s=round(est_s, 1),
+                                       sessions_csv=sessions_csv)
         with session:
             if last_end is not None:
                 from datetime import datetime as _dt, timezone as _tz
@@ -435,346 +490,313 @@ def main():
                     session.note_interruption_gap(gap)
             env_path = tel.write_environment_metadata(
                 session.session_id, "uno", args.port, BAUD, F_CPU, FW_DIR / "src",
-                pio_project_dir=FW_DIR, pio_env="uno")
+                env_dir=env_directory, pio_project_dir=FW_DIR, pio_env="uno")
             session.env_json_path = str(env_path)
 
-            _sweep_body(args, completed, wall_n_by_circuit, infeasible,
-                        raw_w, raw_f, wall_w, wall_f, session, la_active)
-    except ConsecutiveUploadFailuresError as e:
-        # standing decision 1 (2026-09-20): stop the whole run, don't crash past
-        # the point of having flushed everything collected so far.
+            _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasible,
+                        raw_w, raw_f, wall_w, wall_f, session, la_active, points_csv)
+    finally:
         raw_f.close()
         wall_f.close()
-        print(f"\n!!! STOPPING RUN: {e}")
-        print(f"raw -> {raw_path}\nmemory wall -> {wall_path}")
-        print(f"telemetry -> {tel.SESSIONS_CSV}, {tel.POINTS_CSV}")
-        sys.exit(2)
 
-    raw_f.close()
-    wall_f.close()
     print(f"\nraw -> {raw_path}\nmemory wall -> {wall_path}")
-    print(f"telemetry -> {tel.SESSIONS_CSV}, {tel.POINTS_CSV}")
+    print(f"telemetry -> {sessions_csv}, {points_csv}")
 
 
-def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
-                 raw_w, raw_f, wall_w, wall_f, session, la_active=False):
-    # ข้ามขอบเขต circuit/n ทั้งคู่ — เรื่องพอร์ตทางกายภาพไม่รู้จัก circuit boundary
-    # ตั้งครั้งเดียวหลัง hard_timeout=true หรือ upload-stage failure ใด ๆ แล้วถูก
-    # "ใช้" ครั้งเดียวก่อน build_and_upload ครั้งถัดไป ไม่ว่าจะเป็นจุดไหนก็ตาม (ดู
-    # UPLOAD_SYNC_FAILURE_MARKERS comment ด้านบนสำหรับ root cause ที่ตรงนี้แก้)
+def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasible,
+                 raw_w, raw_f, wall_w, wall_f, session, la_active, points_csv):
+    # ข้าม n boundary ภายในวงจรนี้ — เรื่องพอร์ตทางกายภาพไม่รู้จัก n boundary ตั้งครั้งเดียว
+    # หลัง hard_timeout=true หรือ upload-stage failure ใด ๆ แล้วถูก "ใช้" ครั้งเดียวก่อน
+    # build_and_upload ครั้งถัดไป ไม่ว่าจะเป็น n ไหนก็ตาม (ดู UPLOAD_SYNC_FAILURE_MARKERS
+    # comment ด้านบนสำหรับ root cause ที่ตรงนี้แก้) — ไม่ข้าม circuit boundary อีกต่อไป
+    # เพราะแต่ละ circuit เป็นการเรียก _sweep_body แยกกันแล้ว (ดู module docstring ด้านบน)
     pending_settle = False
     pending_settle_reason = None
 
-    for circuit in args.circuits:
-        print(f"\n=== circuit={circuit} ===")
-        n_values = n_values_for_sweep(circuit, args.n_start, args.n_max)
-        if not n_values:
-            print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {args.n_max}]")
+    # standing decision 1 (2026-09-20): two consecutive n values that each
+    # exhaust all UPLOAD_MAX_ATTEMPTS upload attempts stop the whole run.
+    # Skipped points (resume/infeasible) leave this untouched -- they aren't a
+    # hardware attempt either way.
+    prev_upload_exhausted_n = None
+
+    for n in n_values:
+        skip_ts = datetime.now(timezone.utc).isoformat()
+        if (circuit, n) in completed:
+            print(f"n={n:2d}  SKIP (resume): already {completed[(circuit, n)].get('status', '?')}")
+            tel.write_point_row({
+                "session_id": session.session_id, "phase": 2, "board": "uno",
+                "circuit": circuit, "n": n, "attempt_index": 0,
+                "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
+                "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                "status": "skipped_resume",
+            }, points_csv)
+            session.note_point(status="skipped_resume")
             continue
-        # standing decision 1 (2026-09-20): two consecutive n values that each
-        # exhaust all UPLOAD_MAX_ATTEMPTS upload attempts stop the whole run.
-        # Tracked per circuit (only one circuit runs per invocation under the
-        # "one algorithm at a time" policy, but this stays correct if that
-        # ever changes). Skipped points (resume/infeasible) leave this
-        # untouched -- they aren't a hardware attempt either way.
-        prev_upload_exhausted_n = None
-        for n in n_values:
-            skip_ts = datetime.now(timezone.utc).isoformat()
-            if (circuit, n) in completed:
-                print(f"n={n:2d}  SKIP (resume): already {completed[(circuit, n)].get('status', '?')}")
-                tel.write_point_row({
-                    "session_id": session.session_id, "phase": 2, "board": "uno",
-                    "circuit": circuit, "n": n, "attempt_index": 0,
-                    "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
-                    "retry_count": 0, "timeout_hit": False, "failure_type": "none",
-                    "status": "skipped_resume",
-                })
-                session.note_point(status="skipped_resume")
-                continue
-            if circuit in wall_n_by_circuit and n > wall_n_by_circuit[circuit]:
-                print(f"n={n:2d}  SKIP (resume): {circuit} already hit its wall at "
-                      f"n={wall_n_by_circuit[circuit]} in a previous session")
-                tel.write_point_row({
-                    "session_id": session.session_id, "phase": 2, "board": "uno",
-                    "circuit": circuit, "n": n, "attempt_index": 0,
-                    "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
-                    "retry_count": 0, "timeout_hit": False, "failure_type": "none",
-                    "status": "skipped_known_wall",
-                })
-                session.note_point(status="skipped_known_wall")
-                continue
+        if circuit in wall_n_by_circuit and n > wall_n_by_circuit[circuit]:
+            print(f"n={n:2d}  SKIP (resume): {circuit} already hit its wall at "
+                  f"n={wall_n_by_circuit[circuit]} in a previous session")
+            tel.write_point_row({
+                "session_id": session.session_id, "phase": 2, "board": "uno",
+                "circuit": circuit, "n": n, "attempt_index": 0,
+                "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
+                "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                "status": "skipped_known_wall",
+            }, points_csv)
+            session.note_point(status="skipped_known_wall")
+            continue
 
-            theoretical_bytes = (1 << n) * 8
-            budget_s = tm.timeout_budget_s("uno", circuit, n)
-            expected_s = tm.expected_point_time_s("uno", circuit, n)
-            may_retry = tm.retry_allowed(budget_s)
-            retry_policy = "allowed" if may_retry else "skipped_high_budget"
+        theoretical_bytes = (1 << n) * 8
+        budget_s = tm.timeout_budget_s("uno", circuit, n)
+        expected_s = tm.expected_point_time_s("uno", circuit, n)
+        may_retry = tm.retry_allowed(budget_s)
+        retry_policy = "allowed" if may_retry else "skipped_high_budget"
+        ts = datetime.now(timezone.utc).isoformat()
+
+        if (circuit, n) in infeasible:
+            # ไม่ใช่ Memory Wall และไม่ใช่ hang — เป็นขีดจำกัดเชิงเวลาคำนวณล้วน ๆ
+            # บันทึกค่าประมาณไว้ด้วย เพื่อให้แถวนี้อ่านเป็น "ผลการทดลอง" ได้จริง
+            print(f"n={n:2d}  SKIP compute-infeasible: expected "
+                  f"{tm.human_duration(expected_s)} > ceiling {tm.CEILING_S}s")
+            wall_w.writerow(["uno", circuit, n, theoretical_bytes, None, None,
+                              "skipped_compute_infeasible", ts, 0,
+                              budget_s, round(expected_s, 1), "n/a"])
+            wall_f.flush()
+            tel.write_point_row({
+                "session_id": session.session_id, "phase": 2, "board": "uno",
+                "circuit": circuit, "n": n, "attempt_index": 0,
+                "start_utc": ts, "end_utc": ts, "wall_s": 0,
+                "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                "status": "skipped_compute_infeasible",
+            }, points_csv)
+            session.note_point(status="skipped_compute_infeasible")
+            continue
+
+        wall_found = False
+        retry_used = 0
+        point_device_s = 0.0
+        point_reflash_s = 0.0
+        upload_fail_exhausted = False  # this point's terminal outcome: ran out of
+        # all UPLOAD_MAX_ATTEMPTS upload attempts (standing decision 1) — set only
+        # on the terminal (non-retry) branch of the upload-stage-failure path below
+
+        # attempt loop: two independent retry policies share this loop, each
+        # gated on the failure kind of the attempt that just happened, not on a
+        # single shared attempt cap —
+        #   - runtime hang/reset/watchdog/build_timeout: unchanged existing policy,
+        #     one retry only (2 attempts total), gated by may_retry (budget rule,
+        #     see timing_model.retry_allowed) — untouched by standing decision 1.
+        #   - upload-stage failure (avrdude never got a working handshake):
+        #     standing decision 1 (2026-09-20) — up to UPLOAD_MAX_ATTEMPTS (3)
+        #     attempts total, NOT gated by the budget rule (reflash time doesn't
+        #     scale with n the way device-run time does), and exhausting all 3
+        #     does NOT stop climbing / does NOT abandon the circuit.
+        #   - compile-time RAM>100% evidence (Uno linker exits 0 above 100%, see
+        #     compile_ram_wall below): standing decision 2 — never retried, one
+        #     attempt only, regardless of which of the above this attempt would
+        #     otherwise have matched.
+        attempt = 0
+        while True:
+            print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  "
+                  f"budget={budget_s}s (expected {tm.human_duration(expected_s)})  "
+                  f"attempt={attempt + 1}  ", end="", flush=True)
+            if attempt > 0:
+                print("(retry) ", end="", flush=True)
+
+            # root-cause fix (see UPLOAD_SYNC_FAILURE_MARKERS comment): settle +
+            # re-enumeration check BEFORE this build_and_upload if the previous
+            # action on the port ended in hard_timeout=true or an upload-stage
+            # failure — applies whether this is a retry of the same point or the
+            # next n in this circuit, since the port doesn't know about that
+            # boundary. Logged into failure_message below (no new telemetry
+            # column — SCHEMA_VERSION stays 2).
+            settle_note = ""
+            if pending_settle:
+                print(f"\n-- settling {args.upload_retry_settle_s}s before the next "
+                      f"build_and_upload (previous: {pending_settle_reason})")
+                time.sleep(args.upload_retry_settle_s)
+                port_ok = port_still_enumerated()
+                print(f"-- port re-enumeration check: {'found' if port_ok else 'NOT FOUND'}")
+                settle_note = (f"[settled {args.upload_retry_settle_s}s after "
+                                f"{pending_settle_reason}; port_reenum="
+                                f"{'ok' if port_ok else 'missing'}] ")
+                pending_settle = False
+                pending_settle_reason = None
+
+            # --la: arm the capture BEFORE build_and_upload (compile+upload+the
+            # reset that actually starts the board running) — this can only add
+            # time to the reflash phase (PC-side, outside any timed region), never
+            # to the GPIO pulse or the micros() window it brackets.
+            armed = None
+            plan_entry = None
+            if la_active:
+                plan_entry = lac.load_plan_entry("uno", circuit, n)
+                if plan_entry is None:
+                    lac.log_issue("uno", circuit, n,
+                                  "no capture_plan.csv entry for this point in this "
+                                  "circuit's la/ dir — skipping capture (run "
+                                  "analysis/la_capture_plan.py first)")
+                else:
+                    out_path = lac.LA_DIR / f"uno_{circuit}_n{n}.csv"
+                    armed = lac.arm_capture("uno", circuit, n, plan_entry, out_path)
+                    if armed is None:
+                        print(f"[la] failed to arm capture for {circuit} n={n} "
+                              "— continuing without capture for this point")
+
+            attempt_start = datetime.now(timezone.utc).isoformat()
+            result = build_and_upload(circuit, n, args.port, args.build_timeout_s)
             ts = datetime.now(timezone.utc).isoformat()
+            args.port = result["port"]  # จำ port ล่าสุดที่ใช้สำเร็จ ไว้เป็น hint รอบถัดไป
+            reflash_s = result["compile_s"] + result["upload_s"]
+            point_reflash_s += reflash_s
 
-            if (circuit, n) in infeasible:
-                # ไม่ใช่ Memory Wall และไม่ใช่ hang — เป็นขีดจำกัดเชิงเวลาคำนวณล้วน ๆ
-                # บันทึกค่าประมาณไว้ด้วย เพื่อให้แถวนี้อ่านเป็น "ผลการทดลอง" ได้จริง
-                print(f"n={n:2d}  SKIP compute-infeasible: expected "
-                      f"{tm.human_duration(expected_s)} > ceiling {tm.CEILING_S}s")
-                wall_w.writerow(["uno", circuit, n, theoretical_bytes, None, None,
-                                  "skipped_compute_infeasible", ts, 0,
-                                  budget_s, round(expected_s, 1), "n/a"])
-                wall_f.flush()
+            if armed is not None and not result["ok"]:
+                # board never ran (build/upload failed before the reset that
+                # starts it) — discard the capture, don't run analysis on it.
+                # This must not touch the micros()/build failure handling below.
+                lac.stop_capture(armed, "uno", circuit, n)
+                lac.log_issue("uno", circuit, n, "build/upload failed — capture discarded")
+                armed = None
+
+            # standing decision 2 (2026-09-20): the Uno linker exits 0 even when
+            # RAM usage is above 100% (documented toolchain quirk, docs/
+            # preflight_report.md finding L2) — so compile_ram_pct evidence has
+            # to be checked after a SUCCESSFUL build too, not only inside the
+            # classify_build_failure() branch below which only ever runs when
+            # result["ok"] is False. result["stage"] == "upload" is exactly
+            # "compile succeeded" (build_and_upload() only ever returns
+            # stage="compile" on the early-return path when compile itself
+            # failed) so ram_pct is meaningful here regardless of whether the
+            # later upload step succeeded.
+            compile_succeeded = result.get("stage") == "upload"
+            compile_ram_wall = (compile_succeeded and result["ram_pct"] is not None
+                                 and result["ram_pct"] > 100.0)
+            if compile_ram_wall:
+                print(f"\ncompile_ram_pct={result['ram_pct']}% > 100% despite the linker "
+                      "exiting 0 (Uno L2 quirk) -- positive evidence of a Memory Wall. "
+                      "Recommended handling: still run this point once for the observed "
+                      "behaviour (upload+execute if upload succeeds), but NO retries and "
+                      "the final status is forced to build_overflow regardless of outcome "
+                      "-- time cost is exactly one normal attempt, same as any other point.")
+
+            if not result["ok"]:
+                # แยกสาเหตุก่อนตัดสิน: timeout ของ toolchain ไม่ใช่กำแพง และ retry ได้
+                # (ดู pc/shared/resume.classify_build_failure และ finding H2)
+                build_status = rs.classify_build_failure(
+                    result["log"], result["ram_pct"], result.get("timed_out", False))
+                if compile_ram_wall:
+                    build_status = "build_overflow"  # force-reclassify: upload/whatever
+                    # else went wrong afterward doesn't matter, the positive RAM
+                    # evidence from compile time already makes this a wall
+                is_timeout = build_status == "build_timeout"
+                is_upload_fail = (not compile_ram_wall
+                                   and is_upload_stage_failure(build_status, result))
+                # signature match เอาไว้ label/log เท่านั้น (ไม่ใช้ตัดสิน retry
+                # eligibility อีกต่อไป — ดู is_upload_stage_failure)
+                is_upload_sync = is_upload_stage_failure(build_status, result) and \
+                    is_upload_sync_failure(result["log"])
+                label = {
+                    "build_overflow": "BUILD OVERFLOW -> Memory Wall (positive evidence: linker/RAM)",
+                    "build_timeout": "BUILD TIMEOUT -> toolchain/host problem, NOT a wall",
+                    "build_or_upload_fail": "UPLOAD/BUILD FAIL -> not a wall (no memory evidence)",
+                }[build_status]
+                print(label + ("  (matched upload-sync-failure signature)" if is_upload_sync else ""))
+                print(result["log"][-800:])
+
+                will_retry = False
+                if compile_ram_wall:
+                    will_retry = False  # decision 2: never retried
+                elif is_timeout and attempt == 0 and may_retry:
+                    will_retry = True
+                elif is_upload_fail and attempt < UPLOAD_MAX_ATTEMPTS - 1:
+                    will_retry = True
+
+                failure_message = settle_note + result["log"][-300:]
                 tel.write_point_row({
                     "session_id": session.session_id, "phase": 2, "board": "uno",
-                    "circuit": circuit, "n": n, "attempt_index": 0,
-                    "start_utc": ts, "end_utc": ts, "wall_s": 0,
-                    "retry_count": 0, "timeout_hit": False, "failure_type": "none",
-                    "status": "skipped_compute_infeasible",
-                })
-                session.note_point(status="skipped_compute_infeasible")
-                continue
-
-            wall_found = False
-            retry_used = 0
-            point_device_s = 0.0
-            point_reflash_s = 0.0
-            upload_fail_exhausted = False  # this point's terminal outcome: ran out of
-            # all UPLOAD_MAX_ATTEMPTS upload attempts (standing decision 1) — set only
-            # on the terminal (non-retry) branch of the upload-stage-failure path below
-
-            # attempt loop: two independent retry policies share this loop, each
-            # gated on the failure kind of the attempt that just happened, not on a
-            # single shared attempt cap —
-            #   - runtime hang/reset/watchdog/build_timeout: unchanged existing policy,
-            #     one retry only (2 attempts total), gated by may_retry (budget rule,
-            #     see timing_model.retry_allowed) — untouched by standing decision 1.
-            #   - upload-stage failure (avrdude never got a working handshake):
-            #     standing decision 1 (2026-09-20) — up to UPLOAD_MAX_ATTEMPTS (3)
-            #     attempts total, NOT gated by the budget rule (reflash time doesn't
-            #     scale with n the way device-run time does), and exhausting all 3
-            #     does NOT stop climbing / does NOT abandon the circuit.
-            #   - compile-time RAM>100% evidence (Uno linker exits 0 above 100%, see
-            #     compile_ram_wall below): standing decision 2 — never retried, one
-            #     attempt only, regardless of which of the above this attempt would
-            #     otherwise have matched.
-            attempt = 0
-            while True:
-                print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  "
-                      f"budget={budget_s}s (expected {tm.human_duration(expected_s)})  "
-                      f"attempt={attempt + 1}  ", end="", flush=True)
-                if attempt > 0:
-                    print("(retry) ", end="", flush=True)
-
-                # root-cause fix (see UPLOAD_SYNC_FAILURE_MARKERS comment): settle +
-                # re-enumeration check BEFORE this build_and_upload if the previous
-                # action on the port ended in hard_timeout=true or an upload-stage
-                # failure — applies whether this is a retry of the same point or the
-                # very next point/circuit, since the port doesn't know about that
-                # boundary. Logged into failure_message below (no new telemetry
-                # column — SCHEMA_VERSION stays 2).
-                settle_note = ""
-                if pending_settle:
-                    print(f"\n-- settling {args.upload_retry_settle_s}s before the next "
-                          f"build_and_upload (previous: {pending_settle_reason})")
-                    time.sleep(args.upload_retry_settle_s)
-                    port_ok = port_still_enumerated()
-                    print(f"-- port re-enumeration check: {'found' if port_ok else 'NOT FOUND'}")
-                    settle_note = (f"[settled {args.upload_retry_settle_s}s after "
-                                    f"{pending_settle_reason}; port_reenum="
-                                    f"{'ok' if port_ok else 'missing'}] ")
-                    pending_settle = False
-                    pending_settle_reason = None
-
-                # --la: arm the capture BEFORE build_and_upload (compile+upload+the
-                # reset that actually starts the board running) — this can only add
-                # time to the reflash phase (PC-side, outside any timed region), never
-                # to the GPIO pulse or the micros() window it brackets.
-                armed = None
-                plan_entry = None
-                if la_active:
-                    plan_entry = lac.load_plan_entry("uno", circuit, n)
-                    if plan_entry is None:
-                        lac.log_issue("uno", circuit, n,
-                                      "no data/raw/la/capture_plan.csv entry for this point "
-                                      "— skipping capture (run analysis/la_capture_plan.py first)")
-                    else:
-                        out_path = lac.LA_DIR / f"uno_{circuit}_n{n}.csv"
-                        armed = lac.arm_capture("uno", circuit, n, plan_entry, out_path)
-                        if armed is None:
-                            print(f"[la] failed to arm capture for {circuit} n={n} "
-                                  "— continuing without capture for this point")
-
-                attempt_start = datetime.now(timezone.utc).isoformat()
-                result = build_and_upload(circuit, n, args.port, args.build_timeout_s)
-                ts = datetime.now(timezone.utc).isoformat()
-                args.port = result["port"]  # จำ port ล่าสุดที่ใช้สำเร็จ ไว้เป็น hint รอบถัดไป
-                reflash_s = result["compile_s"] + result["upload_s"]
-                point_reflash_s += reflash_s
-
-                if armed is not None and not result["ok"]:
-                    # board never ran (build/upload failed before the reset that
-                    # starts it) — discard the capture, don't run analysis on it.
-                    # This must not touch the micros()/build failure handling below.
-                    lac.stop_capture(armed, "uno", circuit, n)
-                    lac.log_issue("uno", circuit, n, "build/upload failed — capture discarded")
-                    armed = None
-
-                # standing decision 2 (2026-09-20): the Uno linker exits 0 even when
-                # RAM usage is above 100% (documented toolchain quirk, docs/
-                # preflight_report.md finding L2) — so compile_ram_pct evidence has
-                # to be checked after a SUCCESSFUL build too, not only inside the
-                # classify_build_failure() branch below which only ever runs when
-                # result["ok"] is False. result["stage"] == "upload" is exactly
-                # "compile succeeded" (build_and_upload() only ever returns
-                # stage="compile" on the early-return path when compile itself
-                # failed) so ram_pct is meaningful here regardless of whether the
-                # later upload step succeeded.
-                compile_succeeded = result.get("stage") == "upload"
-                compile_ram_wall = (compile_succeeded and result["ram_pct"] is not None
-                                     and result["ram_pct"] > 100.0)
-                if compile_ram_wall:
-                    print(f"\ncompile_ram_pct={result['ram_pct']}% > 100% despite the linker "
-                          "exiting 0 (Uno L2 quirk) -- positive evidence of a Memory Wall. "
-                          "Recommended handling: still run this point once for the observed "
-                          "behaviour (upload+execute if upload succeeds), but NO retries and "
-                          "the final status is forced to build_overflow regardless of outcome "
-                          "-- time cost is exactly one normal attempt, same as any other point.")
-
-                if not result["ok"]:
-                    # แยกสาเหตุก่อนตัดสิน: timeout ของ toolchain ไม่ใช่กำแพง และ retry ได้
-                    # (ดู pc/shared/resume.classify_build_failure และ finding H2)
-                    build_status = rs.classify_build_failure(
-                        result["log"], result["ram_pct"], result.get("timed_out", False))
-                    if compile_ram_wall:
-                        build_status = "build_overflow"  # force-reclassify: upload/whatever
-                        # else went wrong afterward doesn't matter, the positive RAM
-                        # evidence from compile time already makes this a wall
-                    is_timeout = build_status == "build_timeout"
-                    is_upload_fail = (not compile_ram_wall
-                                       and is_upload_stage_failure(build_status, result))
-                    # signature match เอาไว้ label/log เท่านั้น (ไม่ใช้ตัดสิน retry
-                    # eligibility อีกต่อไป — ดู is_upload_stage_failure)
-                    is_upload_sync = is_upload_stage_failure(build_status, result) and \
-                        is_upload_sync_failure(result["log"])
-                    label = {
-                        "build_overflow": "BUILD OVERFLOW -> Memory Wall (positive evidence: linker/RAM)",
-                        "build_timeout": "BUILD TIMEOUT -> toolchain/host problem, NOT a wall",
-                        "build_or_upload_fail": "UPLOAD/BUILD FAIL -> not a wall (no memory evidence)",
-                    }[build_status]
-                    print(label + ("  (matched upload-sync-failure signature)" if is_upload_sync else ""))
-                    print(result["log"][-800:])
-
-                    will_retry = False
-                    if compile_ram_wall:
-                        will_retry = False  # decision 2: never retried
-                    elif is_timeout and attempt == 0 and may_retry:
-                        will_retry = True
-                    elif is_upload_fail and attempt < UPLOAD_MAX_ATTEMPTS - 1:
-                        will_retry = True
-
-                    failure_message = settle_note + result["log"][-300:]
-                    tel.write_point_row({
-                        "session_id": session.session_id, "phase": 2, "board": "uno",
-                        "circuit": circuit, "n": n, "attempt_index": attempt,
-                        "start_utc": attempt_start, "end_utc": ts, "wall_s": round(reflash_s, 3),
-                        "build_compile_s": round(result["compile_s"], 3),
-                        "upload_s": round(result["upload_s"], 3),
-                        "retry_count": retry_used, "timeout_hit": is_timeout,
-                        "failure_type": "build_timeout" if is_timeout else "build",
-                        "failure_message": failure_message,
-                        "status": "retrying" if will_retry else "failed",
-                    })
-                    if will_retry:
-                        retry_used += 1
-                        if is_upload_fail:
-                            pending_settle = True
-                            pending_settle_reason = f"upload-stage failure (attempt {attempt + 1})"
-                            print(f"-- upload-stage failure, will retry (attempt "
-                                  f"{attempt + 2}/{UPLOAD_MAX_ATTEMPTS})")
-                        else:
-                            print("-- transient build timeout, retrying once at the same n")
-                        attempt += 1
-                        continue
-
+                    "circuit": circuit, "n": n, "attempt_index": attempt,
+                    "start_utc": attempt_start, "end_utc": ts, "wall_s": round(reflash_s, 3),
+                    "build_compile_s": round(result["compile_s"], 3),
+                    "upload_s": round(result["upload_s"], 3),
+                    "retry_count": retry_used, "timeout_hit": is_timeout,
+                    "failure_type": "build_timeout" if is_timeout else "build",
+                    "failure_message": failure_message,
+                    "status": "retrying" if will_retry else "failed",
+                }, points_csv)
+                if will_retry:
+                    retry_used += 1
                     if is_upload_fail:
-                        upload_fail_exhausted = True
-
-                    wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"], result["ram_pct"],
-                                      build_status, ts, retry_used,
-                                      budget_s, round(expected_s, 1), retry_policy])
-                    wall_f.flush()
-                    session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
-                    if upload_fail_exhausted:
-                        # standing decision 1: an upload failure (even after
-                        # exhausting all attempts) is never treated as a reason to
-                        # stop climbing n in this circuit -- it carries no memory
-                        # evidence at all, unlike the other STOP_CLIMB_PREFIXES cases.
-                        wall_found = False
-                        print(f"-- exhausted all {UPLOAD_MAX_ATTEMPTS} upload attempts for n={n} "
-                              "-- NOT abandoning the circuit, continuing to the next n")
+                        pending_settle = True
+                        pending_settle_reason = f"upload-stage failure (attempt {attempt + 1})"
+                        print(f"-- upload-stage failure, will retry (attempt "
+                              f"{attempt + 2}/{UPLOAD_MAX_ATTEMPTS})")
                     else:
-                        wall_found = rs.stops_climbing(build_status)
-                    break
+                        print("-- transient build timeout, retrying once at the same n")
+                    attempt += 1
+                    continue
 
-                time.sleep(BOOT_WAIT_S)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
-                exec_t0 = time.perf_counter()
-                done, rows, note = read_serial_trials(find_uno_port(args.port), circuit, n, budget_s)
-                device_exec_s = time.perf_counter() - exec_t0
-                point_device_s += device_exec_s
-                if "hard_timeout=true" in note:
-                    pending_settle = True
-                    pending_settle_reason = f"hard_timeout on {circuit} n={n}"
+                if is_upload_fail:
+                    upload_fail_exhausted = True
 
-                # --la: stop the capture after the point (regardless of the outcome
-                # timed above, which is already fixed by this point) and only run
-                # the analysis scripts if the point actually produced micros() data
-                # to cross-check against. A capture/analysis problem is logged and
-                # never changes `done`, `rows`, or anything written below.
-                if armed is not None:
-                    cap_ok = lac.stop_capture(armed, "uno", circuit, n)
-                    if cap_ok and done:
-                        expected_reps = plan_entry["n_reps_to_capture"] if plan_entry else len(rows)
-                        lac.run_analysis("uno", circuit, n, armed.out_path, expected_reps)
-                    elif cap_ok and not done:
-                        lac.log_issue("uno", circuit, n,
-                                      "point did not complete (no DONE) — capture kept on disk "
-                                      "but not analyzed, no micros() data to cross-check against")
-                    armed = None
+                wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"], result["ram_pct"],
+                                  build_status, ts, retry_used,
+                                  budget_s, round(expected_s, 1), retry_policy])
+                wall_f.flush()
+                session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
+                if upload_fail_exhausted:
+                    # standing decision 1: an upload failure (even after
+                    # exhausting all attempts) is never treated as a reason to
+                    # stop climbing n in this circuit -- it carries no memory
+                    # evidence at all, unlike the other STOP_CLIMB_PREFIXES cases.
+                    wall_found = False
+                    print(f"-- exhausted all {UPLOAD_MAX_ATTEMPTS} upload attempts for n={n} "
+                          "-- NOT abandoning the circuit, continuing to the next n")
+                else:
+                    wall_found = rs.stops_climbing(build_status)
+                break
 
-                attempt_end = datetime.now(timezone.utc).isoformat()
+            time.sleep(BOOT_WAIT_S)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
+            exec_t0 = time.perf_counter()
+            done, rows, note = read_serial_trials(find_uno_port(args.port), circuit, n, budget_s)
+            device_exec_s = time.perf_counter() - exec_t0
+            point_device_s += device_exec_s
+            if "hard_timeout=true" in note:
+                pending_settle = True
+                pending_settle_reason = f"hard_timeout on {circuit} n={n}"
 
-                if done:
-                    for line in rows:
-                        raw_w.writerow(line.split(",") + [budget_s])
-                    raw_f.flush()
-                    if compile_ram_wall:
-                        # decision 2: ran successfully once despite the RAM>100%
-                        # evidence, per the recommended handling above -- the raw
-                        # trial data collected is real and kept, but the point is
-                        # still classified as a wall, not "ok".
-                        wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"],
-                                          result["ram_pct"], "build_overflow", ts, retry_used,
-                                          budget_s, round(expected_s, 1), retry_policy])
-                        wall_f.flush()
-                        print(f"ran to completion (trials_captured={len(rows)}) but "
-                              f"compile_ram_pct={result['ram_pct']}% > 100% -- recorded as "
-                              "build_overflow per decision 2, not ok")
-                        tel.write_point_row({
-                            "session_id": session.session_id, "phase": 2, "board": "uno",
-                            "circuit": circuit, "n": n, "attempt_index": attempt,
-                            "start_utc": attempt_start, "end_utc": attempt_end,
-                            "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
-                            "build_compile_s": round(result["compile_s"], 3),
-                            "upload_s": round(result["upload_s"], 3),
-                            "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
-                            "retry_count": retry_used, "timeout_hit": False,
-                            "failure_type": "build", "status": "failed",
-                        })
-                        session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
-                        wall_found = True
-                        break
-                    wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"], result["ram_pct"],
-                                      "ok", ts, retry_used,
+            # --la: stop the capture after the point (regardless of the outcome
+            # timed above, which is already fixed by this point) and only run
+            # the analysis scripts if the point actually produced micros() data
+            # to cross-check against. A capture/analysis problem is logged and
+            # never changes `done`, `rows`, or anything written below.
+            if armed is not None:
+                cap_ok = lac.stop_capture(armed, "uno", circuit, n)
+                if cap_ok and done:
+                    expected_reps = plan_entry["n_reps_to_capture"] if plan_entry else len(rows)
+                    lac.run_analysis("uno", circuit, n, armed.out_path, expected_reps)
+                elif cap_ok and not done:
+                    lac.log_issue("uno", circuit, n,
+                                  "point did not complete (no DONE) — capture kept on disk "
+                                  "but not analyzed, no micros() data to cross-check against")
+                armed = None
+
+            attempt_end = datetime.now(timezone.utc).isoformat()
+
+            if done:
+                for line in rows:
+                    raw_w.writerow(line.split(",") + [budget_s])
+                raw_f.flush()
+                if compile_ram_wall:
+                    # decision 2: ran successfully once despite the RAM>100%
+                    # evidence, per the recommended handling above -- the raw
+                    # trial data collected is real and kept, but the point is
+                    # still classified as a wall, not "ok".
+                    wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"],
+                                      result["ram_pct"], "build_overflow", ts, retry_used,
                                       budget_s, round(expected_s, 1), retry_policy])
                     wall_f.flush()
-                    suffix = f"  (succeeded after {retry_used} retry)" if retry_used else ""
-                    print(f"OK  compile_ram={result['ram_pct']}%  trials_captured={len(rows)}{suffix}")
+                    print(f"ran to completion (trials_captured={len(rows)}) but "
+                          f"compile_ram_pct={result['ram_pct']}% > 100% -- recorded as "
+                          "build_overflow per decision 2, not ok")
                     tel.write_point_row({
                         "session_id": session.session_id, "phase": 2, "board": "uno",
                         "circuit": circuit, "n": n, "attempt_index": attempt,
@@ -784,45 +806,42 @@ def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
                         "upload_s": round(result["upload_s"], 3),
                         "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
                         "retry_count": retry_used, "timeout_hit": False,
-                        "failure_type": "none", "status": "ok",
-                    })
-                    session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="ok")
-                    break
-
-                if compile_ram_wall:
-                    # decision 2: hung/reset instead of completing -- still no
-                    # retry, still forced to build_overflow (the compile-time
-                    # evidence alone is sufficient, don't need the run to succeed)
-                    wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"],
-                                      result["ram_pct"], "build_overflow", ts, retry_used,
-                                      budget_s, round(expected_s, 1), retry_policy])
-                    wall_f.flush()
-                    print(f"NO 'DONE' within {budget_s}s, and compile_ram_pct="
-                          f"{result['ram_pct']}% > 100% -- recorded as build_overflow "
-                          f"(no retry per decision 2), note={note}")
-                    tel.write_point_row({
-                        "session_id": session.session_id, "phase": 2, "board": "uno",
-                        "circuit": circuit, "n": n, "attempt_index": attempt,
-                        "start_utc": attempt_start, "end_utc": attempt_end,
-                        "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
-                        "build_compile_s": round(result["compile_s"], 3),
-                        "upload_s": round(result["upload_s"], 3),
-                        "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
-                        "retry_count": retry_used, "timeout_hit": True,
-                        "failure_type": "build", "failure_message": note, "status": "failed",
-                    })
+                        "failure_type": "build", "status": "failed",
+                    }, points_csv)
                     session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
                     wall_found = True
                     break
+                wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"], result["ram_pct"],
+                                  "ok", ts, retry_used,
+                                  budget_s, round(expected_s, 1), retry_policy])
+                wall_f.flush()
+                suffix = f"  (succeeded after {retry_used} retry)" if retry_used else ""
+                print(f"OK  compile_ram={result['ram_pct']}%  trials_captured={len(rows)}{suffix}")
+                tel.write_point_row({
+                    "session_id": session.session_id, "phase": 2, "board": "uno",
+                    "circuit": circuit, "n": n, "attempt_index": attempt,
+                    "start_utc": attempt_start, "end_utc": attempt_end,
+                    "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
+                    "build_compile_s": round(result["compile_s"], 3),
+                    "upload_s": round(result["upload_s"], 3),
+                    "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
+                    "retry_count": retry_used, "timeout_hit": False,
+                    "failure_type": "none", "status": "ok",
+                }, points_csv)
+                session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="ok")
+                break
 
-                # ถ้าเวลาต่อ rep ที่ประเมินไว้เกินเกณฑ์ WDT ของบอร์ดนี้ การที่บอร์ดเงียบ
-                # มีคำอธิบายที่เป็นไปได้มากกว่าหน่วยความจำ — บันทึกแยก และห้ามตีความเป็น
-                # Memory Wall (ดู timing_model.watchdog_suspected, finding H1) — this is
-                # standing decision 2's "hang without RAM evidence is NOT a wall,
-                # logged as runtime_hang_or_reset for the owner to review"
-                wdt_suspected = tm.watchdog_suspected("uno", circuit, n, args.wdt_threshold_s)
-                status = (f"watchdog_suspected({note})" if wdt_suspected
-                          else f"runtime_hang_or_reset({note})")
+            if compile_ram_wall:
+                # decision 2: hung/reset instead of completing -- still no
+                # retry, still forced to build_overflow (the compile-time
+                # evidence alone is sufficient, don't need the run to succeed)
+                wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"],
+                                  result["ram_pct"], "build_overflow", ts, retry_used,
+                                  budget_s, round(expected_s, 1), retry_policy])
+                wall_f.flush()
+                print(f"NO 'DONE' within {budget_s}s, and compile_ram_pct="
+                      f"{result['ram_pct']}% > 100% -- recorded as build_overflow "
+                      f"(no retry per decision 2), note={note}")
                 tel.write_point_row({
                     "session_id": session.session_id, "phase": 2, "board": "uno",
                     "circuit": circuit, "n": n, "attempt_index": attempt,
@@ -832,39 +851,62 @@ def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
                     "upload_s": round(result["upload_s"], 3),
                     "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
                     "retry_count": retry_used, "timeout_hit": True,
-                    "failure_type": "watchdog_suspected" if wdt_suspected else "hang",
-                    "failure_message": note,
-                    "status": "failed" if not (attempt == 0 and may_retry) else "retrying",
-                })
-
-                if attempt == 0 and may_retry:
-                    retry_used = 1
-                    print(f"NO 'DONE' within {budget_s}s -> {status}  "
-                          "-- transient failure, retrying once at same n "
-                          "(deviation from n=30 methodology, see run_log.md)")
-                    attempt += 1
-                    continue
-
-                tail = "(after retry)" if retry_used else f"(no retry: {retry_policy})"
-                note_wall = "" if rs.is_wall_status(status) else "  [NOT recorded as a Memory Wall]"
-                print(f"NO 'DONE' within {budget_s}s -> {status} {tail}{note_wall}")
-                wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"], result["ram_pct"],
-                                  status, ts, retry_used,
-                                  budget_s, round(expected_s, 1), retry_policy])
-                wall_f.flush()
+                    "failure_type": "build", "failure_message": note, "status": "failed",
+                }, points_csv)
                 session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
-                wall_found = rs.stops_climbing(status)
+                wall_found = True
                 break
 
-            if upload_fail_exhausted:
-                if prev_upload_exhausted_n is not None:
-                    raise ConsecutiveUploadFailuresError(circuit, prev_upload_exhausted_n, n)
-                prev_upload_exhausted_n = n
-            else:
-                prev_upload_exhausted_n = None
+            # ถ้าเวลาต่อ rep ที่ประเมินไว้เกินเกณฑ์ WDT ของบอร์ดนี้ การที่บอร์ดเงียบ
+            # มีคำอธิบายที่เป็นไปได้มากกว่าหน่วยความจำ — บันทึกแยก และห้ามตีความเป็น
+            # Memory Wall (ดู timing_model.watchdog_suspected, finding H1) — this is
+            # standing decision 2's "hang without RAM evidence is NOT a wall,
+            # logged as runtime_hang_or_reset for the owner to review"
+            wdt_suspected = tm.watchdog_suspected("uno", circuit, n, args.wdt_threshold_s)
+            status = (f"watchdog_suspected({note})" if wdt_suspected
+                      else f"runtime_hang_or_reset({note})")
+            tel.write_point_row({
+                "session_id": session.session_id, "phase": 2, "board": "uno",
+                "circuit": circuit, "n": n, "attempt_index": attempt,
+                "start_utc": attempt_start, "end_utc": attempt_end,
+                "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
+                "build_compile_s": round(result["compile_s"], 3),
+                "upload_s": round(result["upload_s"], 3),
+                "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
+                "retry_count": retry_used, "timeout_hit": True,
+                "failure_type": "watchdog_suspected" if wdt_suspected else "hang",
+                "failure_message": note,
+                "status": "failed" if not (attempt == 0 and may_retry) else "retrying",
+            }, points_csv)
 
-            if wall_found:
-                break
+            if attempt == 0 and may_retry:
+                retry_used = 1
+                print(f"NO 'DONE' within {budget_s}s -> {status}  "
+                      "-- transient failure, retrying once at same n "
+                      "(deviation from n=30 methodology, see run_log.md)")
+                attempt += 1
+                continue
+
+            tail = "(after retry)" if retry_used else f"(no retry: {retry_policy})"
+            note_wall = "" if rs.is_wall_status(status) else "  [NOT recorded as a Memory Wall]"
+            print(f"NO 'DONE' within {budget_s}s -> {status} {tail}{note_wall}")
+            wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"], result["ram_pct"],
+                              status, ts, retry_used,
+                              budget_s, round(expected_s, 1), retry_policy])
+            wall_f.flush()
+            session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
+            wall_found = rs.stops_climbing(status)
+            break
+
+        if upload_fail_exhausted:
+            if prev_upload_exhausted_n is not None:
+                raise ConsecutiveUploadFailuresError(circuit, prev_upload_exhausted_n, n)
+            prev_upload_exhausted_n = n
+        else:
+            prev_upload_exhausted_n = None
+
+        if wall_found:
+            break
 
 
 if __name__ == "__main__":

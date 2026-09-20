@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 # phase2_summarize.py
-# อ่านไฟล์ดิบ data/raw/phase2/{board}_raw.csv (ทุกบอร์ดที่มีข้อมูลแล้ว)
-# แล้วสรุปเป็น Median ± IQR ของ exec_time_us จำแนกตาม board/circuit/n
-# (รายงานแบบ Median ± IQR ตามระเบียบวิธี ไม่ใช่ Mean ± SD เพราะข้อมูลเวลามักเบ้)
+# อ่านไฟล์ดิบ data/raw/<board>/<circuit>/phase2/raw.csv (ทุก board+circuit ที่มีข้อมูล
+# แล้ว — เส้นทางนี้เปลี่ยนจาก data/raw/phase2/{board}_raw.csv เดิมเมื่อ 2026-09-20, ดู
+# run_log.md "per-board per-algorithm layout") แล้วสรุปเป็น Median ± IQR ของ exec_time_us
+# จำแนกตาม board/circuit/n (รายงานแบบ Median ± IQR ตามระเบียบวิธี ไม่ใช่ Mean ± SD
+# เพราะข้อมูลเวลามักเบ้)
 #
 # ไม่ปรับแต่งค่าใด ๆ — สรุปสถิติจากข้อมูลดิบที่วัดได้จริงเท่านั้น
 
 import csv
-import glob
 import sys
 from pathlib import Path
 
@@ -17,13 +18,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared.timing_model import REPS  # noqa: E402
 
-RAW_DIR = REPO_ROOT / "data" / "raw" / "phase2"
+RAW_ROOT = REPO_ROOT / "data" / "raw"
 PROCESSED_DIR = REPO_ROOT / "data" / "processed" / "phase2"
 
 
 def load_raw():
     rows = []
-    for path in sorted(glob.glob(str(RAW_DIR / "*_raw.csv"))):
+    for path in sorted(RAW_ROOT.glob("*/*/phase2/raw.csv")):
+        # data/raw/phase1/ never matches this glob shape (no phase2/raw.csv under it)
         with open(path, newline="") as f:
             for r in csv.DictReader(f):
                 rows.append(r)
@@ -33,7 +35,7 @@ def load_raw():
 def main():
     rows = load_raw()
     if not rows:
-        print(f"no *_raw.csv files found under {RAW_DIR}/")
+        print(f"no raw.csv files found under {RAW_ROOT}/*/*/phase2/")
         return
 
     groups = {}

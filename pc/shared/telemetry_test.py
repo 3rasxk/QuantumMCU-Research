@@ -168,14 +168,11 @@ def test_mocked_uno_sweep_dry_run(scratch: Path):
     import uno_sweep as us
     importlib.reload(us)  # กัน state ค้างจาก import ก่อนหน้าใน process เดียวกัน
     from shared import telemetry as tel
+    from shared import paths as sp
 
     sweep_dir = scratch / "uno_dry_run"
     sweep_dir.mkdir(parents=True)
-    us.RESULTS_DIR = sweep_dir
-    tel.TELEMETRY_DIR = sweep_dir / "telemetry"
-    tel.SESSIONS_CSV = tel.TELEMETRY_DIR / "sessions.csv"
-    tel.POINTS_CSV = tel.TELEMETRY_DIR / "points.csv"
-    tel.ENV_DIR = tel.TELEMETRY_DIR / "env"
+    sp.REPO_ROOT = sweep_dir
 
     calls = []
 
@@ -197,11 +194,11 @@ def test_mocked_uno_sweep_dry_run(scratch: Path):
     us.main()
 
     check("dry-run: both points attempted", calls == [("h_all", 2), ("h_all", 3)])
-    sess = list(csv.DictReader(open(tel.SESSIONS_CSV)))
+    sess = list(csv.DictReader(open(sp.sessions_csv_path("uno", "h_all"))))
     check("dry-run: 1 session row", len(sess) == 1)
     check("dry-run: reflash_time_s_sum = 2*(3.5+2.1)=11.2",
           abs(float(sess[0]["reflash_time_s_sum"]) - 11.2) < 1e-6, sess[0]["reflash_time_s_sum"])
-    pts = list(csv.DictReader(open(tel.POINTS_CSV)))
+    pts = list(csv.DictReader(open(sp.points_csv_path("uno", "h_all"))))
     check("dry-run: 2 point rows (no retries needed)", len(pts) == 2)
     check("dry-run: point rows carry build_compile_s from the mock", pts[0]["build_compile_s"] == "3.5")
 
@@ -210,10 +207,10 @@ def test_mocked_uno_sweep_dry_run(scratch: Path):
                 "--n-start", "2", "--n-max", "3"]
     us.main()
     check("dry-run resume: no new build_and_upload calls", len(calls) == 2)
-    sess2 = list(csv.DictReader(open(tel.SESSIONS_CSV)))
+    sess2 = list(csv.DictReader(open(sp.sessions_csv_path("uno", "h_all"))))
     check("dry-run resume: second session appended, not overwritten", len(sess2) == 2)
     check("dry-run resume: n_points_skipped_resume=2", sess2[1]["n_points_skipped_resume"] == "2")
-    pts2 = list(csv.DictReader(open(tel.POINTS_CSV)))
+    pts2 = list(csv.DictReader(open(sp.points_csv_path("uno", "h_all"))))
     check("dry-run resume: 2 more point rows appended for the resumed skips (4 total)",
           len(pts2) == 4, len(pts2))
     check("dry-run resume: the new rows carry status=skipped_resume",
@@ -232,15 +229,11 @@ def test_phase3_crc_vs_serial_dry_run(scratch: Path):
     import importlib
     import sweep as p3
     importlib.reload(p3)
-    from shared import telemetry as tel
+    from shared import paths as sp
 
     sweep_dir = scratch / "phase3_dry_run"
     sweep_dir.mkdir(parents=True)
-    p3.RESULTS_DIR = sweep_dir
-    tel.TELEMETRY_DIR = sweep_dir / "telemetry"
-    tel.SESSIONS_CSV = tel.TELEMETRY_DIR / "sessions.csv"
-    tel.POINTS_CSV = tel.TELEMETRY_DIR / "points.csv"
-    tel.ENV_DIR = tel.TELEMETRY_DIR / "env"
+    sp.REPO_ROOT = sweep_dir
 
     def fake_build_and_upload(board, circuit, n, baud, port_hint, build_timeout_s=None):
         return {"ok": True, "port": "/dev/fake", "compile_s": 1.0, "upload_s": 1.0, "log": ""}
@@ -276,7 +269,7 @@ def test_phase3_crc_vs_serial_dry_run(scratch: Path):
                 "--circuits", "h_all", "--n-start", "2", "--n-max", "2"]
     p3.main()
 
-    pts = list(csv.DictReader(open(tel.POINTS_CSV)))
+    pts = list(csv.DictReader(open(sp.points_csv_path("esp8266", "h_all", phase=3))))
     check("phase3 crc-vs-serial: 1 point row written", len(pts) == 1, len(pts))
     check("phase3 crc-vs-serial: status=failed (session_incomplete mapped for points.csv's enum)",
           pts[0]["status"] == "failed", pts[0]["status"])
@@ -340,16 +333,12 @@ def test_build_timeout_is_not_a_wall(scratch: Path):
     import importlib
     import uno_sweep as us
     importlib.reload(us)
-    from shared import telemetry as tel
     from shared import timing_model as tm
+    from shared import paths as sp
 
     d = scratch / "bt"
     d.mkdir(parents=True)
-    us.RESULTS_DIR = d
-    tel.TELEMETRY_DIR = d / "telemetry"
-    tel.SESSIONS_CSV = tel.TELEMETRY_DIR / "sessions.csv"
-    tel.POINTS_CSV = tel.TELEMETRY_DIR / "points.csv"
-    tel.ENV_DIR = tel.TELEMETRY_DIR / "env"
+    sp.REPO_ROOT = d
 
     calls = []
 
@@ -367,8 +356,8 @@ def test_build_timeout_is_not_a_wall(scratch: Path):
                 "--n-start", "2", "--n-max", "2"]
     us.main()
 
-    pts = list(csv.DictReader(open(tel.POINTS_CSV)))
-    wall = list(csv.DictReader(open(d / "uno_memory_wall.csv")))
+    pts = list(csv.DictReader(open(sp.points_csv_path("uno", "h_all"))))
+    wall = list(csv.DictReader(open(sp.memory_wall_csv_path("uno", "h_all"))))
     check("build_timeout: retried once (2 attempts at the same n)",
           len(calls) == 2 and calls == [("h_all", 2)] * 2, calls)
     check("build_timeout: attempt rows are retrying -> failed",
@@ -391,7 +380,7 @@ def test_build_timeout_is_not_a_wall(scratch: Path):
     sys.argv = ["uno_sweep.py", "--port", "/dev/fake", "--circuits", "h_all",
                 "--n-start", "2", "--n-max", "3"]
     us.main()
-    pts2 = list(csv.DictReader(open(tel.POINTS_CSV)))
+    pts2 = list(csv.DictReader(open(sp.points_csv_path("uno", "h_all"))))
     n3 = [p for p in pts2 if p["n"] == "3"]
     check("build_timeout: a later session still attempts higher n (no permanent wall)",
           len(n3) == 1 and n3[0]["status"] == "ok",
@@ -404,9 +393,9 @@ def test_watchdog_suspected_is_not_a_wall(scratch: Path):
     import importlib
     import esp8266_sweep as es
     importlib.reload(es)
-    from shared import telemetry as tel
     from shared import timing_model as tm
     from shared import resume as rs
+    from shared import paths as sp
 
     check("wdt threshold: esp8266 grover n=8 (15.6 s/rep) is flagged",
           tm.watchdog_suspected("esp8266", "grover", 8))
@@ -417,11 +406,7 @@ def test_watchdog_suspected_is_not_a_wall(scratch: Path):
 
     d = scratch / "wdt"
     d.mkdir(parents=True)
-    es.RESULTS_DIR = d
-    tel.TELEMETRY_DIR = d / "telemetry"
-    tel.SESSIONS_CSV = tel.TELEMETRY_DIR / "sessions.csv"
-    tel.POINTS_CSV = tel.TELEMETRY_DIR / "points.csv"
-    tel.ENV_DIR = tel.TELEMETRY_DIR / "env"
+    sp.REPO_ROOT = d
     es.build_and_upload = lambda c, n, p, t=None: {
         "ok": True, "log": "", "port": "/dev/fake", "compile_s": 1.0, "upload_s": 1.0,
         "ram_pct": None, "ram_bytes": None, "timed_out": False}
@@ -437,8 +422,8 @@ def test_watchdog_suspected_is_not_a_wall(scratch: Path):
     finally:
         tm.timeout_budget_s = orig_budget
 
-    pts = list(csv.DictReader(open(tel.POINTS_CSV)))
-    wall = list(csv.DictReader(open(d / "esp8266_memory_wall.csv")))
+    pts = list(csv.DictReader(open(sp.points_csv_path("esp8266", "grover"))))
+    wall = list(csv.DictReader(open(sp.memory_wall_csv_path("esp8266", "grover"))))
     check("watchdog: memory_wall status starts with watchdog_suspected",
           wall and wall[-1]["status"].startswith("watchdog_suspected"),
           [w["status"] for w in wall])

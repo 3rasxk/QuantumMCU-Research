@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-# timing_report.py — อ่าน data/raw/telemetry/{sessions,points}.csv แล้วสรุป:
+# timing_report.py — อ่าน telemetry sessions.csv/points.csv ของทุก (board, circuit, phase)
+# ภายใต้ data/raw/ (2026-09-20: ย้ายจากไฟล์รวมเดียว data/raw/telemetry/{sessions,points}.csv
+# มาเป็นไฟล์แยกต่อ board+circuit ใน data/raw/<board>/<circuit>/phase<N>/ — ดู run_log.md
+# "per-board per-algorithm layout" และ pc/shared/paths.py) แล้วสรุป:
 #   1. actual vs estimated ต่อ session, ต่อวงจร, ต่อ phase
 #   2. ค่ามัธยฐานของ reflash (compile_s + upload_s) ที่วัดจริงต่อบอร์ด — ใช้แทนที่
 #      pc/shared/timing_model.REFLASH_COST_S (ตอนนี้เป็นค่าประมาณ ไม่ใช่ค่าที่วัดจริง)
@@ -16,8 +19,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
-from shared import telemetry as tel  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
+
+RAW_ROOT = REPO_ROOT / "data" / "raw"
 
 
 def load_rows(path: Path):
@@ -25,6 +29,16 @@ def load_rows(path: Path):
         return []
     with open(path, newline="") as f:
         return list(csv.DictReader(f))
+
+
+def load_all(filename):
+    """Aggregate one telemetry file (sessions.csv or points.csv) across every
+    (board, circuit, phase) directory under data/raw/ -- these used to be one
+    shared file, now split per algorithm (see module header)."""
+    rows = []
+    for path in sorted(RAW_ROOT.glob(f"*/*/phase*/{filename}")):
+        rows.extend(load_rows(path))
+    return rows
 
 
 def _f(row, key, default=None):
@@ -150,8 +164,8 @@ def measured_reflash_cost(points):
 
 
 def main():
-    sessions = load_rows(tel.SESSIONS_CSV)
-    points = load_rows(tel.POINTS_CSV)
+    sessions = load_all("sessions.csv")
+    points = load_all("points.csv")
     report_sessions(sessions)
     report_skip_reasons(sessions)
     report_by_phase(sessions)

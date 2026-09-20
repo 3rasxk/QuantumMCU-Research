@@ -21,9 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared import timing_model as tm  # noqa: E402
 from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep  # noqa: E402
-
-LA_DIR = REPO_ROOT / "data" / "raw" / "la"
-PLAN_PATH = LA_DIR / "capture_plan.csv"
+from shared import paths as sp  # noqa: E402
 
 # *** ยังไม่ยืนยันกับ LA จริง (ยังไม่มีเครื่องยืม) — รายการนี้เป็น "ตัวอย่างค่าที่น่าจะมี"
 # (การหาร SI ตรง ๆ) ไม่ใช่รายการ sample rate ที่ LA รุ่นที่จะยืมมารองรับจริง เช่น LA
@@ -189,7 +187,10 @@ def main():
     ap.add_argument("--full-reps", type=int, default=tm.REPS)
     ap.add_argument("--reduced-reps", type=int, default=DEFAULT_REDUCED_REPS)
     ap.add_argument("--max-size-bytes", type=float, default=DEFAULT_MAX_SIZE_BYTES)
-    ap.add_argument("--out", type=Path, default=PLAN_PATH)
+    ap.add_argument("--out", type=Path, default=None,
+                     help="write ONE combined plan file here instead of the default -- "
+                          "split per (board, circuit), one capture_plan.csv per circuit's "
+                          "own la/ dir (see pc/shared/paths.la_dir, 2026-09-20 layout change)")
     args = ap.parse_args()
 
     rows = build_plan(args.rate_list, args.resolution_fraction, args.min_samples_per_pulse,
@@ -198,12 +199,27 @@ def main():
     print_plan(rows)
     summarize(rows)
 
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.out, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=PLAN_FIELDS)
-        w.writeheader()
-        w.writerows(rows)
-    print(f"\nplan -> {args.out}")
+    if args.out is not None:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        with open(args.out, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=PLAN_FIELDS)
+            w.writeheader()
+            w.writerows(rows)
+        print(f"\nplan -> {args.out}")
+        return
+
+    by_board_circuit = {}
+    for r in rows:
+        by_board_circuit.setdefault((r["board"], r["circuit"]), []).append(r)
+    print()
+    for (board, circuit), group_rows in sorted(by_board_circuit.items()):
+        out_path = sp.la_dir(board, circuit, phase=2) / "capture_plan.csv"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_path, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=PLAN_FIELDS)
+            w.writeheader()
+            w.writerows(group_rows)
+        print(f"plan -> {out_path}  ({len(group_rows)} point(s))")
 
 
 if __name__ == "__main__":

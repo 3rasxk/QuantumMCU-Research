@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
 # la_crosscheck.py — เทียบความกว้างพัลส์จาก Logic Analyzer (analysis/la_pulses.py)
 # กับ exec_time_us ที่ MCU รายงานเอง (micros()) ต่อ rep แล้วสรุปเป็นแถวเดียวต่อจุดข้อมูล
-# ลงไฟล์ใหม่ data/raw/telemetry/la_crosscheck.csv — ไม่แก้ data/raw/phase2/*_raw.csv
-# หรือ data/raw/telemetry/points.csv เลย (ไม่เพิ่มคอลัมน์ว่างเข้าไปในไฟล์ที่มีอยู่แล้ว
-# ตามที่ตกลงไว้)
+# ลงไฟล์ la_crosscheck.csv ในไดเรกทอรี la/ ของ circuit นั้นเอง (--out, ค่าเริ่มต้น
+# <la-dir>/la_crosscheck.csv) — ไม่แก้ raw.csv หรือ points.csv ของ circuit นั้นเลย
+# (ไม่เพิ่มคอลัมน์ว่างเข้าไปในไฟล์ที่มีอยู่แล้วตามที่ตกลงไว้)
 #
-# *** หมายเหตุสำคัญ: join กับ *_raw.csv ไม่ใช่ points.csv ***
-# งานนี้เดิมขอให้ join กับ data/raw/telemetry/points.csv แต่ points.csv เก็บสถิติ "ระดับ
-# จุดข้อมูล" เท่านั้น (device_exec_s รวมทั้ง 100 rep เป็นตัวเลขเดียว ไม่มีคอลัมน์ rep เลย)
-# จึงไม่มีความละเอียดพอจะเทียบ "ต่อ rep" ตามที่โจทย์ต้องการจริง ๆ (เทียบพัลส์ที่ 37 กับ
-# micros() ของ rep ที่ 37) ค่า exec_time_us ต่อ rep ที่ต้องการอยู่ใน
-# data/raw/phase2/<board>_raw.csv (คอลัมน์ rep, exec_time_us) อยู่แล้วตั้งแต่ก่อนมี
-# telemetry — ไฟล์นี้จึง join กับไฟล์นั้นแทน ไม่ใช่ points.csv (เบี่ยงจากคำสั่งเดิมโดย
-# ตั้งใจ เพราะทำตามตัวอักษรแล้วจะ join ไม่ได้จริง — ดู session report ประกอบ)
+# *** หมายเหตุสำคัญ: join กับ raw.csv ไม่ใช่ points.csv ***
+# งานนี้เดิมขอให้ join กับ points.csv แต่ points.csv เก็บสถิติ "ระดับจุดข้อมูล" เท่านั้น
+# (device_exec_s รวมทั้ง 100 rep เป็นตัวเลขเดียว ไม่มีคอลัมน์ rep เลย) จึงไม่มีความละเอียด
+# พอจะเทียบ "ต่อ rep" ตามที่โจทย์ต้องการจริง ๆ (เทียบพัลส์ที่ 37 กับ micros() ของ rep ที่
+# 37) ค่า exec_time_us ต่อ rep ที่ต้องการอยู่ใน raw.csv ของ (board, circuit) นั้น (คอลัมน์
+# rep, exec_time_us — pc/shared/paths.raw_csv_path) อยู่แล้วตั้งแต่ก่อนมี telemetry —
+# ไฟล์นี้จึง join กับไฟล์นั้นแทน ไม่ใช่ points.csv (เบี่ยงจากคำสั่งเดิมโดยตั้งใจ เพราะทำตาม
+# ตัวอักษรแล้วจะ join ไม่ได้จริง — ดู session report ประกอบ)
 #
 # ---------------------------------------------------------------------------
 # ข้อตกลงชื่อไฟล์ capture (ต้องบันทึกไว้ที่นี่และใน run_checklist.md ให้ตรงกัน):
-#   data/raw/la/<board>_<circuit>_n<N>.csv
-#   เช่น data/raw/la/uno_h_all_n2.csv, data/raw/la/esp32_grover_n10.csv
+#   data/raw/<board>/<circuit>/phase2/la/<board>_<circuit>_n<N>.csv
+#   เช่น data/raw/uno/h_all/phase2/la/uno_h_all_n2.csv
+#   (2026-09-20: ย้ายจาก data/raw/la/<board>_<circuit>_n<N>.csv เดิมที่ใช้ไดเรกทอรีเดียว
+#   ทุก board/circuit ร่วมกัน มาเป็นหนึ่งไดเรกทอรีต่อ circuit — ดู run_log.md)
 #   1 ไฟล์ = 1 จุดข้อมูล = REPS พัลส์ (ไม่ใช่ 1 ไฟล์ต่อ rep — capture ต่อเนื่องทั้ง
 #   session ของจุดนั้น แล้วแยกพัลส์ทีหลังด้วย la_pulses.py)
 #
@@ -53,14 +55,17 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared import timing_model as tm  # noqa: E402
+from shared import paths as sp  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from la_pulses import extract_pulses  # noqa: E402
 
-LA_DIR = REPO_ROOT / "data" / "raw" / "la"
-RAW_DIR = REPO_ROOT / "data" / "raw" / "phase2"
-OUT_PATH = REPO_ROOT / "data" / "raw" / "telemetry" / "la_crosscheck.csv"
-PLAN_PATH = REPO_ROOT / "data" / "raw" / "la" / "capture_plan.csv"
+# 2026-09-20 layout change (run_log.md): LA captures, the capture plan, raw.csv
+# and telemetry all moved from one flat directory per phase to one directory
+# per (board, circuit, phase) -- see pc/shared/paths.py. --la-dir now names one
+# circuit's own la/ dir directly (no more single global default); --plan and
+# --out default to files alongside it in that same dir instead of a shared
+# global path.
 
 FILENAME_RE = re.compile(r"^(uno|esp32|esp8266)_(.+)_n(\d+)\.csv$")
 
@@ -85,7 +90,7 @@ OUT_FIELDS = [
 ]
 
 
-def load_capture_plan(plan_path: Path = PLAN_PATH):
+def load_capture_plan(plan_path: Path):
     """โหลดแผนจาก analysis/la_capture_plan.py ต่อ (board,circuit,n) — คืน dict ว่างถ้า
     ยังไม่เคยรัน capture plan (fallback เป็น tm.REPS/resolution_insufficient=False ปกติ
     ไม่ error) ค่าที่เก็บต่อจุด: n_reps_to_capture (int) และ resolution_insufficient
@@ -135,10 +140,10 @@ def find_capture_files(la_dir: Path):
     return out
 
 
-def load_mcu_exec_times(board: str, circuit: str, n: int, raw_dir: Path = RAW_DIR):
-    """คืน list ของ exec_time_us เรียงตาม rep (0..) จาก <board>_raw.csv
-    คืน None ถ้าไม่มีข้อมูลของจุดนี้เลย"""
-    path = raw_dir / f"{board}_raw.csv"
+def load_mcu_exec_times(board: str, circuit: str, n: int):
+    """คืน list ของ exec_time_us เรียงตาม rep (0..) จาก raw.csv ของ (board, circuit)
+    นี้ (pc/shared/paths.raw_csv_path) คืน None ถ้าไม่มีข้อมูลของจุดนี้เลย"""
+    path = sp.raw_csv_path(board, circuit, phase=2)
     if not path.exists():
         return None
     rows = []
@@ -158,8 +163,7 @@ def _iqr(values):
 
 
 def crosscheck_one(board, circuit, n, capture_path: Path, expected_reps, min_pulse_width_us,
-                    sample_rate_hint, max_relative_diff, abs_floor_us, resolution_insufficient,
-                    raw_dir=RAW_DIR):
+                    sample_rate_hint, max_relative_diff, abs_floor_us, resolution_insufficient):
     result = extract_pulses(capture_path, expected_reps=expected_reps,
                              min_pulse_width_us=min_pulse_width_us,
                              sample_rate_hz_hint=sample_rate_hint)
@@ -188,7 +192,7 @@ def crosscheck_one(board, circuit, n, capture_path: Path, expected_reps, min_pul
             "notes": note,
         }
 
-    mcu_times = load_mcu_exec_times(board, circuit, n, raw_dir)
+    mcu_times = load_mcu_exec_times(board, circuit, n)
     if mcu_times is None:
         note = f"no matching rows in {board}_raw.csv for circuit={circuit} n={n}"
         print(f"{board}/{circuit}/n={n}: REFUSED to join: {note}")
@@ -285,12 +289,15 @@ def crosscheck_one(board, circuit, n, capture_path: Path, expected_reps, min_pul
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--la-dir", type=Path, default=LA_DIR)
-    ap.add_argument("--raw-dir", type=Path, default=RAW_DIR)
-    ap.add_argument("--out", type=Path, default=OUT_PATH)
-    ap.add_argument("--plan", type=Path, default=PLAN_PATH,
+    ap.add_argument("--la-dir", type=Path, required=True,
+                     help="one circuit's own la/ dir, e.g. "
+                          "data/raw/uno/h_all/phase2/la (pc/shared/paths.la_dir)")
+    ap.add_argument("--out", type=Path, default=None,
+                     help="default: <la-dir>/la_crosscheck.csv (alongside the captures)")
+    ap.add_argument("--plan", type=Path, default=None,
                      help="capture_plan.csv จาก analysis/la_capture_plan.py — ใช้หา "
-                          "n_reps_to_capture ต่อจุดถ้าไม่ได้ระบุ --expected-reps มาบังคับเอง")
+                          "n_reps_to_capture ต่อจุดถ้าไม่ได้ระบุ --expected-reps มาบังคับเอง "
+                          "ค่าเริ่มต้น: <la-dir>/capture_plan.csv")
     ap.add_argument("--expected-reps", type=int, default=None,
                      help="บังคับจำนวน rep ที่คาดไว้สำหรับทุกจุดในการรันนี้ (ข้าม "
                           "capture_plan.csv) ค่าเริ่มต้น: ดูจาก capture_plan.csv ถ้ามี "
@@ -309,6 +316,10 @@ def main():
     ap.add_argument("--abs-floor-esp32-us", type=float, default=DEFAULT_ABS_FLOOR_US["esp32"],
                      help="micros() resolution floor สำหรับ ESP32 (us) ค่าเริ่มต้น 1us")
     args = ap.parse_args()
+    if args.out is None:
+        args.out = args.la_dir / "la_crosscheck.csv"
+    if args.plan is None:
+        args.plan = args.la_dir / "capture_plan.csv"
 
     abs_floor_by_board = {
         "uno": args.abs_floor_uno_us,
@@ -343,7 +354,7 @@ def main():
             row = crosscheck_one(board, circuit, n, path, expected_reps,
                                   args.min_pulse_width_us, args.sample_rate,
                                   args.max_relative_diff, abs_floor_by_board[board],
-                                  resolution_insufficient, args.raw_dir)
+                                  resolution_insufficient)
             w.writerow({k: row.get(k, "") for k in OUT_FIELDS})
             f.flush()
             if row.get("n_pulses_matched"):

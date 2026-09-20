@@ -10,17 +10,29 @@
 # after every board is done) with a different output tree
 # (data/figures/phase2/). These plots answer "what just happened in this one
 # algorithm's run, on this one board" while collection is still in progress,
-# need data/raw/phase2/*_raw.csv (per-rep, for the model overlay and warm-up
-# exclusion), *_memory_wall.csv (per-point outcome + evidence), AND
-# data/raw/telemetry/points.csv (per-attempt compile/upload time and retry
-# counts) all three together -- phase2_plot.py touches only the first two,
-# pre-aggregated, and never per-attempt. Forcing this into phase2_plot.py
-# would mean two incompatible calling conventions (once-at-the-end vs
-# once-per-algorithm) and two incompatible output trees in one file.
+# and need that one circuit's own raw.csv (per-rep, for the model overlay and
+# warm-up exclusion), memory_wall.csv (per-point outcome + evidence), AND
+# points.csv (per-attempt compile/upload time and retry counts) all three
+# together (pc/shared/paths.py resolves all three under the same
+# data/raw/<board>/<circuit>/phase2/ directory) -- phase2_plot.py touches only
+# the first two, pre-aggregated across every board/circuit, and never
+# per-attempt. Forcing this into phase2_plot.py would mean two incompatible
+# calling conventions (once-at-the-end vs once-per-algorithm) and two
+# incompatible output trees in one file.
 #
 # Read-only against data/raw/ -- every function here only ever opens raw/
-# telemetry files for reading. Output: figures/phase2/<board>/*.png (+ .svg,
-# via pc/shared/plot_style.save_figure's house convention) and nothing else.
+# telemetry files for reading. Output: data/figures/<board>/<algorithm>/*.png
+# (PNG only, via pc/shared/plot_style.save_figure_png_only) plus
+# data/figures/<board>/all_algorithms_so_far.png, and nothing else.
+#
+# 2026-09-20: moved from figures/phase2/<board>/ (with .svg siblings) to
+# data/figures/<board>/<algorithm>/ (PNG only) -- see run_log.md "per-board
+# per-algorithm layout". Also moved from reading one shared
+# data/raw/phase2/<board>_raw.csv (filtered by circuit in Python) to reading
+# each circuit's own raw.csv/memory_wall.csv/points.csv/sessions.csv directly
+# via pc/shared/paths.py -- no more in-script filtering needed for a single
+# circuit's charts; the cumulative chart globs across every circuit directory
+# for one board instead.
 #
 # ใช้:
 #   .venv/bin/python analysis/phase2_uno_run_plots.py --board uno --circuit h_all
@@ -28,7 +40,6 @@
 
 import argparse
 import csv
-import glob
 import subprocess
 import sys
 from pathlib import Path
@@ -41,11 +52,10 @@ sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared import plot_style as ps  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
+from shared import paths as sp  # noqa: E402
 from shared.telemetry import is_warmup  # noqa: E402
 
-RAW_DIR = REPO_ROOT / "data" / "raw" / "phase2"
-TELEMETRY_DIR = REPO_ROOT / "data" / "raw" / "telemetry"
-FIGURES_ROOT = REPO_ROOT / "figures" / "phase2"
+FIGURES_ROOT = REPO_ROOT / "data" / "figures"
 
 SUBTITLE = "Uno R3, Phase 2, micros() timing (no Logic Analyzer data)"
 
@@ -54,36 +64,46 @@ def _board_sram_bytes(board):
     return {"uno": 2048, "esp8266": 81920, "esp32": 327680}[board]
 
 
+def _known_circuits(board):
+    """Every circuit this board has a raw/ phase2 directory for, discovered by
+    listing data/raw/<board>/ -- used only by plot_cumulative to find what to
+    include, since circuits are no longer listed anywhere centrally."""
+    base = REPO_ROOT / "data" / "raw" / board
+    if not base.exists():
+        return []
+    return sorted(p.name for p in base.iterdir()
+                  if p.is_dir() and (p / "phase2" / "raw.csv").exists())
+
+
 def load_raw(board, circuit):
-    path = RAW_DIR / f"{board}_raw.csv"
+    path = sp.raw_csv_path(board, circuit, phase=2)
     if not path.exists():
         return []
     with open(path, newline="") as f:
-        return [r for r in csv.DictReader(f) if r["circuit"] == circuit]
+        return list(csv.DictReader(f))
 
 
-def load_wall(board, circuit=None):
-    path = RAW_DIR / f"{board}_memory_wall.csv"
+def load_wall(board, circuit):
+    path = sp.memory_wall_csv_path(board, circuit, phase=2)
     if not path.exists():
         return []
     with open(path, newline="") as f:
-        rows = list(csv.DictReader(f))
-    return [r for r in rows if circuit is None or r["circuit"] == circuit]
+        return list(csv.DictReader(f))
 
 
 def load_points(board, circuit):
-    path = TELEMETRY_DIR / "points.csv"
+    path = sp.points_csv_path(board, circuit, phase=2)
     if not path.exists():
         return []
     with open(path, newline="") as f:
-        return [r for r in csv.DictReader(f) if r["board"] == board and r["circuit"] == circuit]
+        return list(csv.DictReader(f))
 
 
 def collection_commit(board, circuit):
-    """git commit these points were collected under, per data/raw/telemetry/
+    """git commit these points were collected under, per this circuit's own
     sessions.csv -- more accurate than the script's own current HEAD, which
     may have moved on by the time this is run."""
-    path = TELEMETRY_DIR / "sessions.csv"
+    path = sp.sessions_csv_path(board, circuit, phase=2)
     if not path.exists():
         return "unknown"
     commit = "unknown"
@@ -161,7 +181,7 @@ def plot_exec_time_vs_n(board, circuit):
     commit_note = f"commit {collection_commit(board, circuit)}"
     _finish(fig, ax, board, circuit, "per-rep execution time vs n", commit_note)
     ps.add_footnote(fig, ps.reps_phrase(ntrials) + "; error bars = IQR (25th-75th pct).")
-    return ps.save_figure(fig, FIGURES_ROOT / board, f"{circuit}_exec_time_vs_n")
+    return ps.save_figure_png_only(fig, sp.figures_dir(board, circuit), "exec_time_vs_n")
 
 
 def _outcome_category(status):
@@ -219,7 +239,7 @@ def plot_outcomes_vs_n(board, circuit):
 
     commit_note = f"commit {collection_commit(board, circuit)}"
     _finish(fig, ax, board, circuit, "point outcomes and RAM-overflow wall", commit_note)
-    return ps.save_figure(fig, FIGURES_ROOT / board, f"{circuit}_outcomes_vs_n")
+    return ps.save_figure_png_only(fig, sp.figures_dir(board, circuit), "outcomes_vs_n")
 
 
 def plot_time_per_point(board, circuit):
@@ -271,15 +291,15 @@ def plot_time_per_point(board, circuit):
     commit_note = f"commit {collection_commit(board, circuit)}"
     _finish(fig, ax, board, circuit, "reflash time per point (compile+upload, attempts labelled)",
             commit_note)
-    return ps.save_figure(fig, FIGURES_ROOT / board, f"{circuit}_time_per_point")
+    return ps.save_figure_png_only(fig, sp.figures_dir(board, circuit), "time_per_point")
 
 
 def plot_cumulative(board):
-    """4. figures/phase2/<board>/all_algorithms_so_far.png -- median per-rep
+    """4. data/figures/<board>/all_algorithms_so_far.png -- median per-rep
     time vs n for every algorithm completed so far on this board, one colour
     per algorithm, wall n marked. Regenerated after each algorithm."""
-    wall = load_wall(board)
-    circuits = [c for c in ps.CIRCUIT_ORDER if any(r["circuit"] == c for r in wall)]
+    all_circuits = _known_circuits(board)
+    circuits = [c for c in ps.CIRCUIT_ORDER if c in all_circuits]
     if not circuits:
         print(f"[{board}] no data at all -- skipping cumulative chart")
         return None
@@ -287,7 +307,7 @@ def plot_cumulative(board):
     fig, ax = plt.subplots(figsize=(8, 5.5), layout="constrained")
     for circuit in circuits:
         raw = load_raw(board, circuit)
-        c_wall = [r for r in wall if r["circuit"] == circuit]
+        c_wall = load_wall(board, circuit)
         ok_ns = sorted({int(r["n"]) for r in c_wall if r["status"] == "ok"})
         wall_ns = sorted({int(r["n"]) for r in c_wall if rs.is_wall_status(r["status"])})
         if not ok_ns:
@@ -325,7 +345,7 @@ def plot_cumulative(board):
             color=ps.INK_SECONDARY, ha="left")
     ps.add_footnote(fig, "One colour per algorithm; wall n annotated where a positive-evidence "
                      "wall was hit; steane_encode is a single fixed-n point (n=7).")
-    return ps.save_figure(fig, FIGURES_ROOT / board, "all_algorithms_so_far")
+    return ps.save_figure_png_only(fig, sp.figures_dir(board), "all_algorithms_so_far")
 
 
 def main():
@@ -344,7 +364,8 @@ def main():
     if paths:
         generated.extend(paths)
 
-    print(f"\n{len(generated)} figure file(s) written under {FIGURES_ROOT / args.board}/")
+    print(f"\n{len(generated)} figure file(s) written under {FIGURES_ROOT / args.board}/ "
+          "(PNG only)")
 
 
 if __name__ == "__main__":

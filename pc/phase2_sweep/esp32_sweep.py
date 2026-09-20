@@ -70,11 +70,11 @@ from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
+from shared import paths as sp  # noqa: E402
 
 RESUME_KEY_SPEC = [("circuit", str), ("n", int)]
 
 FW_DIR = REPO_ROOT / "firmware" / "esp32"
-RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 PIO = os.environ.get("PIO_PATH") or shutil.which("pio")
 
 BAUD = 115200
@@ -225,9 +225,27 @@ def main():
                           "*.pre-fresh-<timestamp>.csv (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด")
     args = ap.parse_args()
 
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    raw_path = RESULTS_DIR / "esp32_raw.csv"
-    wall_path = RESULTS_DIR / "esp32_memory_wall.csv"
+    for circuit in args.circuits:
+        print(f"\n=== circuit={circuit} ===")
+        _run_circuit(args, circuit)
+
+
+def _run_circuit(args, circuit):
+    """One algorithm's directory/files/telemetry session — see pc/shared/paths.py
+    and uno_sweep.py's module docstring for the per-board-per-algorithm layout
+    this replaced (2026-09-20, run_log.md)."""
+    n_values = n_values_for_sweep(circuit, args.n_start, args.n_max)
+    if not n_values:
+        print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {args.n_max}]")
+        return
+
+    raw_directory = sp.raw_dir("esp32", circuit, phase=2)
+    raw_directory.mkdir(parents=True, exist_ok=True)
+    raw_path = sp.raw_csv_path("esp32", circuit)
+    wall_path = sp.memory_wall_csv_path("esp32", circuit)
+    points_csv = sp.points_csv_path("esp32", circuit)
+    sessions_csv = sp.sessions_csv_path("esp32", circuit)
+    env_directory = sp.env_dir("esp32", circuit)
 
     # resume (ค่าเริ่มต้น): มีแถวใน wall CSV = จุดนั้น "เสร็จสิ้น" แล้วไม่ว่าผลจะเป็นอะไร
     # ข้ามได้เลย ไม่ต้องแตะฮาร์ดแวร์ซ้ำ ส่วนแถวกำพร้าใน raw CSV (จุดที่โปรเซสตายระหว่าง
@@ -263,235 +281,187 @@ def main():
             "timeout_budget_s", "expected_point_s", "retry_policy",
         ])
 
-    # preflight: โชว์ budget ของทุกจุดก่อนเริ่ม ให้คนกดรันเห็นว่าจุดไหนแพง/จุดไหนทำไม่ได้
-    # ตั้งแต่ก่อนเริ่ม ไม่ใช่ไปเจอตอนชั่วโมงที่หก
-    planned = [(c, n) for c in args.circuits
-               for n in n_values_for_sweep(c, args.n_start, args.n_max)]
-    infeasible = tm.print_budget_plan("esp32", planned, phase=2)
-    if args.force_infeasible:
-        print("--force-infeasible: จะพยายามรันจุดที่เกินเพดานด้วย\n")
-        infeasible = set()
+    try:
+        # preflight: โชว์ budget ของทุกจุดก่อนเริ่ม ให้คนกดรันเห็นว่าจุดไหนแพง/จุดไหนทำไม่ได้
+        # ตั้งแต่ก่อนเริ่ม ไม่ใช่ไปเจอตอนชั่วโมงที่หก
+        planned = [(circuit, n) for n in n_values]
+        infeasible = tm.print_budget_plan("esp32", planned, phase=2)
+        if args.force_infeasible:
+            print("--force-infeasible: จะพยายามรันจุดที่เกินเพดานด้วย\n")
+            infeasible = set()
 
-    remaining_preview = [p for p in planned if p not in completed]
-    real_remaining = [p for p in remaining_preview if p not in infeasible]
-    est_s = sum(tm.expected_point_time_s("esp32", c, n) for c, n in real_remaining)
-    n_inf_remaining = len(remaining_preview) - len(real_remaining)
-    remaining_human = tm.human_duration(est_s)
-    if n_inf_remaining:
-        remaining_human += f" (+{n_inf_remaining} infeasible point(s), skipped near-instantly)"
-    rs.print_resume_summary("esp32", planned, completed, remaining_human)
-    wall_n_by_circuit = rs.known_wall_n(completed)
+        remaining_preview = [p for p in planned if p not in completed]
+        real_remaining = [p for p in remaining_preview if p not in infeasible]
+        est_s = sum(tm.expected_point_time_s("esp32", c, n) for c, n in real_remaining)
+        n_inf_remaining = len(remaining_preview) - len(real_remaining)
+        remaining_human = tm.human_duration(est_s)
+        if n_inf_remaining:
+            remaining_human += f" (+{n_inf_remaining} infeasible point(s), skipped near-instantly)"
+        rs.print_resume_summary("esp32", planned, completed, remaining_human)
+        wall_n_by_circuit = rs.known_wall_n(completed)
 
-    # telemetry: session wrapper + environment metadata ครั้งเดียวตอนเริ่ม session —
-    # ดู pc/shared/telemetry.py และ uno_sweep.py สำหรับ schema เต็ม/เหตุผล
-    resumed_from_previous = bool(completed)
-    last_end = tel.last_session_end_utc("esp32", 2) if resumed_from_previous else None
-    session = tel.SessionRecorder(phase=2, board="esp32", circuits=args.circuits,
-                                   resumed_from_previous=resumed_from_previous,
-                                   estimated_total_s=round(est_s, 1))
-    with session:
-        if last_end is not None:
-            from datetime import datetime as _dt, timezone as _tz
-            gap = (_dt.now(_tz.utc) - last_end).total_seconds()
-            if gap > 0:
-                session.note_interruption_gap(gap)
-        env_path = tel.write_environment_metadata(
-            session.session_id, "esp32", args.port, BAUD, F_CPU, FW_DIR / "src",
-            pio_project_dir=FW_DIR, pio_env="esp32dev")
-        session.env_json_path = str(env_path)
+        # telemetry: session wrapper + environment metadata ครั้งเดียวตอน circuit นี้เริ่ม —
+        # ดู pc/shared/telemetry.py และ uno_sweep.py สำหรับ schema เต็ม/เหตุผล
+        resumed_from_previous = bool(completed)
+        last_end = (tel.last_session_end_utc("esp32", 2, sessions_csv=sessions_csv)
+                    if resumed_from_previous else None)
+        session = tel.SessionRecorder(phase=2, board="esp32", circuits=[circuit],
+                                       resumed_from_previous=resumed_from_previous,
+                                       estimated_total_s=round(est_s, 1),
+                                       sessions_csv=sessions_csv)
+        with session:
+            if last_end is not None:
+                from datetime import datetime as _dt, timezone as _tz
+                gap = (_dt.now(_tz.utc) - last_end).total_seconds()
+                if gap > 0:
+                    session.note_interruption_gap(gap)
+            env_path = tel.write_environment_metadata(
+                session.session_id, "esp32", args.port, BAUD, F_CPU, FW_DIR / "src",
+                env_dir=env_directory, pio_project_dir=FW_DIR, pio_env="esp32dev")
+            session.env_json_path = str(env_path)
 
-        _sweep_body(args, completed, wall_n_by_circuit, infeasible,
-                    raw_w, raw_f, wall_w, wall_f, session)
+            _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasible,
+                        raw_w, raw_f, wall_w, wall_f, session, points_csv)
+    finally:
+        raw_f.close()
+        wall_f.close()
 
-    raw_f.close()
-    wall_f.close()
     print(f"\nraw -> {raw_path}\nmemory wall -> {wall_path}")
-    print(f"telemetry -> {tel.SESSIONS_CSV}, {tel.POINTS_CSV}")
+    print(f"telemetry -> {sessions_csv}, {points_csv}")
 
 
-def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
-                 raw_w, raw_f, wall_w, wall_f, session):
-    for circuit in args.circuits:
-        print(f"\n=== circuit={circuit} ===")
-        n_values = n_values_for_sweep(circuit, args.n_start, args.n_max)
-        if not n_values:
-            print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {args.n_max}]")
+def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasible,
+                 raw_w, raw_f, wall_w, wall_f, session, points_csv):
+    for n in n_values:
+        skip_ts = datetime.now(timezone.utc).isoformat()
+        if (circuit, n) in completed:
+            print(f"n={n:2d}  SKIP (resume): already {completed[(circuit, n)].get('status', '?')}")
+            tel.write_point_row({
+                "session_id": session.session_id, "phase": 2, "board": "esp32",
+                "circuit": circuit, "n": n, "attempt_index": 0,
+                "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
+                "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                "status": "skipped_resume",
+            }, points_csv)
+            session.note_point(status="skipped_resume")
             continue
-        for n in n_values:
-            skip_ts = datetime.now(timezone.utc).isoformat()
-            if (circuit, n) in completed:
-                print(f"n={n:2d}  SKIP (resume): already {completed[(circuit, n)].get('status', '?')}")
-                tel.write_point_row({
-                    "session_id": session.session_id, "phase": 2, "board": "esp32",
-                    "circuit": circuit, "n": n, "attempt_index": 0,
-                    "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
-                    "retry_count": 0, "timeout_hit": False, "failure_type": "none",
-                    "status": "skipped_resume",
-                })
-                session.note_point(status="skipped_resume")
-                continue
-            if circuit in wall_n_by_circuit and n > wall_n_by_circuit[circuit]:
-                print(f"n={n:2d}  SKIP (resume): {circuit} already hit its wall at "
-                      f"n={wall_n_by_circuit[circuit]} in a previous session")
-                tel.write_point_row({
-                    "session_id": session.session_id, "phase": 2, "board": "esp32",
-                    "circuit": circuit, "n": n, "attempt_index": 0,
-                    "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
-                    "retry_count": 0, "timeout_hit": False, "failure_type": "none",
-                    "status": "skipped_known_wall",
-                })
-                session.note_point(status="skipped_known_wall")
-                continue
+        if circuit in wall_n_by_circuit and n > wall_n_by_circuit[circuit]:
+            print(f"n={n:2d}  SKIP (resume): {circuit} already hit its wall at "
+                  f"n={wall_n_by_circuit[circuit]} in a previous session")
+            tel.write_point_row({
+                "session_id": session.session_id, "phase": 2, "board": "esp32",
+                "circuit": circuit, "n": n, "attempt_index": 0,
+                "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
+                "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                "status": "skipped_known_wall",
+            }, points_csv)
+            session.note_point(status="skipped_known_wall")
+            continue
 
-            theoretical_bytes = (1 << n) * 8
-            budget_s = tm.timeout_budget_s("esp32", circuit, n)
-            expected_s = tm.expected_point_time_s("esp32", circuit, n)
-            may_retry = tm.retry_allowed(budget_s)
-            retry_policy = "allowed" if may_retry else "skipped_high_budget"
+        theoretical_bytes = (1 << n) * 8
+        budget_s = tm.timeout_budget_s("esp32", circuit, n)
+        expected_s = tm.expected_point_time_s("esp32", circuit, n)
+        may_retry = tm.retry_allowed(budget_s)
+        retry_policy = "allowed" if may_retry else "skipped_high_budget"
+        ts = datetime.now(timezone.utc).isoformat()
+
+        if (circuit, n) in infeasible:
+            # ไม่ใช่ Memory Wall และไม่ใช่ hang — เป็นขีดจำกัดเชิงเวลาคำนวณล้วน ๆ
+            # บันทึกค่าประมาณไว้ด้วย เพื่อให้แถวนี้อ่านเป็น "ผลการทดลอง" ได้จริง
+            print(f"n={n:2d}  SKIP compute-infeasible: expected "
+                  f"{tm.human_duration(expected_s)} > ceiling {tm.CEILING_S}s")
+            wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None,
+                              "skipped_compute_infeasible", ts, 0,
+                              budget_s, round(expected_s, 1), "n/a"])
+            wall_f.flush()
+            tel.write_point_row({
+                "session_id": session.session_id, "phase": 2, "board": "esp32",
+                "circuit": circuit, "n": n, "attempt_index": 0,
+                "start_utc": ts, "end_utc": ts, "wall_s": 0,
+                "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                "status": "skipped_compute_infeasible",
+            }, points_csv)
+            session.note_point(status="skipped_compute_infeasible")
+            continue
+
+        wall_found = False
+        retry_used = 0
+        point_device_s = 0.0
+        point_reflash_s = 0.0
+
+        # attempt 0 = ครั้งแรก, attempt 1 = retry เดียว — เฉพาะ runtime_hang_or_reset
+        # เท่านั้นที่ retry ได้ (อาจเป็นสายหลุด/USB glitch ชั่วคราว) build/upload fail
+        # และ malloc_failed ไม่ retry เพราะเป็น deterministic
+        # ข้อยกเว้นใหม่ (REPS=100 + 6 วงจร): จุดที่ budget สูงกว่า
+        # RETRY_MAX_BUDGET_S จะไม่ retry เพราะต้นทุน retry แปรผันตาม budget
+        # แต่ประโยชน์คงที่ — รันซ้ำเฉพาะจุดนั้นทีหลังถูกกว่ามาก (ไฟล์เป็น
+        # append-only) ดู timing_model.retry_allowed()
+        max_attempts = 2 if may_retry else 1
+        for attempt in range(max_attempts):
+            print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  "
+                  f"budget={budget_s}s (expected {tm.human_duration(expected_s)})  ",
+                  end="", flush=True)
+            if attempt == 1:
+                print("(retry) ", end="", flush=True)
+
+            attempt_start = datetime.now(timezone.utc).isoformat()
+            result = build_and_upload(circuit, n, args.port, args.build_timeout_s)
             ts = datetime.now(timezone.utc).isoformat()
+            args.port = result["port"]
+            reflash_s = result["compile_s"] + result["upload_s"]
+            point_reflash_s += reflash_s
 
-            if (circuit, n) in infeasible:
-                # ไม่ใช่ Memory Wall และไม่ใช่ hang — เป็นขีดจำกัดเชิงเวลาคำนวณล้วน ๆ
-                # บันทึกค่าประมาณไว้ด้วย เพื่อให้แถวนี้อ่านเป็น "ผลการทดลอง" ได้จริง
-                print(f"n={n:2d}  SKIP compute-infeasible: expected "
-                      f"{tm.human_duration(expected_s)} > ceiling {tm.CEILING_S}s")
-                wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None,
-                                  "skipped_compute_infeasible", ts, 0,
-                                  budget_s, round(expected_s, 1), "n/a"])
-                wall_f.flush()
+            if not result["ok"]:
+                # แยกสาเหตุก่อนตัดสิน: timeout ของ toolchain ไม่ใช่กำแพง และ retry ได้
+                # (ดู pc/shared/resume.classify_build_failure และ finding H2)
+                build_status = rs.classify_build_failure(
+                    result["log"], result.get("ram_pct"), result.get("timed_out", False))
+                is_timeout = build_status == "build_timeout"
+                print({
+                    "build_overflow": "BUILD OVERFLOW -> Memory Wall (positive evidence: linker/RAM)",
+                    "build_timeout": "BUILD TIMEOUT -> toolchain/host problem, NOT a wall",
+                    "build_or_upload_fail": "UPLOAD/BUILD FAIL -> not a wall (no memory evidence)",
+                }[build_status])
+                print(result["log"][-800:])
                 tel.write_point_row({
                     "session_id": session.session_id, "phase": 2, "board": "esp32",
-                    "circuit": circuit, "n": n, "attempt_index": 0,
-                    "start_utc": ts, "end_utc": ts, "wall_s": 0,
-                    "retry_count": 0, "timeout_hit": False, "failure_type": "none",
-                    "status": "skipped_compute_infeasible",
-                })
-                session.note_point(status="skipped_compute_infeasible")
-                continue
+                    "circuit": circuit, "n": n, "attempt_index": attempt,
+                    "start_utc": attempt_start, "end_utc": ts, "wall_s": round(reflash_s, 3),
+                    "build_compile_s": round(result["compile_s"], 3),
+                    "upload_s": round(result["upload_s"], 3),
+                    "retry_count": retry_used, "timeout_hit": is_timeout,
+                    "failure_type": "build_timeout" if is_timeout else "build",
+                    "failure_message": result["log"][-300:],
+                    "status": "failed" if not (is_timeout and attempt == 0 and may_retry) else "retrying",
+                }, points_csv)
+                # build_timeout เป็นความล้มเหลวชั่วคราว จึงเข้านโยบาย retry-once
+                # เดียวกับ runtime hang — ยังถูกข้ามถ้า budget > 600s
+                if is_timeout and attempt == 0 and may_retry:
+                    retry_used = 1
+                    print("-- transient build timeout, retrying once at the same n")
+                    continue
+                wall_w.writerow(["esp32", circuit, n, theoretical_bytes,
+                                  result.get("ram_bytes"), result.get("ram_pct"),
+                                  build_status, ts, retry_used,
+                                  budget_s, round(expected_s, 1), retry_policy])
+                wall_f.flush()
+                session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
+                wall_found = rs.stops_climbing(build_status)
+                break
 
-            wall_found = False
-            retry_used = 0
-            point_device_s = 0.0
-            point_reflash_s = 0.0
+            time.sleep(BOOT_WAIT_S)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
+            exec_t0 = time.perf_counter()
+            done, rows, malloc_failed, note = read_serial_trials(find_esp_port(args.port), budget_s)
+            device_exec_s = time.perf_counter() - exec_t0
+            point_device_s += device_exec_s
+            attempt_end = datetime.now(timezone.utc).isoformat()
 
-            # attempt 0 = ครั้งแรก, attempt 1 = retry เดียว — เฉพาะ runtime_hang_or_reset
-            # เท่านั้นที่ retry ได้ (อาจเป็นสายหลุด/USB glitch ชั่วคราว) build/upload fail
-            # และ malloc_failed ไม่ retry เพราะเป็น deterministic
-            # ข้อยกเว้นใหม่ (REPS=100 + 6 วงจร): จุดที่ budget สูงกว่า
-            # RETRY_MAX_BUDGET_S จะไม่ retry เพราะต้นทุน retry แปรผันตาม budget
-            # แต่ประโยชน์คงที่ — รันซ้ำเฉพาะจุดนั้นทีหลังถูกกว่ามาก (ไฟล์เป็น
-            # append-only) ดู timing_model.retry_allowed()
-            max_attempts = 2 if may_retry else 1
-            for attempt in range(max_attempts):
-                print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  "
-                      f"budget={budget_s}s (expected {tm.human_duration(expected_s)})  ",
-                      end="", flush=True)
-                if attempt == 1:
-                    print("(retry) ", end="", flush=True)
-
-                attempt_start = datetime.now(timezone.utc).isoformat()
-                result = build_and_upload(circuit, n, args.port, args.build_timeout_s)
-                ts = datetime.now(timezone.utc).isoformat()
-                args.port = result["port"]
-                reflash_s = result["compile_s"] + result["upload_s"]
-                point_reflash_s += reflash_s
-
-                if not result["ok"]:
-                    # แยกสาเหตุก่อนตัดสิน: timeout ของ toolchain ไม่ใช่กำแพง และ retry ได้
-                    # (ดู pc/shared/resume.classify_build_failure และ finding H2)
-                    build_status = rs.classify_build_failure(
-                        result["log"], result.get("ram_pct"), result.get("timed_out", False))
-                    is_timeout = build_status == "build_timeout"
-                    print({
-                        "build_overflow": "BUILD OVERFLOW -> Memory Wall (positive evidence: linker/RAM)",
-                        "build_timeout": "BUILD TIMEOUT -> toolchain/host problem, NOT a wall",
-                        "build_or_upload_fail": "UPLOAD/BUILD FAIL -> not a wall (no memory evidence)",
-                    }[build_status])
-                    print(result["log"][-800:])
-                    tel.write_point_row({
-                        "session_id": session.session_id, "phase": 2, "board": "esp32",
-                        "circuit": circuit, "n": n, "attempt_index": attempt,
-                        "start_utc": attempt_start, "end_utc": ts, "wall_s": round(reflash_s, 3),
-                        "build_compile_s": round(result["compile_s"], 3),
-                        "upload_s": round(result["upload_s"], 3),
-                        "retry_count": retry_used, "timeout_hit": is_timeout,
-                        "failure_type": "build_timeout" if is_timeout else "build",
-                        "failure_message": result["log"][-300:],
-                        "status": "failed" if not (is_timeout and attempt == 0 and may_retry) else "retrying",
-                    })
-                    # build_timeout เป็นความล้มเหลวชั่วคราว จึงเข้านโยบาย retry-once
-                    # เดียวกับ runtime hang — ยังถูกข้ามถ้า budget > 600s
-                    if is_timeout and attempt == 0 and may_retry:
-                        retry_used = 1
-                        print("-- transient build timeout, retrying once at the same n")
-                        continue
-                    wall_w.writerow(["esp32", circuit, n, theoretical_bytes,
-                                      result.get("ram_bytes"), result.get("ram_pct"),
-                                      build_status, ts, retry_used,
-                                      budget_s, round(expected_s, 1), retry_policy])
-                    wall_f.flush()
-                    session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
-                    wall_found = rs.stops_climbing(build_status)
-                    break
-
-                time.sleep(BOOT_WAIT_S)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
-                exec_t0 = time.perf_counter()
-                done, rows, malloc_failed, note = read_serial_trials(find_esp_port(args.port), budget_s)
-                device_exec_s = time.perf_counter() - exec_t0
-                point_device_s += device_exec_s
-                attempt_end = datetime.now(timezone.utc).isoformat()
-
-                if malloc_failed:
-                    print(f"MALLOC_FAILED -> Memory Wall found (n={n})")
-                    wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None,
-                                      "malloc_failed", ts, retry_used,
-                                      budget_s, round(expected_s, 1), retry_policy])
-                    wall_f.flush()
-                    tel.write_point_row({
-                        "session_id": session.session_id, "phase": 2, "board": "esp32",
-                        "circuit": circuit, "n": n, "attempt_index": attempt,
-                        "start_utc": attempt_start, "end_utc": attempt_end,
-                        "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
-                        "build_compile_s": round(result["compile_s"], 3),
-                        "upload_s": round(result["upload_s"], 3),
-                        "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
-                        "retry_count": retry_used, "timeout_hit": False,
-                        "failure_type": "malloc", "status": "failed",
-                    })
-                    session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
-                    wall_found = True
-                    break
-
-                if done:
-                    for line in rows:
-                        raw_w.writerow(line.split(",") + [budget_s])
-                    raw_f.flush()
-                    wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None,
-                                      "ok", ts, retry_used,
-                                      budget_s, round(expected_s, 1), retry_policy])
-                    wall_f.flush()
-                    suffix = f"  (succeeded after {retry_used} retry)" if retry_used else ""
-                    print(f"OK  trials_captured={len(rows)}{suffix}")
-                    tel.write_point_row({
-                        "session_id": session.session_id, "phase": 2, "board": "esp32",
-                        "circuit": circuit, "n": n, "attempt_index": attempt,
-                        "start_utc": attempt_start, "end_utc": attempt_end,
-                        "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
-                        "build_compile_s": round(result["compile_s"], 3),
-                        "upload_s": round(result["upload_s"], 3),
-                        "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
-                        "retry_count": retry_used, "timeout_hit": False,
-                        "failure_type": "none", "status": "ok",
-                    })
-                    session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="ok")
-                    break
-
-                # ถ้าเวลาต่อ rep ที่ประเมินไว้เกินเกณฑ์ WDT ของบอร์ดนี้ การที่บอร์ดเงียบ
-                # มีคำอธิบายที่เป็นไปได้มากกว่าหน่วยความจำ — บันทึกแยก และห้ามตีความเป็น
-                # Memory Wall (ดู timing_model.watchdog_suspected, finding H1)
-                wdt_suspected = tm.watchdog_suspected("esp32", circuit, n, args.wdt_threshold_s)
-                status = (f"watchdog_suspected({note})" if wdt_suspected
-                          else f"runtime_hang_or_reset({note})")
+            if malloc_failed:
+                print(f"MALLOC_FAILED -> Memory Wall found (n={n})")
+                wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None,
+                                  "malloc_failed", ts, retry_used,
+                                  budget_s, round(expected_s, 1), retry_policy])
+                wall_f.flush()
                 tel.write_point_row({
                     "session_id": session.session_id, "phase": 2, "board": "esp32",
                     "circuit": circuit, "n": n, "attempt_index": attempt,
@@ -500,29 +470,74 @@ def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
                     "build_compile_s": round(result["compile_s"], 3),
                     "upload_s": round(result["upload_s"], 3),
                     "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
-                    "retry_count": retry_used, "timeout_hit": True,
-                    "failure_type": "watchdog_suspected" if wdt_suspected else "hang",
-                    "failure_message": note,
-                    "status": "failed" if not (attempt == 0 and may_retry) else "retrying",
-                })
-                if attempt == 0 and may_retry:
-                    retry_used = 1
-                    print(f"NO 'DONE' within {budget_s}s -> {status}  "
-                          "-- transient failure, retrying once at same n before declaring "
-                          "Memory Wall (deviation from n=30 methodology, see run_log.md)")
-                    continue
-
-                tail = "(after retry)" if retry_used else f"(no retry: {retry_policy})"
-                print(f"NO 'DONE' within {budget_s}s -> {status} {tail}")
-                wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None,
-                                  status, ts, retry_used,
-                                      budget_s, round(expected_s, 1), retry_policy])
-                wall_f.flush()
+                    "retry_count": retry_used, "timeout_hit": False,
+                    "failure_type": "malloc", "status": "failed",
+                }, points_csv)
                 session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
-                wall_found = rs.stops_climbing(status)
-
-            if wall_found:
+                wall_found = True
                 break
+
+            if done:
+                for line in rows:
+                    raw_w.writerow(line.split(",") + [budget_s])
+                raw_f.flush()
+                wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None,
+                                  "ok", ts, retry_used,
+                                  budget_s, round(expected_s, 1), retry_policy])
+                wall_f.flush()
+                suffix = f"  (succeeded after {retry_used} retry)" if retry_used else ""
+                print(f"OK  trials_captured={len(rows)}{suffix}")
+                tel.write_point_row({
+                    "session_id": session.session_id, "phase": 2, "board": "esp32",
+                    "circuit": circuit, "n": n, "attempt_index": attempt,
+                    "start_utc": attempt_start, "end_utc": attempt_end,
+                    "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
+                    "build_compile_s": round(result["compile_s"], 3),
+                    "upload_s": round(result["upload_s"], 3),
+                    "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
+                    "retry_count": retry_used, "timeout_hit": False,
+                    "failure_type": "none", "status": "ok",
+                }, points_csv)
+                session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="ok")
+                break
+
+            # ถ้าเวลาต่อ rep ที่ประเมินไว้เกินเกณฑ์ WDT ของบอร์ดนี้ การที่บอร์ดเงียบ
+            # มีคำอธิบายที่เป็นไปได้มากกว่าหน่วยความจำ — บันทึกแยก และห้ามตีความเป็น
+            # Memory Wall (ดู timing_model.watchdog_suspected, finding H1)
+            wdt_suspected = tm.watchdog_suspected("esp32", circuit, n, args.wdt_threshold_s)
+            status = (f"watchdog_suspected({note})" if wdt_suspected
+                      else f"runtime_hang_or_reset({note})")
+            tel.write_point_row({
+                "session_id": session.session_id, "phase": 2, "board": "esp32",
+                "circuit": circuit, "n": n, "attempt_index": attempt,
+                "start_utc": attempt_start, "end_utc": attempt_end,
+                "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
+                "build_compile_s": round(result["compile_s"], 3),
+                "upload_s": round(result["upload_s"], 3),
+                "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
+                "retry_count": retry_used, "timeout_hit": True,
+                "failure_type": "watchdog_suspected" if wdt_suspected else "hang",
+                "failure_message": note,
+                "status": "failed" if not (attempt == 0 and may_retry) else "retrying",
+            }, points_csv)
+            if attempt == 0 and may_retry:
+                retry_used = 1
+                print(f"NO 'DONE' within {budget_s}s -> {status}  "
+                      "-- transient failure, retrying once at same n before declaring "
+                      "Memory Wall (deviation from n=30 methodology, see run_log.md)")
+                continue
+
+            tail = "(after retry)" if retry_used else f"(no retry: {retry_policy})"
+            print(f"NO 'DONE' within {budget_s}s -> {status} {tail}")
+            wall_w.writerow(["esp32", circuit, n, theoretical_bytes, None, None,
+                              status, ts, retry_used,
+                              budget_s, round(expected_s, 1), retry_policy])
+            wall_f.flush()
+            session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
+            wall_found = rs.stops_climbing(status)
+
+        if wall_found:
+            break
 
 
 if __name__ == "__main__":
