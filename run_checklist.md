@@ -627,6 +627,205 @@ Once the first point checks out, proceed through the rest of the plan in
 the 8 reduced-rep `grover` points last since they need the manual stop-early
 procedure above.
 
+## First hardware contact
+
+**Read this before plugging in the first board.** Everything above assumes
+hardware that already works; this section is the one-time bring-up, ordered
+from least to most risky. One board at a time, starting with the Uno (5V
+logic, simplest toolchain, cheapest failure). Do not skip ahead — each step
+exists to catch a specific failure before it can cost a long session or
+pollute `data/raw/`.
+
+Commands marked **UNVERIFIED** could not be run when this checklist was
+written (no hardware was connected, by instruction): the flags are read from
+the scripts' own `--help` and source, but their real-world behaviour against
+a board has never been observed here. Treat a surprise from any of them as a
+checklist bug, not as your mistake.
+
+### (a) Physical inspection — no USB connection yet
+
+- [ ] Inspect the board: no bent pins, no debris bridging the headers, no
+      visible damage to the USB connector.
+- [ ] Use a **data-capable** USB cable, not a charge-only one. This is the
+      single most common bring-up failure: a charge-only cable powers the
+      LED so the board looks alive, but no port ever appears.
+- [ ] Prefer a direct port on the Mac over a hub. If a hub is unavoidable,
+      use a powered one — ESP boards draw current spikes on WiFi radio
+      init that an unpowered hub can brown out (the firmware disables WiFi,
+      but only *after* boot).
+- [ ] Note which physical port you used and keep the board in that port for
+      the whole run. Ports re-enumerate; `find_uno_port()` tolerates that,
+      but a stable port makes the logs easier to read.
+- [ ] **LA must stay disconnected** for steps (a)-(e). It is introduced in
+      step (f), on purpose, so that if something breaks you know whether
+      the board or the LA wiring caused it.
+
+### (b) Port detection only — no flash
+
+```bash
+ls /dev/cu.*
+pio device list          # UNVERIFIED: enumerates ports; does NOT open one
+```
+- **Expected:** exactly one new entry appears when the board is plugged in
+  and disappears when unplugged. Uno: `/dev/cu.usbmodem*`. ESP8266/ESP32:
+  `/dev/cu.usbserial*`, `/dev/cu.wchusbserial*`, or `/dev/cu.SLAB_USBtoUART*`.
+- **Bad result:** no new entry (dead cable, missing CH340/CP210x driver, or
+  a dead board); or several new entries at once (you cannot tell which is
+  the board — unplug everything else first).
+- **Stop condition:** no port, or an ambiguous port. Do not guess a path and
+  do not proceed to flashing — every later step needs the right `--port`.
+
+### (c) Flash the standard Phase 2 firmware once, verify boot
+
+```bash
+# UNVERIFIED (compile step verified; upload step never run here)
+cd firmware/uno && N_QUBITS=2 CIRCUIT_ID=0 pio run -e uno -t upload --upload-port /dev/cu.usbmodemXXXX
+```
+Then watch the boot output once:
+```bash
+# UNVERIFIED — this is the only step in this checklist that opens a serial
+# monitor by hand; close it again before step (d), or the sweep cannot open
+# the port.
+pio device monitor -p /dev/cu.usbmodemXXXX -b 115200
+```
+- **Expected:** the CSV header line `board,circuit,n,rep,exec_time_us,free_heap_before,free_heap_after`,
+  then 100 rows of `uno,h_all,2,<rep>,...`, then `DONE`. At n=2 the whole
+  thing finishes in well under a second.
+- **Bad result:** no output at all (wrong baud, wrong port, or the board
+  never left the bootloader); garbage characters (baud mismatch — firmware
+  and every script agree on 115200, so garbage means the monitor's `-b` is
+  wrong); repeated header lines (the board is resetting mid-run — power or
+  brown-out problem).
+- **Stop condition:** anything other than a clean single header + 100 rows +
+  `DONE`. **Close the monitor before continuing** — an open monitor holds
+  the port and the sweep will fail to open it.
+
+### (d) One shortest data point end-to-end, LA still disconnected
+
+```bash
+.venv/bin/python pc/phase2_sweep/uno_sweep.py --port /dev/cu.usbmodemXXXX \
+    --circuits h_all --n-start 2 --n-max 2          # UNVERIFIED against real hardware
+```
+- **Expected:** a budget plan, a resume summary showing `remaining: 1/1`,
+  then `n= 2 ... OK compile_ram=...% trials_captured=100`.
+- **Bad result:** `trials_captured` below 100 (serial dropping data);
+  `runtime_hang_or_reset` (board reset or never answered); `build_or_upload_fail`
+  (toolchain, not board — see the known-issue note below about slow first
+  compiles).
+- **Stop condition:** anything that is not a clean `OK` with exactly 100
+  trials. Diagnose before running a second point: a fault here repeats 154
+  times later.
+
+### (e) Verify the outputs and that measured time is sane
+
+```bash
+head -3 data/raw/phase2/uno_raw.csv
+cat data/raw/phase2/uno_memory_wall.csv
+tail -1 data/raw/telemetry/points.csv
+tail -1 data/raw/telemetry/sessions.csv
+ls data/raw/telemetry/env/
+```
+- **Expected:**
+  - `uno_raw.csv`: header + exactly 100 rows for `(h_all, 2)`, `exec_time_us`
+    values clustered tightly (the n=30 dataset's IQR was very narrow).
+  - `uno_memory_wall.csv`: one row, `status=ok`.
+  - `points.csv`: one row, `schema_version=1`, `status=ok`,
+    `failure_type=none`, with `build_compile_s` / `upload_s` / `device_exec_s`
+    populated.
+  - `sessions.csv`: one row, `schema_version=1`, `n_points_ok=1`.
+  - `env/<session_id>.json`: exists, `schema_version: 1`, non-empty
+    `firmware_source_hash`, and `sleep_prevention.prevented: true`.
+- [ ] **Compare measured against estimated.** `timing_model` expects
+      `h_all n=2` on Uno at roughly 284 µs per rep (~0.03 s of device time
+      for all 100). Reflash dominates: `REFLASH_COST_S` guesses 20 s for the
+      Uno and **has never been measured** (see § Reflash cost). Run:
+```bash
+.venv/bin/python analysis/timing_report.py
+```
+      and read the measured `build_compile_s + upload_s` median off it.
+- **Bad result:** measured device time off by more than ~2x from the estimate
+  (the model was fitted on the n=30 dataset — a large miss means the board,
+  the build flags, or the model is not what you think it is); or a measured
+  reflash cost wildly different from 20 s, which changes the whole 13.9 h
+  budget and should be fixed in `REFLASH_COST_S` before committing to a
+  schedule.
+- **Stop condition:** outputs missing, `schema_version` absent, or a
+  `SchemaMismatchError` (means an old-schema telemetry file is present —
+  archive it, do not delete it).
+
+### (f) First LA capture
+
+- [ ] Power everything down before touching wiring.
+- [ ] Wire per the § Logic Analyzer procedure above, then follow the
+      **First real capture checklist** in that section verbatim — it already
+      covers the one-point capture, `la_pulses.py` verification, and the
+      fail-loudly rule. Do not shortcut it just because step (d) passed.
+- [ ] Re-run the same `h_all n=2` point with the LA attached and confirm the
+      *device* numbers are unchanged from step (d). If attaching the LA
+      changes the measured `exec_time_us`, the probe is loading the pin —
+      stop and fix that before capturing anything else.
+
+### (g) First full session
+
+Only now run Session A for the Uno (§ Session A). After it completes, repeat
+steps (a)-(e) for the ESP8266, then the ESP32, before giving either of them a
+full session.
+
+### Per-board wiring notes
+
+| | Uno R3 | NodeMCU ESP8266 | ESP32 DevKit V1 |
+|---|---|---|---|
+| Logic level | **5 V** | 3.3 V | 3.3 V |
+| `GPIO_TIMING_PIN` | D7 (PD7) | GPIO5 (= **D1** on the NodeMCU silkscreen) | GPIO4 |
+| Serial | 115200, UART0 on D0/D1 — **never wire the LA to D0/D1** | 115200, UART0 on GPIO1/GPIO3 | 115200, UART0 on GPIO1/GPIO3 |
+
+- **LA input levels:** the Uno drives its timing pin at **5 V**. Confirm the
+  logic analyzer's inputs are 5 V-tolerant before connecting it to the Uno.
+  Many cheap 3.3 V LAs are not; a series resistor or a level shifter is the
+  usual fix. The ESP boards are 3.3 V and safe for any 3.3 V LA.
+- **Common ground is mandatory.** Connect LA GND to board GND. Without a
+  shared reference the captured edges are meaningless (and you can damage
+  something). One ground wire per board, not a daisy chain through other
+  equipment.
+- **Power:** all three boards are USB-powered for this run — do not also feed
+  VIN/5V from a bench supply while USB is connected.
+- **NodeMCU pin naming:** the silkscreen says `D1`, the firmware says
+  `GPIO_TIMING_PIN 5`, and both mean the same physical pin. Probe by GPIO
+  number, not by the D-number, if there is any doubt.
+
+### Rollback
+
+- **Reflash a known-good state:** every firmware image is reproducible from
+  source plus two build flags — there is no binary to restore. To put a board
+  back to a known state, rebuild the smallest point for it, e.g.
+  ```bash
+  # UNVERIFIED
+  cd firmware/uno && N_QUBITS=2 CIRCUIT_ID=0 pio run -e uno -t upload --upload-port /dev/cu.usbmodemXXXX
+  ```
+  Record the `git describe --tags` you built from (`pre-run-schema-v1` or
+  later); the environment JSON records the firmware source hash per session,
+  so a mismatch is detectable after the fact.
+- **Discard a bad pilot point without polluting `data/raw/`:** the sweep
+  files are append-only, so a bad point is a *row* problem, not a file
+  problem. Preferred, in order:
+  1. If the whole pilot should not count, use `--fresh` on the next run: it
+     **renames** `*_raw.csv` / `*_memory_wall.csv` to
+     `*.pre-fresh-<timestamp>.csv` and starts clean. It never deletes.
+  2. To drop one point by hand, delete *both* its `*_raw.csv` rows and its
+     `*_memory_wall.csv` row. Deleting only the terminal record leaves
+     orphan raw rows — resume will purge those automatically on the next run
+     (that is the designed behaviour), but doing it deliberately is cleaner.
+  3. Never hand-edit a file to "fix" a value. `phase2_summarize.py` and
+     `phase3_summarize.py` refuse to run if any group exceeds 100 rows,
+     which is the guard against exactly this.
+- **Telemetry:** `points.csv` / `sessions.csv` rows for a discarded pilot can
+  be left in place — every row carries its own `session_id`, so a discarded
+  session is identifiable rather than needing removal. If you do want them
+  gone, move the whole `data/raw/telemetry/` directory aside; do not delete
+  individual rows (the schema-mismatch guard assumes intact headers).
+
+---
+
 ## After everything
 
 ```bash
