@@ -50,6 +50,61 @@ succeeding with zero compiler warnings.
 
 ---
 
+## Status: hardening applied after this report (tag `pre-run-schema-v2`)
+
+This report is the preflight snapshot at `pre-run-schema-v1` (`00f19b3`). The
+following round of PC-side-only hardening acted on it; the findings below are
+kept as written, with their current state noted here rather than edited in place.
+
+| Finding | State |
+|---|---|
+| **H1** watchdog mis-attribution | **Mitigated in analysis, not in firmware.** A per-board estimated-per-rep threshold (`timing_model.WDT_PER_REP_THRESHOLD_S`: ESP8266 6 s, ESP32 5 s, Uno none — still an UNVERIFIED assumption) now records a silent board as `watchdog_suspected` rather than `runtime_hang_or_reset`, and **no** hang of either kind is auto-classified as a wall any more. Firmware untouched; options analysed below. |
+| **H2** compile timeout became a wall | **Fixed.** Timeouts are now `build_timeout` (distinct `failure_type` and terminal status), never a wall, retried once under the same ≤ 600 s budget rule, with the subprocess timeout raised to a configurable 300 s (~3.5× the measured 85 s peak). |
+| **H3** Grover fidelity | **Report-only, by instruction.** Simulator and the 1e-3 criterion deliberately unchanged; a draft Limitations paragraph and an iteration-count table are below. |
+| **H4** reflash budget | **Report-only.** `REFLASH_COST_S` and `timing_model.py` deliberately unedited; sensitivity table below. Still needs one measured build+upload per board. |
+| **M4** nothing pinned | **Fixed.** `requirements.txt` added; `platform =` pinned to the installed versions in all three `platformio.ini` (rebuild confirmed byte-identical flash/RAM); environment JSON now records per-board platform/framework/toolchain versions via `pio pkg list -e <env>`. |
+| **M5** `phase1_compare.py` overwrote raw data | **Fixed.** It now refuses by default; `--out-dir`, `--timestamped-out` or an explicit `--allow-overwrite` are required. |
+| **M1, M2, M3, M6, L1-L6** | Unchanged, report-only. |
+
+### H1 — firmware options, analysis only (nothing implemented)
+
+`firmware/` is byte-identical to `pre-run-schema-v1`; this is the analysis the
+task asked for, not a change. Three ways a watchdog reset could be prevented,
+and what each would cost the measurement:
+
+1. **Feed the watchdog inside `run_circuit()`** (periodic `ESP.wdtFeed()` /
+   `esp_task_wdt_reset()` at gate-loop granularity). Removes the reset entirely
+   but puts a call *inside* the timed region: `micros()` would then include the
+   feed cost on every iteration, inflating exactly the quantity being published,
+   by an amount that scales with gate count — i.e. worst at the high-n Grover
+   points this is meant to rescue. It would also change what the LA sees, since
+   the pulse brackets the same region. Rejected on measurement grounds.
+2. **Split the rep into chunks and feed between chunks** (e.g. run the circuit
+   in k segments, feeding the WDT at segment boundaries, still inside one
+   GPIO pulse). Keeps per-gate cost clean but adds k−1 feeds inside the pulse
+   and inside the `micros()` window; the bias is smaller than option 1 and
+   *bounded* (k feeds, not one per gate), but it is still non-zero and it makes
+   the timed region structurally different from the low-n points it is compared
+   against. The LA window would still bracket only `run_circuit()`, so the
+   cross-check stays valid — it would just be checking a slightly different
+   thing at high n than at low n.
+3. **Disable the hardware watchdog for the timed region** (ESP8266:
+   `ESP.wdtDisable()` already stops only the *software* WDT; stopping the
+   hardware WDT needs a lower-level call and is not reliably supported from the
+   Arduino core. ESP32: the task WDT can be deconfigured per task). Zero effect
+   on the timed region and therefore the cleanest option for measurement — but
+   it removes the only protection against a genuinely stuck board, turning a
+   would-be reset into an indefinite hang that only the PC-side timeout catches.
+   Acceptable only because that PC-side hard deadline already exists.
+
+If any of these is ever adopted, it is a firmware change and therefore a new
+firmware source hash, a new `SCHEMA_VERSION` conversation, and points collected
+before and after must not be pooled. The current position is deliberate: **do
+not change the firmware; record the watchdog hypothesis honestly and let the
+operator decide per point.**
+
+---
+
 ## Check table
 
 | ID | What was checked | Method | Result | Evidence |
@@ -168,10 +223,40 @@ ESP8266: ~29 kB. ESP32: ~43 kB.
 | ESP8266 | 22 | 47.3 s | 85 s | 30 s |
 | ESP32 | 22 | 17.3 s | 34 s | 30 s |
 
-Every data point changes `N_QUBITS`, which invalidates the whole PlatformIO build
-cache, so **every one of the 312 planned reflashes pays a full rebuild** — these
-means are representative of the real run, not just of a cold start. See finding
-**H4**.
+**Cold or incremental?** Every one of the 66 builds was a **full rebuild**, and
+none was incremental. Changing `N_QUBITS` or `CIRCUIT_ID` changes `build_flags`,
+which invalidates PlatformIO's whole object cache including the framework — and
+the real run changes `N_QUBITS` at every single data point. So these figures are
+representative of all 312 planned reflashes, not just of a cold start. (The
+PlatformIO *packages* were already installed before the first build, so none of
+these timings include a toolchain download; a first-ever run on a fresh machine
+would be slower still, and that download happens *inside* the same `pio run` the
+timeout applies to.)
+
+| Board | builds | **median** | mean | max | Phase 2 median | Phase 3 median |
+|---|---|---|---|---|---|---|
+| Uno | 22 | **7.5 s** | 7.3 s | 13 s | 9.0 s | 6.0 s |
+| ESP8266 | 22 | **40.0 s** | 47.3 s | 85 s | 40.0 s | 40.0 s |
+| ESP32 | 22 | **16.0 s** | 17.3 s | 34 s | 16.0 s | 16.0 s |
+
+(An earlier interim figure of 63.7 s for the ESP8266 was computed from the first
+6 builds only, before the matrix finished; the completed set gives 47.3 s mean /
+40.0 s median. The mean exceeds the median because of a right tail — the
+per-environment first builds — which is also why the max, not the median, is the
+number the timeout has to survive.)
+
+**Sensitivity of the run total to these measurements** (compile measured, upload
+still unmeasured — nothing here edits `REFLASH_COST_S` or `timing_model.py`):
+
+| | assumed reflash (compile+upload) | measured compile only | unmeasured remainder |
+|---|---|---|---|
+| Uno (73 reflashes) | 0.41 h | 0.15 h | 0.26 h of slack |
+| ESP8266 (115) | 0.96 h | **1.51 h** | already 0.55 h **over** before any upload |
+| ESP32 (124) | 1.03 h | 0.59 h | 0.44 h of slack |
+| **total (312)** | **2.40 h** | **2.25 h (94 %)** | **~0.15 h left for 312 uploads** |
+
+The 13.9 h headline is therefore optimistic by however long 312 uploads take
+minus ~9 minutes. Measuring one real build+upload per board settles it; see finding **H4**.
 
 
 **Static RAM vs the recorded memory wall.** The Uno figures are the interesting
@@ -301,6 +386,51 @@ be restated as-is.
 **Recommended:** either report those two points as timing-only with the measured
 infidelity quoted, or state a depth-dependent criterion with this float32
 justification. Do not silently widen the threshold.
+
+**Numeric types, for the record:** the MCU firmware and the PC validation binary
+run the *same* source (`firmware/common/qsim.hpp`, `circuits.hpp`) and therefore
+the same precision — `struct Cplx { float re; float im; }`, i.e. IEEE-754
+**binary32**, on Uno, ESP8266, ESP32 and in `pc/phase1_validate` alike. Qiskit
+Aer computes in **complex128** (binary64). The 1e-3 pass criterion is defined in
+exactly one place, `analysis/phase1_compare.py:43`
+(`INFIDELITY_THRESHOLD = 1e-3`), and is applied per `(circuit, n)` row of
+`data/raw/phase1/infidelity_tvd.csv`.
+
+**Infidelity vs Grover iteration count** — the deviation tracks iteration count
+(hence gate depth) monotonically, which is the signature of accumulating
+rounding rather than a logic error:
+
+| n | Grover iterations | circuit depth | infidelity (1−F) | TVD | P(marked) | vs 1e-3 |
+|---|---|---|---|---|---|---|
+| 6 | 6 | 2 173 | 2.579e-05 | 1.290e-05 | 0.9966 | pass |
+| 7 | 8 | 8 529 | 8.528e-05 | 4.306e-05 | 0.9955 | pass |
+| 8 | 12 | 38 089 | 3.612e-04 | 1.810e-04 | 0.9996 | pass (within 3×) |
+| 9 | 17 | 161 399 | **1.474e-03** | 7.414e-04 | 0.9980 | **fail (1.5×)** |
+| 10 | 25 | 711 251 | **6.469e-03** | 3.234e-03 | 0.9930 | **fail (6.5×)** |
+
+Iteration count is `max(1, ⌊(π/4)·√(2ⁿ)⌋)`, matched gate-for-gate on both sides.
+
+**Draft "Limitations" paragraph** (for the report; wording ready to lift):
+
+> The on-device simulator represents each amplitude as a pair of IEEE-754
+> binary32 floats, a deliberate constraint of the 8-bit target: the Arduino Uno
+> has 2 kB of SRAM, and binary64 amplitudes would halve the reachable qubit
+> count on every board while requiring software floating-point emulation on two
+> of the three. Validation against Qiskit Aer (binary64) therefore measures the
+> accumulated effect of this choice as well as the correctness of the gate
+> sequence. Across the five shallow circuits the agreement is at the 1e-7 level
+> for every qubit count tested. For Grover, whose ancilla-free multi-controlled-Z
+> decomposition makes circuit depth grow as O(3ⁿ), the infidelity grows
+> monotonically with iteration count and crosses the project's 1e-3 acceptance
+> threshold between n=8 (3.6e-4) and n=9 (1.5e-3), reaching 6.5e-3 at n=10. The
+> algorithm still succeeds at every tested n — the probability of the marked
+> state stays above 0.993 throughout — so the discrepancy is amplitude-level
+> precision loss, not a structural error. We therefore report execution-time
+> results for Grover at n=9 and n=10, which are unaffected by amplitude
+> precision, while noting that their state-vector fidelity is outside the
+> validation threshold used for the remaining points. No change was made to the
+> simulator or to the threshold in response to this finding; both are recorded
+> as stated limitations of the measurement.
 
 ### MEDIUM
 

@@ -11,6 +11,7 @@
 #
 # เกณฑ์ผ่าน (pass criterion): Infidelity <= 1e-3 ทุกวงจร ทุกค่า n
 
+import argparse
 import csv
 import platform
 import subprocess
@@ -269,7 +270,7 @@ def steane_stabilizer_check(psi: np.ndarray) -> dict:
     return results
 
 
-def log_metadata():
+def log_metadata(meta_path=None):
     import qiskit
     import qiskit_aer
 
@@ -287,8 +288,9 @@ def log_metadata():
         "numpy_version": np.__version__,
         "platform": platform.platform(),
     }
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    meta_path = RESULTS_DIR / "phase1_metadata.csv"
+    if meta_path is None:
+        meta_path = RESULTS_DIR / "phase1_metadata.csv"
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
     with open(meta_path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["key", "value"])
@@ -298,15 +300,54 @@ def log_metadata():
     return meta
 
 
+def refuse_to_overwrite(paths, allow_overwrite=False):
+    """เกราะกันข้อมูลดิบหาย: ทุกสคริปต์ที่เขียนลง data/raw/ ที่อื่นเป็น append-only
+    ทั้งหมด (และ --fresh ของ sweep ก็ "ย้าย" ไฟล์เดิมไม่ได้ลบ) — ไฟล์นี้เคยเป็น
+    ข้อยกเว้นเดียวที่เปิดด้วยโหมด "w" ทับผลเดิมทิ้งโดยไม่มีทางกู้ (ดู
+    docs/preflight_report.md finding M5) ตอนนี้ต้องเลือกอย่างใดอย่างหนึ่งเสมอ:
+    ย้ายไฟล์เดิมออกเอง, ใช้ --out-dir ชี้ที่ใหม่, หรือ --allow-overwrite ให้ชัดเจน
+
+    คืน list ของไฟล์ที่มีอยู่แล้ว (ว่าง = เขียนได้เลย)"""
+    existing = [p for p in paths if p.exists()]
+    if existing and not allow_overwrite:
+        names = "\n  ".join(str(p) for p in existing)
+        print(f"error: refusing to overwrite existing Phase 1 results:\n  {names}\n"
+              f"These are raw measurement files — overwriting them is unrecoverable.\n"
+              f"Pick one:\n"
+              f"  * --out-dir <dir>         write this run somewhere else (e.g. /tmp)\n"
+              f"  * --timestamped-out       write <name>.<UTC timestamp>.csv next to the originals\n"
+              f"  * --allow-overwrite       yes, really replace them\n"
+              f"  * move/rename the files yourself first (nothing here deletes data)",
+              file=sys.stderr)
+        sys.exit(1)
+    return existing
+
+
 def main():
+    ap = argparse.ArgumentParser(description="Phase 1: C++ simulator vs Qiskit Aer")
+    ap.add_argument("--out-dir", type=Path, default=RESULTS_DIR,
+                     help="ไดเรกทอรีปลายทางของผลลัพธ์ (ค่าเริ่มต้น data/raw/phase1)")
+    ap.add_argument("--timestamped-out", action="store_true",
+                     help="เขียนเป็น <ชื่อไฟล์>.<UTC timestamp>.csv แทนการทับไฟล์เดิม")
+    ap.add_argument("--allow-overwrite", action="store_true",
+                     help="ยอมให้ทับไฟล์ผลลัพธ์เดิม (ค่าเริ่มต้นคือปฏิเสธและออกด้วย exit 1)")
+    args = ap.parse_args()
+
     if not BINARY.exists():
         print(f"error: {BINARY} not found. run pc/phase1_validate/build.sh first", file=sys.stderr)
         sys.exit(1)
 
-    log_metadata()
+    results_dir = args.out_dir
+    suffix = ""
+    if args.timestamped_out:
+        suffix = "." + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    csv_path = results_dir / f"infidelity_tvd{suffix}.csv"
+    meta_path = results_dir / f"phase1_metadata{suffix}.csv"
+    refuse_to_overwrite([csv_path, meta_path], args.allow_overwrite)
 
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    csv_path = RESULTS_DIR / "infidelity_tvd.csv"
+    log_metadata(meta_path)
+
+    results_dir.mkdir(parents=True, exist_ok=True)
 
     # เขียนทีละแถวพร้อม flush ทันที (ไม่สะสมใน rows แล้วเขียนตอนจบ) — grover ที่ n สูง
     # ใช้เวลานานมาก (oracle ราคา O(3^n) เกท) ถ้ารันค้าง/ถูก interrupt กลางทาง ผลลัพธ์

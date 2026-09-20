@@ -31,19 +31,83 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-WALL_STATUS_PREFIXES = ("build_or_upload_fail", "malloc_failed", "runtime_hang_or_reset")
+# ---------------------------------------------------------------------------
+# "กำแพง" (Memory Wall) บันทึกได้เฉพาะเมื่อมี "หลักฐานเชิงบวก" เท่านั้น
+# (กฎนี้มาจาก docs/preflight_report.md finding H1 — เขียนไว้ใน run_checklist.md ด้วย)
+#
+#   build_overflow : linker บอกตรง ๆ ว่า RAM/flash ไม่พอ (region overflowed /
+#                    section will not fit / ram_pct > 100) = หลักฐานเชิงบวกที่แน่นอน
+#   malloc_failed  : บอร์ดรายงานกลับมาทางโปรโตคอลเองว่า malloc คืน NULL
+#
+# สถานะอื่น ๆ "ไม่ใช่" กำแพง แม้จะทำให้ sweep หยุดไล่ n ต่อในรอบนั้นก็ตาม:
+#   runtime_hang_or_reset : บอร์ดเงียบ — อาจเป็นหน่วยความจำ, สายหลุด, ไฟตก, หรือ
+#                           watchdog ก็ได้ ไม่มีหลักฐานแยกแยะ
+#   watchdog_suspected    : บอร์ดเงียบ "และ" เวลาต่อ rep ที่ประเมินไว้เกินเกณฑ์ WDT
+#                           ของบอร์ดนั้น (ดู timing_model.watchdog_suspected) —
+#                           สาเหตุที่เป็นไปได้มากที่สุดคือ watchdog ไม่ใช่ Memory Wall
+#   build_timeout         : `pio run` ใช้เวลานานเกิน timeout — เป็นปัญหาของเครื่อง/
+#                           toolchain ล้วน ๆ ไม่เกี่ยวกับบอร์ดหรือหน่วยความจำเลย
+#   build_or_upload_fail  : build/upload พังด้วยสาเหตุอื่นที่ไม่ใช่ overflow
+#                           (toolchain, port, สายหลุดตอน upload) ไม่ใช่หลักฐานหน่วยความจำ
+#
+# ผลของการแยกสองแนวคิดนี้: is_wall_status ใช้ตัดสิน "ข้ามข้าม session" (known_wall_n)
+# จึงข้ามถาวรได้เฉพาะเมื่อมีหลักฐานจริง ส่วน stops_climbing ใช้ตัดสินแค่ "ในรอบนี้
+# ไม่ต้องไล่ n สูงกว่านี้ต่อ" ซึ่งเป็นเรื่องประหยัดเวลาในรอบเดียว ไม่ได้ผูกกับการสรุปผล
+# ---------------------------------------------------------------------------
+
+WALL_STATUS_PREFIXES = ("build_overflow", "malloc_failed")
+
+STOP_CLIMB_PREFIXES = WALL_STATUS_PREFIXES + (
+    "build_or_upload_fail", "build_timeout", "runtime_hang_or_reset", "watchdog_suspected",
+)
+
+# ข้อความจาก linker/toolchain ที่ถือเป็นหลักฐานเชิงบวกว่าหน่วยความจำไม่พอจริง
+OVERFLOW_MARKERS = (
+    "overflowed by",          # avr-ld: "region `data' overflowed by N bytes"
+    "will not fit in region",
+    "section .bss will not fit",
+    "dram_0_0_seg' overflowed",
+    "iram1_0_seg' overflowed",
+    "text section exceeds",
+    "not enough room",
+)
 
 
 def is_wall_status(status: str) -> bool:
-    """True ถ้า status นี้คือ "กำแพงจริง" (build/upload พัง, malloc คืน NULL, หรือ
-    hang/reset หลัง retry หมด) — สถานะกลุ่มนี้เท่านั้นที่ทำให้ sweep เดิม (single-session)
-    หยุดไล่ n ที่สูงกว่าของวงจรเดียวกันทันที (wall_found=True; break)
+    """True เฉพาะ "กำแพงที่มีหลักฐานเชิงบวก" เท่านั้น (build_overflow, malloc_failed)
 
-    "ok" และ "skipped_compute_infeasible" ไม่ใช่กำแพง — sweep เดิมไล่ n ต่อไปตามปกติ
-    หลังเจอสองสถานะนี้ (infeasible เป็นแค่ข้ามจุดเดียว ไม่ได้แปลว่า n สูงกว่าจะพังเหมือนกัน
-    เสมอไปในทางทฤษฎี แม้ในทางปฏิบัติมักจะเป็นเช่นนั้นก็ตาม — sweep เดิมไม่ได้สันนิษฐานแบบนั้น
-    จึงยังลองต่อ ซึ่งจะโดนเช็ค infeasible ใหม่อีกทีแล้วข้ามอย่างเกือบไม่เสียเวลา)"""
+    ใช้โดย known_wall_n() เพื่อข้าม n ที่สูงกว่าข้าม session — การข้ามแบบถาวรแบบนั้น
+    ต้องอาศัยหลักฐานที่ผิดไม่ได้ ไม่ใช่การอนุมานจากการที่บอร์ดเงียบไปเฉย ๆ
+
+    "ok", "skipped_*", "runtime_hang_or_reset", "watchdog_suspected", "build_timeout",
+    "build_or_upload_fail" ทั้งหมดนี้ไม่ใช่กำแพง — ดูคอมเมนต์ด้านบนประกอบ"""
     return any(status.startswith(p) for p in WALL_STATUS_PREFIXES)
+
+
+def stops_climbing(status: str) -> bool:
+    """True ถ้า sweep ควรหยุดไล่ n ที่สูงกว่านี้ "ในรอบนี้" หลังเจอสถานะนี้
+
+    กว้างกว่า is_wall_status: รวมความล้มเหลวที่ยังไม่รู้สาเหตุแน่ชัด (hang, watchdog,
+    build fail, build timeout) เพราะการไล่ n สูงขึ้นต่อหลังเจอสิ่งเหล่านี้มักเสียเวลาเปล่า
+    (จุดที่ n สูงกว่าแพงกว่าเสมอ) แต่ "ไม่" ทำให้จุดเหล่านั้นถูกบันทึกเป็นกำแพง และ
+    "ไม่" ทำให้ session ถัดไปข้ามมันถาวร — รันสคริปต์เดิมซ้ำจะลองจุดที่ยังไม่มี terminal
+    record ใหม่ตามปกติ"""
+    return any(status.startswith(p) for p in STOP_CLIMB_PREFIXES)
+
+
+def classify_build_failure(log: str, ram_pct=None, timed_out: bool = False) -> str:
+    """แปลผลความล้มเหลวของ build/upload เป็นสถานะที่แยกสาเหตุได้ (ดูคอมเมนต์ด้านบน)
+
+    ลำดับความสำคัญ: timeout ก่อน (เพราะ log ที่ได้ตอน timeout ไม่สมบูรณ์ จะเอาไป
+    ตีความว่า overflow ไม่ได้) แล้วจึงดูหลักฐาน overflow แล้วจึงเป็นความล้มเหลวทั่วไป"""
+    if timed_out:
+        return "build_timeout"
+    if ram_pct is not None and ram_pct > 100.0:
+        return "build_overflow"
+    low = (log or "").lower()
+    if any(m.lower() in low for m in OVERFLOW_MARKERS):
+        return "build_overflow"
+    return "build_or_upload_fail"
 
 
 def known_wall_n(completed: dict, circuit_index: int = 0, n_index: int = 1):

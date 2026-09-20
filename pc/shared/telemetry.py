@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -51,8 +52,14 @@ POINTS_CSV = TELEMETRY_DIR / "points.csv"
 # เปลี่ยนความหมายคอลัมน์เดิมโดยไม่เพิ่มเลขนี้ ไม่งั้นไฟล์เก่ากับใหม่จะปนกันโดยไม่มีทาง
 # แยกออกจากกันได้ทีหลัง — ดู SchemaMismatchError ด้านล่าง (บังคับด้วยโค้ด ไม่ใช่แค่
 # ข้อตกลงในคอมเมนต์) freeze ครั้งแรกที่ tag pre-run-schema-v1 (ดู run_log.md)
+#
+# v2 (tag pre-run-schema-v2): เพิ่ม failure_type "build_timeout" และ
+# "watchdog_suspected" เพื่อให้ timeout ของ toolchain และการรีเซ็ตที่น่าจะมาจาก
+# watchdog ไม่ถูกบันทึกปนกับความล้มเหลวจริงของบอร์ด (ดู docs/preflight_report.md
+# H1/H2) — field list ไม่เปลี่ยน แต่ "ความหมายของค่า" เปลี่ยน จึงต้องขึ้นเวอร์ชัน และ
+# ต้องตรวจที่ระดับ "ค่าในแถว" ไม่ใช่แค่ header (ดู _ensure_csv)
 # ---------------------------------------------------------------------------
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class SchemaMismatchError(RuntimeError):
@@ -109,7 +116,18 @@ POINT_FIELDS = [
 # เป็น cumulative ทั้ง session ไม่ได้บอกว่า CRC error เป็น "สาเหตุสุดท้าย" ที่ทำให้ค้าง)
 # — ตัดสินใจไว้ตรงนี้: ปล่อย failure_type="serial" ไว้เหมือนเดิมสำหรับทุก
 # session_incomplete ไม่เดา แม้ crc_error_count จะสูงก็ตาม
-FAILURE_TYPES = ("none", "build", "malloc", "hang", "serial", "crc", "sim")
+#
+# v2 เพิ่มสองค่า:
+#   build_timeout      — `pio run` (compile หรือ upload) ใช้เวลาเกิน BUILD_TIMEOUT_S
+#                        เป็นปัญหาของเครื่อง/toolchain ไม่ใช่ของบอร์ด แยกจาก "build"
+#                        (ซึ่งหมายถึง build พังจริง ๆ เช่น linker error) เพราะอันแรก
+#                        retry แล้วหายได้ ส่วนอันหลัง deterministic
+#   watchdog_suspected — บอร์ดเงียบ/รีเซ็ต "และ" เวลาต่อ rep ที่ประเมินไว้เกินเกณฑ์ WDT
+#                        ของบอร์ดนั้น (timing_model.watchdog_suspected) แยกจาก "hang"
+#                        เพราะสองอย่างนี้นำไปสู่ข้อสรุปคนละแบบ: hang อาจเป็นหน่วยความจำ
+#                        แต่ watchdog reset ไม่ได้แปลว่าหน่วยความจำไม่พอเลย
+FAILURE_TYPES = ("none", "build", "build_timeout", "malloc", "hang",
+                 "watchdog_suspected", "serial", "crc", "sim")
 
 # points.csv status — ต้องแยกเหตุผลการข้ามแต่ละแบบให้ชัด ไม่ยุบรวมเป็น "skipped"
 # เฉย ๆ (ก่อนหน้านี้ทำแบบนั้น ทำให้อ่าน points.csv อย่างเดียวแยกไม่ออกว่าข้ามเพราะอะไร
@@ -133,7 +151,9 @@ def _ensure_csv(path: Path, fields):
     is_new = not path.exists()
     if not is_new:
         with open(path, newline="") as rf:
-            existing_header = next(csv.reader(rf), None)
+            reader = csv.reader(rf)
+            existing_header = next(reader, None)
+            first_data_row = next(reader, None)
         if existing_header is not None and existing_header != list(fields):
             raise SchemaMismatchError(
                 f"{path} has header {existing_header} but the current schema "
@@ -141,6 +161,23 @@ def _ensure_csv(path: Path, fields):
                 f"append (would silently misalign columns). Archive the old file "
                 f"(see pc/shared/resume.archive_existing) or move it aside before continuing."
             )
+        # header เหมือนกันไม่ได้แปลว่า schema เดียวกัน: การขึ้นเวอร์ชันแบบ v1 -> v2
+        # เปลี่ยน "ความหมายของค่า" (เช่น failure_type ตัวใหม่) โดยที่ชื่อคอลัมน์ไม่ขยับเลย
+        # ต้องอ่านค่า schema_version ของแถวแรกมาเทียบตรง ๆ ไม่งั้นข้อมูลสองเวอร์ชันจะ
+        # ปนกันในไฟล์เดียวแบบที่แยกไม่ออกทีหลัง
+        if first_data_row and "schema_version" in fields:
+            idx = list(fields).index("schema_version")
+            if idx < len(first_data_row):
+                found = (first_data_row[idx] or "").strip()
+                if found and found != str(SCHEMA_VERSION):
+                    raise SchemaMismatchError(
+                        f"{path} contains SCHEMA_VERSION={found} rows but this code writes "
+                        f"SCHEMA_VERSION={SCHEMA_VERSION} — refusing to append (the column "
+                        f"names match, so nothing else would catch this, and the two "
+                        f"versions' values mean different things). Archive the v{found} file "
+                        f"(see pc/shared/resume.archive_existing) and start a fresh one, or "
+                        f"check out the v{found} code to keep appending to it."
+                    )
     f = open(path, "a", newline="")
     if is_new:
         csv.writer(f).writerow(fields)
@@ -347,6 +384,35 @@ def _pio_version():
         return ""
 
 
+def _pio_packages(project_dir, pio_env):
+    """เวอร์ชันของ platform/framework/toolchain ที่ "ใช้ build จริง" ของ environment นั้น
+    (ไม่ใช่แค่เวอร์ชันของ PlatformIO Core) — `pio pkg list -e <env>` ในไดเรกทอรีโปรเจกต์
+
+    ทำไมต้องเก็บ: platformio.ini ปักเวอร์ชัน platform ไว้แล้วก็จริง แต่ toolchain/
+    framework ที่ถูกดึงมาจริงยังเปลี่ยนได้ และ "ตัวเลขเวลา" ที่งานนี้วัดขึ้นกับ compiler
+    ที่ใช้โดยตรง ถ้าไม่บันทึกไว้ต่อ session จะย้อนกลับไปบอกไม่ได้เลยว่าข้อมูลสองก้อน
+    ถูก build ด้วย toolchain เดียวกันหรือไม่ (ดู docs/preflight_report.md finding M4)
+
+    คืน dict {package_name: version} — คืน {} ถ้าเรียกไม่สำเร็จ (ไม่ทำให้ session ล้ม
+    เพราะ metadata ขาดไปหนึ่งอย่างไม่ควรหยุดการเก็บข้อมูลที่กำลังจะเริ่ม)"""
+    if not project_dir or not pio_env:
+        return {}
+    try:
+        pio = os.environ.get("PIO_PATH") or "pio"
+        out = subprocess.run([pio, "pkg", "list", "-e", str(pio_env)],
+                             cwd=str(project_dir), capture_output=True, text=True,
+                             timeout=60).stdout
+    except Exception:
+        return {}
+    pkgs = {}
+    for line in out.splitlines():
+        # "Platform atmelavr @ 5.3.0 (required: ...)" / "├── framework-arduino-avr @ 5.4.0 (...)"
+        m = re.search(r"([A-Za-z0-9_\-.]+)\s+@\s+([^\s(]+)", line.strip())
+        if m:
+            pkgs[m.group(1)] = m.group(2)
+    return pkgs
+
+
 def _firmware_build_hash(fw_src_dir: Path):
     """hash เนื้อหาของ firmware/common + firmware/<board>/src(_offload) ที่ใช้ compile
     จริง — ไม่ใช่ hash ของ binary (ไม่ได้ build ตอนเก็บ metadata) แต่พอให้รู้ว่าซอร์ส
@@ -387,7 +453,7 @@ def check_sleep_prevention():
 
 
 def write_environment_metadata(session_id, board, port, baud, f_cpu, fw_src_dir,
-                                env_dir: Path = None):
+                                env_dir: Path = None, pio_project_dir=None, pio_env=None):
     if env_dir is None:
         env_dir = ENV_DIR
     env_dir.mkdir(parents=True, exist_ok=True)
@@ -395,6 +461,8 @@ def write_environment_metadata(session_id, board, port, baud, f_cpu, fw_src_dir,
     meta = {
         "schema_version": SCHEMA_VERSION,
         "session_id": session_id,
+        "pio_env": pio_env or "",
+        "pio_packages": _pio_packages(pio_project_dir, pio_env),
         "git_commit": commit,
         "git_dirty": dirty,
         "firmware_source_hash": _firmware_build_hash(fw_src_dir),

@@ -345,14 +345,19 @@ requires touching hardware, which this session was not authorized to do.
 
 ---
 
-## Telemetry schema (frozen at SCHEMA_VERSION 1, tag `pre-run-schema-v1`)
+## Telemetry schema (frozen at SCHEMA_VERSION 2, tag `pre-run-schema-v2`)
 
 `pc/shared/telemetry.py` defines the schema for `data/raw/telemetry/sessions.csv`,
 `data/raw/telemetry/points.csv`, and each session's `data/raw/telemetry/env/<session_id>.json`.
-**This schema is frozen as of the `pre-run-schema-v1` tag, before any real
+**This schema is frozen as of the `pre-run-schema-v2` tag, before any real
 hardware data is collected**, so every row of the REPS=100 run shares one
 schema — do not add, remove, rename, or repurpose a column without bumping
 `SCHEMA_VERSION` in `pc/shared/telemetry.py` first.
+
+*v2 (this version) added the `build_timeout` and `watchdog_suspected`
+`failure_type` values and changed which statuses count as a Memory Wall; the
+column names did not change, which is exactly why the guard below also checks
+the `schema_version` **value**, not just the header.*
 
 **Enforcement, not just convention:** `SCHEMA_VERSION` is written as the
 first column of both CSVs and as a field in every environment JSON. If a
@@ -360,9 +365,20 @@ sweep script is run against an existing `sessions.csv`/`points.csv` whose
 header doesn't match the current field list exactly (including because
 `SCHEMA_VERSION` changed), `telemetry._ensure_csv` raises
 `SchemaMismatchError` and refuses to append — it never silently mixes rows
-from two schema versions in one file. Fix: archive the old file (see
+from two schema versions in one file. It also reads the `schema_version`
+**value** out of the first data row and refuses if it differs from the
+running code's, because a version bump that only changes what values *mean*
+(v1 → v2 did exactly that) leaves the header identical and would otherwise
+go unnoticed. Fix: archive the old file (see
 `pc/shared/resume.archive_existing`, or move it aside by hand) and start a
 new `data/raw/telemetry/` for the new schema, or roll back the code.
+
+**`data/raw/phase1/` is not affected by the bump.** Those two files
+(`infidelity_tvd.csv`, `phase1_metadata.csv`) are written by
+`analysis/phase1_compare.py`, not by `telemetry.py`; they have no
+`schema_version` column and never did, so v1 and v2 code read and write them
+identically. They were verified byte-identical (sha256) across every test and
+dry run in this work.
 
 **`sessions.csv` columns:** `schema_version`, `session_id`, `phase`, `board`,
 `circuits`, `start_utc`, `end_utc`, `wall_clock_s`, `device_time_s_sum`,
@@ -412,9 +428,50 @@ totals across a run; none of the four contribute to its actual-time totals
 (their timing fields are always blank).
 
 **`failure_type` allowed values** (`telemetry.FAILURE_TYPES`): `none`,
-`build`, `malloc`, `hang`, `serial`, `crc`, `sim`.
+`build`, `build_timeout`, `malloc`, `hang`, `watchdog_suspected`, `serial`,
+`crc`, `sim`.
 
-**`crc` is defined but never set by any code path today.** Phase 3 is the
+- `build` — `pio run` returned a real error (linker, syntax, missing flag).
+  Deterministic, never retried.
+- `build_timeout` *(v2)* — `pio run` exceeded `--build-timeout`
+  (`timing_model.BUILD_TIMEOUT_S`, default **300 s**). A host/toolchain
+  problem, not a board problem: it **is** retried once under the same
+  ≤ 600 s budget rule as a transient hang, and it is **never** a wall.
+- `hang` — no `DONE` within the point's timeout budget, on a point whose
+  estimated per-rep time is below the board's watchdog threshold.
+- `watchdog_suspected` *(v2)* — same silence, but on a point whose estimated
+  per-rep time exceeds `timing_model.WDT_PER_REP_THRESHOLD_S` for that board
+  (ESP8266 6 s, ESP32 5 s, Uno none — **assumptions, UNVERIFIED against
+  hardware**). Recorded separately precisely so it is never published as a
+  Memory Wall.
+
+### A Memory Wall may only be recorded on positive evidence
+
+This rule exists because the most expensive points in the run are also the
+ones most likely to be mis-attributed (see `docs/preflight_report.md` H1).
+`pc/shared/resume.is_wall_status()` returns true for exactly two statuses:
+
+| Status | Evidence |
+|---|---|
+| `build_overflow` | the linker said so — `region … overflowed`, `section … will not fit`, or a reported RAM figure over 100 % |
+| `malloc_failed` | the board itself reported `MALLOC_FAILED` over the protocol |
+
+Everything else — `runtime_hang_or_reset`, `watchdog_suspected`,
+`build_timeout`, `build_or_upload_fail` — is **not** a wall, no matter how
+plausible it looks. A third route exists and is deliberately manual: **an
+explicit operator decision**, recorded in `run_log.md` with the reasoning, is
+the only way a hang or a watchdog reset ever becomes a published wall.
+
+Two separate consequences, deliberately not conflated:
+- *Within a session*, any failure stops the sweep from climbing to higher `n`
+  for that circuit (`resume.stops_climbing()`), because higher `n` is always
+  more expensive. That is a time-saving decision, not a scientific claim.
+- *Across sessions*, only a positive-evidence wall makes `resume.known_wall_n()`
+  skip higher `n` permanently. A timeout or a watchdog reset is retried by the
+  next run, which is the whole point: a slow compile or a WDT reset must never
+  silently truncate the dataset.
+
+**`crc` and `sim` are defined but never set by any code path today.** Phase 3 is the
 only place CRC exists at all, and a CRC-corrupted request frame is already
 counted (`crc_error_count`, `dropped` in the console log) — but a Phase 3
 point that fails (`session_incomplete`: no `DONE`, or zero rows, within the

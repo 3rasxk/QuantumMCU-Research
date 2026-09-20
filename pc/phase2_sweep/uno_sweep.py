@@ -102,7 +102,7 @@ def find_uno_port(hint: str) -> str:
     return candidates[0]
 
 
-def build_and_upload(circuit: str, n: int, port_hint: str):
+def build_and_upload(circuit: str, n: int, port_hint: str, build_timeout_s=None):
     """แยก compile กับ upload เป็นสอง subprocess (เดิมเป็นคำสั่งเดียว `-t upload` ที่
     ทำทั้งสองอย่างในตัว) เพื่อจับเวลาแยกกันได้จริง (compile_s, upload_s) — PlatformIO
     ทำ dependency tracking เอง: เรียก `pio run` เฉย ๆ (compile) แล้วเรียก `-t upload`
@@ -111,21 +111,25 @@ def build_and_upload(circuit: str, n: int, port_hint: str):
 
     คืน dict เดียว (ไม่ใช่ tuple) เพราะจำนวนค่าที่ต้องส่งกลับเพิ่มขึ้นมากจนใช้ positional
     tuple แล้วอ่านโค้ดเรียกยาก"""
+    if build_timeout_s is None:
+        build_timeout_s = tm.BUILD_TIMEOUT_S
     port = find_uno_port(port_hint)
     env = os.environ.copy()
     env.update({"N_QUBITS": str(n), "CIRCUIT_ID": str(CIRCUIT_IDS[circuit])})
 
+    timed_out = False
     t0 = time.perf_counter()
     try:
         proc = subprocess.run(
             [PIO, "run", "-e", "uno"],
-            cwd=str(FW_DIR), env=env, capture_output=True, text=True, timeout=120,
+            cwd=str(FW_DIR), env=env, capture_output=True, text=True, timeout=build_timeout_s,
         )
         c_stdout, c_stderr, c_rc = proc.stdout, proc.stderr, proc.returncode
     except subprocess.TimeoutExpired as e:
         c_stdout = (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
-        c_stderr = "pio run (compile) timed out after 120s"
+        c_stderr = f"pio run (compile) timed out after {build_timeout_s}s"
         c_rc = -1
+        timed_out = True
     compile_s = time.perf_counter() - t0
 
     ram_pct, ram_bytes = None, None
@@ -137,25 +141,28 @@ def build_and_upload(circuit: str, n: int, port_hint: str):
     if not compile_ok:
         return {"ok": False, "ram_pct": ram_pct, "ram_bytes": ram_bytes,
                 "log": c_stdout[-4000:] + c_stderr[-2000:], "port": port,
-                "compile_s": compile_s, "upload_s": 0.0, "stage": "compile"}
+                "compile_s": compile_s, "upload_s": 0.0, "stage": "compile",
+                "timed_out": timed_out}
 
     t0 = time.perf_counter()
     try:
         proc = subprocess.run(
             [PIO, "run", "-e", "uno", "-t", "upload", "--upload-port", port],
-            cwd=str(FW_DIR), env=env, capture_output=True, text=True, timeout=120,
+            cwd=str(FW_DIR), env=env, capture_output=True, text=True, timeout=build_timeout_s,
         )
         u_stdout, u_stderr, u_rc = proc.stdout, proc.stderr, proc.returncode
     except subprocess.TimeoutExpired as e:
         u_stdout = (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
-        u_stderr = "pio run (upload) timed out after 120s (stuck avrdude / stuck port)"
+        u_stderr = f"pio run (upload) timed out after {build_timeout_s}s (stuck avrdude / stuck port)"
         u_rc = -1
+        timed_out = True
     upload_s = time.perf_counter() - t0
 
     ok = u_rc == 0
     return {"ok": ok, "ram_pct": ram_pct, "ram_bytes": ram_bytes,
             "log": u_stdout[-4000:] + u_stderr[-2000:], "port": port,
-            "compile_s": compile_s, "upload_s": upload_s, "stage": "upload"}
+            "compile_s": compile_s, "upload_s": upload_s, "stage": "upload",
+            "timed_out": timed_out}
 
 
 class HardTimeout(Exception):
@@ -219,6 +226,15 @@ def main():
     ap.add_argument("--force-infeasible", action="store_true",
                      help="พยายามรันจุดที่ timing_model บอกว่าเกินเพดานเวลาไปแล้วด้วย "
                           "(ปกติจะข้ามพร้อมบันทึกเหตุผล เพราะได้แค่ timeout เปล่า ๆ)")
+    ap.add_argument("--build-timeout", dest="build_timeout_s", type=int, default=tm.BUILD_TIMEOUT_S,
+                     help=f"วินาทีสูงสุดต่อการเรียก pio run หนึ่งครั้ง (compile และ upload แยกกัน) "
+                          f"ค่าเริ่มต้น {tm.BUILD_TIMEOUT_S}s — timeout ไม่ถือเป็น Memory Wall "
+                          f"และ retry ได้ (ดู docs/preflight_report.md H2)")
+    ap.add_argument("--wdt-threshold-s", type=float, default=None,
+                     help="ถ้าเวลาต่อ rep ที่ประเมินไว้เกินค่านี้ (วินาที) การที่บอร์ดเงียบจะถูก "
+                          "บันทึกเป็น watchdog_suspected ไม่ใช่ runtime_hang_or_reset และจะไม่ถูก "
+                          "ตีความเป็นกำแพง ค่าเริ่มต้นมาจาก timing_model.WDT_PER_REP_THRESHOLD_S "
+                          "(uno=ไม่มีเกณฑ์ เพราะ AVR core ไม่เปิด watchdog)")
     ap.add_argument("--fresh", "--no-resume", dest="fresh", action="store_true",
                      help="ไม่ resume จากผลลัพธ์เดิม — ย้ายไฟล์ raw/memory_wall เดิมไปเป็น "
                           "*.pre-fresh-<timestamp>.csv (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด")
@@ -299,7 +315,8 @@ def main():
             if gap > 0:
                 session.note_interruption_gap(gap)
         env_path = tel.write_environment_metadata(
-            session.session_id, "uno", args.port, BAUD, F_CPU, FW_DIR / "src")
+            session.session_id, "uno", args.port, BAUD, F_CPU, FW_DIR / "src",
+            pio_project_dir=FW_DIR, pio_env="uno")
         session.env_json_path = str(env_path)
 
         _sweep_body(args, completed, wall_n_by_circuit, infeasible,
@@ -393,18 +410,24 @@ def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
                     print("(retry) ", end="", flush=True)
 
                 attempt_start = datetime.now(timezone.utc).isoformat()
-                result = build_and_upload(circuit, n, args.port)
+                result = build_and_upload(circuit, n, args.port, args.build_timeout_s)
                 ts = datetime.now(timezone.utc).isoformat()
                 args.port = result["port"]  # จำ port ล่าสุดที่ใช้สำเร็จ ไว้เป็น hint รอบถัดไป
                 reflash_s = result["compile_s"] + result["upload_s"]
                 point_reflash_s += reflash_s
 
                 if not result["ok"]:
-                    print("UPLOAD/BUILD FAIL -> Memory Wall found (link/flash stage)")
-                    wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"], result["ram_pct"],
-                                      "build_or_upload_fail", ts, retry_used,
-                                      budget_s, round(expected_s, 1), retry_policy])
-                    wall_f.flush()
+                    # แยกสาเหตุก่อนตัดสิน: timeout ของ toolchain ไม่ใช่กำแพง และ retry ได้
+                    # (ดู pc/shared/resume.classify_build_failure และ finding H2)
+                    build_status = rs.classify_build_failure(
+                        result["log"], result["ram_pct"], result.get("timed_out", False))
+                    is_timeout = build_status == "build_timeout"
+                    label = {
+                        "build_overflow": "BUILD OVERFLOW -> Memory Wall (positive evidence: linker/RAM)",
+                        "build_timeout": "BUILD TIMEOUT -> toolchain/host problem, NOT a wall",
+                        "build_or_upload_fail": "UPLOAD/BUILD FAIL -> not a wall (no memory evidence)",
+                    }[build_status]
+                    print(label)
                     print(result["log"][-800:])
                     tel.write_point_row({
                         "session_id": session.session_id, "phase": 2, "board": "uno",
@@ -412,12 +435,23 @@ def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
                         "start_utc": attempt_start, "end_utc": ts, "wall_s": round(reflash_s, 3),
                         "build_compile_s": round(result["compile_s"], 3),
                         "upload_s": round(result["upload_s"], 3),
-                        "retry_count": retry_used, "timeout_hit": False,
-                        "failure_type": "build", "failure_message": result["log"][-300:],
-                        "status": "failed",
+                        "retry_count": retry_used, "timeout_hit": is_timeout,
+                        "failure_type": "build_timeout" if is_timeout else "build",
+                        "failure_message": result["log"][-300:],
+                        "status": "failed" if not (is_timeout and attempt == 0 and may_retry) else "retrying",
                     })
+                    # build_timeout เป็นความล้มเหลวชั่วคราว (เครื่องช้า/โหลดสูง) จึงเข้า
+                    # นโยบาย retry-once เดียวกับ runtime hang — ยังถูกข้ามถ้า budget > 600s
+                    if is_timeout and attempt == 0 and may_retry:
+                        retry_used = 1
+                        print("-- transient build timeout, retrying once at the same n")
+                        continue
+                    wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"], result["ram_pct"],
+                                      build_status, ts, retry_used,
+                                      budget_s, round(expected_s, 1), retry_policy])
+                    wall_f.flush()
                     session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
-                    wall_found = True
+                    wall_found = rs.stops_climbing(build_status)
                     break
 
                 time.sleep(BOOT_WAIT_S)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
@@ -451,7 +485,12 @@ def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
                     session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="ok")
                     break
 
-                status = f"runtime_hang_or_reset({note})"
+                # ถ้าเวลาต่อ rep ที่ประเมินไว้เกินเกณฑ์ WDT ของบอร์ดนี้ การที่บอร์ดเงียบ
+                # มีคำอธิบายที่เป็นไปได้มากกว่าหน่วยความจำ — บันทึกแยก และห้ามตีความเป็น
+                # Memory Wall (ดู timing_model.watchdog_suspected, finding H1)
+                wdt_suspected = tm.watchdog_suspected("uno", circuit, n, args.wdt_threshold_s)
+                status = (f"watchdog_suspected({note})" if wdt_suspected
+                          else f"runtime_hang_or_reset({note})")
                 tel.write_point_row({
                     "session_id": session.session_id, "phase": 2, "board": "uno",
                     "circuit": circuit, "n": n, "attempt_index": attempt,
@@ -461,25 +500,27 @@ def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
                     "upload_s": round(result["upload_s"], 3),
                     "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
                     "retry_count": retry_used, "timeout_hit": True,
-                    "failure_type": "hang", "failure_message": note,
+                    "failure_type": "watchdog_suspected" if wdt_suspected else "hang",
+                    "failure_message": note,
                     "status": "failed" if not (attempt == 0 and may_retry) else "retrying",
                 })
 
                 if attempt == 0 and may_retry:
                     retry_used = 1
                     print(f"NO 'DONE' within {budget_s}s -> {status}  "
-                          "-- transient failure, retrying once at same n before declaring "
-                          "Memory Wall (deviation from n=30 methodology, see run_log.md)")
+                          "-- transient failure, retrying once at same n "
+                          "(deviation from n=30 methodology, see run_log.md)")
                     continue
 
                 tail = "(after retry)" if retry_used else f"(no retry: {retry_policy})"
-                print(f"NO 'DONE' within {budget_s}s -> {status} {tail}")
+                note_wall = "" if rs.is_wall_status(status) else "  [NOT recorded as a Memory Wall]"
+                print(f"NO 'DONE' within {budget_s}s -> {status} {tail}{note_wall}")
                 wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"], result["ram_pct"],
                                   status, ts, retry_used,
                                   budget_s, round(expected_s, 1), retry_policy])
                 wall_f.flush()
                 session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
-                wall_found = True
+                wall_found = rs.stops_climbing(status)
 
             if wall_found:
                 break

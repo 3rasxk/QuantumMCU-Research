@@ -122,49 +122,55 @@ def find_port(board: str, hint: str) -> str:
     return candidates[0]
 
 
-def build_and_upload(board: str, circuit: str, n: int, baud: int, port_hint: str):
+def build_and_upload(board: str, circuit: str, n: int, baud: int, port_hint: str,
+                      build_timeout_s=None):
     """แยก compile กับ upload เป็นสอง subprocess (เดิมเป็นคำสั่งเดียว `-t upload`) เพื่อ
     จับเวลาแยกกันได้จริง — ดู uno_sweep.py::build_and_upload สำหรับเหตุผลเต็ม
 
     คืน dict (ไม่ใช่ tuple)"""
+    if build_timeout_s is None:
+        build_timeout_s = tm.BUILD_TIMEOUT_S
     cfg = BOARDS[board]
     port = find_port(board, port_hint)
     env = os.environ.copy()
     env.update({"N_QUBITS": str(n), "CIRCUIT_ID": str(CIRCUIT_IDS[circuit]), "BAUD_RATE": str(baud)})
 
+    timed_out = False
     t0 = time.perf_counter()
     try:
         proc = subprocess.run(
             [PIO, "run", "-e", cfg["env"]],
-            cwd=str(cfg["fw_dir"]), env=env, capture_output=True, text=True, timeout=150,
+            cwd=str(cfg["fw_dir"]), env=env, capture_output=True, text=True, timeout=build_timeout_s,
         )
         c_stdout, c_stderr, c_rc = proc.stdout, proc.stderr, proc.returncode
     except subprocess.TimeoutExpired as e:
         c_stdout = (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
-        c_stderr = "pio run (compile) timed out after 150s"
+        c_stderr = f"pio run (compile) timed out after {build_timeout_s}s"
         c_rc = -1
+        timed_out = True
     compile_s = time.perf_counter() - t0
 
     if c_rc != 0:
         return {"ok": False, "log": c_stdout[-3000:] + c_stderr[-1500:], "port": port,
-                "compile_s": compile_s, "upload_s": 0.0}
+                "compile_s": compile_s, "upload_s": 0.0, "timed_out": timed_out}
 
     t0 = time.perf_counter()
     try:
         proc = subprocess.run(
             [PIO, "run", "-e", cfg["env"], "-t", "upload", "--upload-port", port],
-            cwd=str(cfg["fw_dir"]), env=env, capture_output=True, text=True, timeout=150,
+            cwd=str(cfg["fw_dir"]), env=env, capture_output=True, text=True, timeout=build_timeout_s,
         )
         u_stdout, u_stderr, u_rc = proc.stdout, proc.stderr, proc.returncode
     except subprocess.TimeoutExpired as e:
         u_stdout = (e.stdout or "") if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
-        u_stderr = "pio run (upload) timed out after 150s"
+        u_stderr = f"pio run (upload) timed out after {build_timeout_s}s"
         u_rc = -1
+        timed_out = True
     upload_s = time.perf_counter() - t0
 
     ok = u_rc == 0
     return {"ok": ok, "log": u_stdout[-3000:] + u_stderr[-1500:], "port": port,
-            "compile_s": compile_s, "upload_s": upload_s}
+            "compile_s": compile_s, "upload_s": upload_s, "timed_out": timed_out}
 
 
 def read_exact(ser, n, deadline):
@@ -280,6 +286,10 @@ def main():
     ap.add_argument("--force-infeasible", action="store_true",
                      help="พยายามรันจุดที่ timing_model บอกว่าเก็บครบ 100 reps ไม่ไหว "
                           "(ปกติจะข้ามพร้อมบันทึกเหตุผล)")
+    ap.add_argument("--build-timeout", dest="build_timeout_s", type=int, default=tm.BUILD_TIMEOUT_S,
+                     help=f"วินาทีสูงสุดต่อการเรียก pio run หนึ่งครั้ง (compile และ upload แยกกัน) "
+                          f"ค่าเริ่มต้น {tm.BUILD_TIMEOUT_S}s — timeout บันทึกเป็น build_timeout "
+                          f"ไม่ใช่ build_or_upload_fail (ดู docs/preflight_report.md H2)")
     ap.add_argument("--fresh", "--no-resume", dest="fresh", action="store_true",
                      help="ไม่ resume จากผลลัพธ์เดิม — ย้ายไฟล์ raw/session_log เดิมไปเป็น "
                           "*.pre-fresh-<timestamp>.csv (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด")
@@ -361,7 +371,9 @@ def main():
                 session.note_interruption_gap(gap)
         env_path = tel.write_environment_metadata(
             session.session_id, args.board, args.port, args.bauds[0], None,
-            BOARDS[args.board]["fw_dir"] / "src_offload")
+            BOARDS[args.board]["fw_dir"] / "src_offload",
+            pio_project_dir=BOARDS[args.board]["fw_dir"],
+            pio_env=BOARDS[args.board]["env"])
         session.env_json_path = str(env_path)
 
         _sweep_body(args, n_max, completed, infeasible, raw_f, meta_f, sim, session)
@@ -428,14 +440,20 @@ def _sweep_body(args, n_max, completed, infeasible, raw_f, meta_f, sim, session)
                 print(f"n={n:2d}  budget={budget_s}s ({per_req:.2f}s/request)  ", end="", flush=True)
 
                 attempt_start = datetime.now(timezone.utc).isoformat()
-                result = build_and_upload(args.board, circuit, n, baud, args.port)
+                result = build_and_upload(args.board, circuit, n, baud, args.port, args.build_timeout_s)
                 args.port = result["port"]
                 ts = datetime.now(timezone.utc).isoformat()
                 reflash_s = result["compile_s"] + result["upload_s"]
 
                 if not result["ok"]:
-                    print("UPLOAD/BUILD FAIL")
-                    meta_f.write(f"{args.board},{circuit},{n},{baud},build_or_upload_fail,0,0,0,,{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
+                    # timeout ของ toolchain ไม่ใช่ความล้มเหลวของบอร์ด และไม่ใช่กำแพง
+                    # (Phase 3 ไม่มี known-wall inference อยู่แล้ว แต่ยังต้องแยกให้ชัดในข้อมูล)
+                    build_status = rs.classify_build_failure(
+                        result["log"], None, result.get("timed_out", False))
+                    is_timeout = build_status == "build_timeout"
+                    print("BUILD TIMEOUT -> toolchain/host problem, NOT a board failure"
+                          if is_timeout else "UPLOAD/BUILD FAIL")
+                    meta_f.write(f"{args.board},{circuit},{n},{baud},{build_status},0,0,0,,{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
                     meta_f.flush()
                     print(result["log"][-600:])
                     tel.write_point_row({
@@ -444,8 +462,9 @@ def _sweep_body(args, n_max, completed, infeasible, raw_f, meta_f, sim, session)
                         "start_utc": attempt_start, "end_utc": ts, "wall_s": round(reflash_s, 3),
                         "build_compile_s": round(result["compile_s"], 3),
                         "upload_s": round(result["upload_s"], 3),
-                        "retry_count": 0, "timeout_hit": False,
-                        "failure_type": "build", "failure_message": result["log"][-300:],
+                        "retry_count": 0, "timeout_hit": is_timeout,
+                        "failure_type": "build_timeout" if is_timeout else "build",
+                        "failure_message": result["log"][-300:],
                         "status": "failed",
                     })
                     session.note_point(reflash_s=reflash_s, status="failed")
