@@ -16,8 +16,8 @@
 #
 # ---------------------------------------------------------------------------
 # ข้อตกลงชื่อไฟล์ capture (ต้องบันทึกไว้ที่นี่และใน run_checklist.md ให้ตรงกัน):
-#   data/raw/<board>/<circuit>/phase2/la/<board>_<circuit>_n<N>.csv
-#   เช่น data/raw/uno/h_all/phase2/la/uno_h_all_n2.csv
+#   data/raw/phase2/<board>/<circuit>/la/<board>_<circuit>_n<N>.csv
+#   เช่น data/raw/phase2/uno/h_all/la/uno_h_all_n2.csv
 #   (2026-09-20: ย้ายจาก data/raw/la/<board>_<circuit>_n<N>.csv เดิมที่ใช้ไดเรกทอรีเดียว
 #   ทุก board/circuit ร่วมกัน มาเป็นหนึ่งไดเรกทอรีต่อ circuit — ดู run_log.md)
 #   1 ไฟล์ = 1 จุดข้อมูล = REPS พัลส์ (ไม่ใช่ 1 ไฟล์ต่อ rep — capture ต่อเนื่องทั้ง
@@ -291,7 +291,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--la-dir", type=Path, required=True,
                      help="one circuit's own la/ dir, e.g. "
-                          "data/raw/uno/h_all/phase2/la (pc/shared/paths.la_dir)")
+                          "data/raw/phase2/uno/h_all/la (pc/shared/paths.la_dir)")
     ap.add_argument("--out", type=Path, default=None,
                      help="default: <la-dir>/la_crosscheck.csv (alongside the captures)")
     ap.add_argument("--plan", type=Path, default=None,

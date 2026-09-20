@@ -4,7 +4,7 @@
 # ที่วัดได้จริง (รันสำเร็จก่อนเจอ Memory Wall) แยกตามบอร์ด
 #
 # แหล่งข้อมูล: data/processed/phase2/memory_wall_summary.csv — ไฟล์นี้ถูกสร้างโดย
-# analysis/phase2_plot.py จากข้อมูลดิบ data/raw/<board>/<circuit>/phase2/memory_wall.csv
+# analysis/phase2_plot.py จากข้อมูลดิบ data/raw/phase2/<board>/<circuit>/memory_wall.csv
 # (เส้นทางเปลี่ยนเมื่อ 2026-09-20, ดู run_log.md) — ใช้ไฟล์สรุป
 # นี้ตรง ๆ แทนการคำนวณ theoretical_max_n ซ้ำ เพื่อไม่ให้ตัวเลขเพี้ยนกันระหว่างที่มา
 # วาดด้วย phase2_plot.draw_memory_wall() ตัวเดียวกัน ภาพจึงตรงกันทุกประการ — สคริปต์นี้มี
@@ -31,7 +31,7 @@ def main():
     if not MEMORY_WALL_SUMMARY_PATH.exists():
         raise SystemExit(
             f"error: {MEMORY_WALL_SUMMARY_PATH} not found. รัน analysis/phase2_plot.py ก่อน "
-            "เพื่อสร้างไฟล์นี้จากข้อมูลดิบ data/raw/<board>/<circuit>/phase2/memory_wall.csv"
+            "เพื่อสร้างไฟล์นี้จากข้อมูลดิบ data/raw/phase2/<board>/<circuit>/memory_wall.csv"
         )
     with open(MEMORY_WALL_SUMMARY_PATH, newline="") as f:
         summary = list(csv.DictReader(f))

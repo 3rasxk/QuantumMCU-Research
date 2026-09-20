@@ -48,7 +48,7 @@
 # ครบ 100 trial เพราะ trial จาก 2 sessions ไม่ใช่ตัวอย่างสม่ำเสมอเดียวกัน (บอร์ด reset/
 # reflash/อุณหภูมิเครื่องต่างกันระหว่าง session) ใช้ --fresh เพื่อย้ายผลลัพธ์เดิมออกไป
 # (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด — ดู pc/shared/resume.py สำหรับเหตุผลเต็ม ***
-#   3. เขียนทุกแถวลง data/raw/esp8266/<circuit>/phase2/raw.csv (ไฟล์ดิบ, append)
+#   3. เขียนทุกแถวลง data/raw/phase2/esp8266/<circuit>/raw.csv (ไฟล์ดิบ, append)
 #      และสรุปลง .../phase2/memory_wall.csv (คอลัมน์ retry_count: 0/1) — เส้นทางเปลี่ยน
 #      จาก data/raw/phase2/esp8266_*.csv เดิมเมื่อ 2026-09-20 (ดู pc/shared/paths.py)
 #

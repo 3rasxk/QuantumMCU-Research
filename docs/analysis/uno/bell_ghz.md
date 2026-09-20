@@ -1,6 +1,6 @@
 # Uno — bell_ghz — analysis
 
-Data: `data/raw/uno/bell_ghz/phase2/{raw.csv,memory_wall.csv,points.csv,sessions.csv}`,
+Data: `data/raw/phase2/uno/bell_ghz/{raw.csv,memory_wall.csv,points.csv,sessions.csv}`,
 commit `6d00ce8` (per `sessions.csv`'s `git_commit` column). REPS=100. Charts:
 `data/figures/uno/bell_ghz/{exec_time_vs_n,outcomes_vs_n,time_per_point}.png`.
 

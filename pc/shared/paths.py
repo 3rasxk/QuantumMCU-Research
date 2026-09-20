@@ -1,13 +1,17 @@
 # paths.py — single source of truth for where raw data, telemetry, Logic Analyzer
 # captures, and figures live. Introduced 2026-09-20 (see run_log.md, "per-board
-# per-algorithm layout") when data/raw/ and data/figures/ moved from one flat
-# directory per phase (data/raw/phase2/<board>_raw.csv, shared by every circuit)
-# to one directory per (board, algorithm, phase) -- every sweep/analysis script
-# must go through these functions instead of building the path by hand, so the
-# layout only ever needs to change in one place.
+# per-algorithm layout") when data/raw/ moved from one flat directory per phase
+# (data/raw/phase2/<board>_raw.csv, shared by every circuit) to one directory per
+# (phase, board, algorithm) -- every sweep/analysis script must go through these
+# functions instead of building the path by hand, so the layout only ever needs
+# to change in one place. Corrected same day (still 2026-09-20) to put phase
+# outermost -- data/raw/phase<N>/<board>/<circuit>/ -- matching the project's
+# existing phase-first convention (data/raw/phase1/, docs/manual_run_guide.md's
+# "data/raw/phase2/ and data/raw/phase3/" checks) instead of board-first.
 #
 # data/raw/phase1/ is untouched by this -- a different, pre-existing dataset with
-# its own layout (analysis/phase1_compare.py owns it), not part of this scheme.
+# its own layout (analysis/phase1_compare.py owns it), not part of this scheme
+# (it has no per-board/per-circuit split at all).
 
 from pathlib import Path
 
@@ -15,20 +19,20 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def raw_dir(board: str, circuit: str, phase: int = 2) -> Path:
-    """data/raw/<board>/<circuit>/phase<N>/ -- everything collected for one
+    """data/raw/phase<N>/<board>/<circuit>/ -- everything collected for one
     algorithm on one board in one phase: raw.csv, memory_wall.csv (phase 2) or
     session_log.csv (phase 3), points.csv, sessions.csv, env/, la/."""
-    return REPO_ROOT / "data" / "raw" / board / circuit / f"phase{phase}"
+    return REPO_ROOT / "data" / "raw" / f"phase{phase}" / board / circuit
 
 
 def la_dir(board: str, circuit: str, phase: int = 2) -> Path:
-    """.../phase<N>/la/ -- Logic Analyzer captures + capture_plan.csv +
+    """.../<circuit>/la/ -- Logic Analyzer captures + capture_plan.csv +
     capture_issues.log for this one (board, circuit)."""
     return raw_dir(board, circuit, phase) / "la"
 
 
 def env_dir(board: str, circuit: str, phase: int = 2) -> Path:
-    """.../phase<N>/env/ -- one environment-metadata JSON per session."""
+    """.../<circuit>/env/ -- one environment-metadata JSON per session."""
     return raw_dir(board, circuit, phase) / "env"
 
 

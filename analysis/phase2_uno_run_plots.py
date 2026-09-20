@@ -14,7 +14,7 @@
 # warm-up exclusion), memory_wall.csv (per-point outcome + evidence), AND
 # points.csv (per-attempt compile/upload time and retry counts) all three
 # together (pc/shared/paths.py resolves all three under the same
-# data/raw/<board>/<circuit>/phase2/ directory) -- phase2_plot.py touches only
+# data/raw/phase2/<board>/<circuit>/ directory) -- phase2_plot.py touches only
 # the first two, pre-aggregated across every board/circuit, and never
 # per-attempt. Forcing this into phase2_plot.py would mean two incompatible
 # calling conventions (once-at-the-end vs once-per-algorithm) and two
@@ -65,14 +65,14 @@ def _board_sram_bytes(board):
 
 
 def _known_circuits(board):
-    """Every circuit this board has a raw/ phase2 directory for, discovered by
-    listing data/raw/<board>/ -- used only by plot_cumulative to find what to
+    """Every circuit this board has a raw.csv for, discovered by listing
+    data/raw/phase2/<board>/ -- used only by plot_cumulative to find what to
     include, since circuits are no longer listed anywhere centrally."""
-    base = REPO_ROOT / "data" / "raw" / board
+    base = REPO_ROOT / "data" / "raw" / "phase2" / board
     if not base.exists():
         return []
     return sorted(p.name for p in base.iterdir()
-                  if p.is_dir() and (p / "phase2" / "raw.csv").exists())
+                  if p.is_dir() and (p / "raw.csv").exists())
 
 
 def load_raw(board, circuit):

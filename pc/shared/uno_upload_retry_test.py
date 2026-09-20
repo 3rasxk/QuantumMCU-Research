@@ -21,7 +21,7 @@
 #
 #   path layout: every circuit in --circuits is now its own directory (own
 #   raw.csv/memory_wall.csv/points.csv/sessions.csv/env/) under
-#   data/raw/<board>/<circuit>/phase<N>/ (pc/shared/paths.py) instead of one
+#   data/raw/phase<N>/<board>/<circuit>/ (pc/shared/paths.py) instead of one
 #   shared file per board across all circuits -- redirected in tests by
 #   setting paths.REPO_ROOT to a scratch dir, the same mechanism every caller
 #   uses (paths.py's functions read REPO_ROOT as a module global at call time,
@@ -422,7 +422,7 @@ def test_resume_skips_completed_points_on_second_invocation(scratch: Path):
 
 def test_paths_helper_resolves_per_board_per_algorithm_layout(scratch: Path):
     """pc/shared/paths.py itself: every function resolves to
-    data/raw/<board>/<circuit>/phase<N>/... under whatever REPO_ROOT is set to
+    data/raw/phase<N>/<board>/<circuit>/... under whatever REPO_ROOT is set to
     at call time (not at import/def time -- the same late-binding requirement
     telemetry.py's write_point_row docstring documents)."""
     from shared import paths as sp
@@ -430,22 +430,22 @@ def test_paths_helper_resolves_per_board_per_algorithm_layout(scratch: Path):
     sp.REPO_ROOT = root
 
     check("paths: raw_dir",
-          sp.raw_dir("uno", "h_all", phase=2) == root / "data/raw/uno/h_all/phase2")
+          sp.raw_dir("uno", "h_all", phase=2) == root / "data/raw/phase2/uno/h_all")
     check("paths: raw_csv_path",
-          sp.raw_csv_path("uno", "h_all", phase=2) == root / "data/raw/uno/h_all/phase2/raw.csv")
+          sp.raw_csv_path("uno", "h_all", phase=2) == root / "data/raw/phase2/uno/h_all/raw.csv")
     check("paths: memory_wall_csv_path",
           sp.memory_wall_csv_path("uno", "h_all", phase=2)
-          == root / "data/raw/uno/h_all/phase2/memory_wall.csv")
+          == root / "data/raw/phase2/uno/h_all/memory_wall.csv")
     check("paths: points_csv_path",
           sp.points_csv_path("uno", "h_all", phase=2)
-          == root / "data/raw/uno/h_all/phase2/points.csv")
+          == root / "data/raw/phase2/uno/h_all/points.csv")
     check("paths: sessions_csv_path",
           sp.sessions_csv_path("uno", "h_all", phase=2)
-          == root / "data/raw/uno/h_all/phase2/sessions.csv")
+          == root / "data/raw/phase2/uno/h_all/sessions.csv")
     check("paths: env_dir",
-          sp.env_dir("uno", "h_all", phase=2) == root / "data/raw/uno/h_all/phase2/env")
+          sp.env_dir("uno", "h_all", phase=2) == root / "data/raw/phase2/uno/h_all/env")
     check("paths: la_dir",
-          sp.la_dir("uno", "h_all", phase=2) == root / "data/raw/uno/h_all/phase2/la")
+          sp.la_dir("uno", "h_all", phase=2) == root / "data/raw/phase2/uno/h_all/la")
     check("paths: figures_dir per-circuit",
           sp.figures_dir("uno", "h_all") == root / "data/figures/uno/h_all")
     check("paths: figures_dir cumulative (circuit=None)",
@@ -457,24 +457,24 @@ def test_paths_helper_resolves_per_board_per_algorithm_layout(scratch: Path):
     root2 = scratch / "paths_helper_2"
     sp.REPO_ROOT = root2
     check("paths: REPO_ROOT reassignment takes effect without reimport (late-bound)",
-          sp.raw_csv_path("uno", "h_all", phase=2) == root2 / "data/raw/uno/h_all/phase2/raw.csv")
+          sp.raw_csv_path("uno", "h_all", phase=2) == root2 / "data/raw/phase2/uno/h_all/raw.csv")
 
 
 def test_two_algorithms_get_two_separate_directories_and_nothing_leaks(scratch: Path):
     """Mocked dry run of two algorithms in one invocation: confirms each gets
-    its own data/raw/uno/<circuit>/phase2/ directory (raw.csv, memory_wall.csv,
+    its own data/raw/phase2/uno/<circuit>/ directory (raw.csv, memory_wall.csv,
     points.csv, sessions.csv, env/*.json all present and non-empty for both),
-    and that nothing is written anywhere else under data/raw/uno/ (no stray
-    files outside the two expected per-circuit trees)."""
+    and that nothing is written anywhere else under data/raw/phase2/uno/ (no
+    stray files outside the two expected per-circuit trees)."""
     us, tel, sp = _fresh_uno_sweep(scratch / "two_algorithms")
     _install_read_serial_trials(us, n_rows=5)
     us.build_and_upload = lambda circuit, n, port_hint, build_timeout_s=None: _ok_result()
 
     _run(us, ["h_all", "bell_ghz"], 2, 2)
 
-    uno_root = sp.REPO_ROOT / "data" / "raw" / "uno"
+    uno_root = sp.REPO_ROOT / "data" / "raw" / "phase2" / "uno"
     all_files = sorted(p.relative_to(uno_root) for p in uno_root.rglob("*") if p.is_file())
-    expected_prefixes = ("h_all/phase2/", "bell_ghz/phase2/")
+    expected_prefixes = ("h_all/", "bell_ghz/")
     check("two algorithms: at least raw.csv+memory_wall.csv+points.csv+sessions.csv+1 env "
           "json exist for BOTH circuits",
           all((sp.raw_dir("uno", c, 2) / f).exists()
@@ -482,8 +482,8 @@ def test_two_algorithms_get_two_separate_directories_and_nothing_leaks(scratch: 
               for f in ("raw.csv", "memory_wall.csv", "points.csv", "sessions.csv"))
           and len(list(sp.env_dir("uno", "h_all", 2).glob("*.json"))) >= 1
           and len(list(sp.env_dir("uno", "bell_ghz", 2).glob("*.json"))) >= 1)
-    check("two algorithms: every file under data/raw/uno/ lives under one of the two "
-          "circuits' own phase2/ directory -- nothing leaked elsewhere",
+    check("two algorithms: every file under data/raw/phase2/uno/ lives under one of the "
+          "two circuits' own directory -- nothing leaked elsewhere",
           all(str(f).startswith(expected_prefixes) for f in all_files), all_files)
     check("two algorithms: h_all's raw.csv contains only h_all rows (no cross-contamination)",
           all(row["circuit"] == "h_all"

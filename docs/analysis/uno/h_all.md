@@ -1,6 +1,6 @@
 # Uno — h_all — analysis
 
-Data: `data/raw/uno/h_all/phase2/{raw.csv,memory_wall.csv,points.csv,sessions.csv}`,
+Data: `data/raw/phase2/uno/h_all/{raw.csv,memory_wall.csv,points.csv,sessions.csv}`,
 commit `ef1546b` (per `sessions.csv`'s `git_commit` column). REPS=100. Charts:
 `data/figures/uno/h_all/{exec_time_vs_n,outcomes_vs_n,time_per_point}.png`.
 
@@ -107,7 +107,7 @@ distinct-value counts above), not split into two separated clusters.
 ## The wall
 
 **n=8.** Evidence: `compile_ram_used_bytes=2250` / `TOTAL_SRAM_BYTES=2048`
-= **109.9%**, recorded in `data/raw/uno/h_all/phase2/memory_wall.csv`. The
+= **109.9%**, recorded in `data/raw/phase2/uno/h_all/memory_wall.csv`. The
 Uno linker (avr-ld) exited 0 anyway — this is the documented L2 toolchain
 quirk (`docs/preflight_report.md`) — so per standing decision 2 the point
 was still run once for the observed behaviour: upload succeeded, but the

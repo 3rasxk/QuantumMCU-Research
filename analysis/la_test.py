@@ -411,15 +411,15 @@ def main():
     # as a belt-and-suspenders check
     real_la_dir = REPO_ROOT / "data" / "raw" / "la"
     real_telemetry_dir = REPO_ROOT / "data" / "raw" / "telemetry"
-    # current per-board-per-algorithm real data root (pc/shared/paths.py) -- every
-    # sp.REPO_ROOT reassignment in this file must be undone by test isolation
-    # (scratch dirs), never left pointed at the real repo
+    # current per-phase-per-board-per-algorithm real data root (pc/shared/paths.py)
+    # -- every sp.REPO_ROOT reassignment in this file must be undone by test
+    # isolation (scratch dirs), never left pointed at the real repo
     real_raw_root = REPO_ROOT / "data" / "raw"
-    real_boards = {"uno", "esp8266", "esp32"}
+    real_phases = {"phase2", "phase3"}
     before_la = set(real_la_dir.glob("**/*")) if real_la_dir.exists() else set()
     before_tel = set(real_telemetry_dir.glob("**/*")) if real_telemetry_dir.exists() else set()
-    before_raw = {p for b in real_boards for p in (real_raw_root / b).glob("**/*")
-                  if (real_raw_root / b).exists()}
+    before_raw = {p for ph in real_phases for p in (real_raw_root / ph).glob("**/*")
+                  if (real_raw_root / ph).exists()}
     try:
         test_la_pulses(scratch / "pulses")
         test_la_crosscheck(scratch / "crosscheck")
@@ -428,11 +428,11 @@ def main():
         sp.REPO_ROOT = REPO_ROOT  # restore before the real-directory check below
         after_la = set(real_la_dir.glob("**/*")) if real_la_dir.exists() else set()
         after_tel = set(real_telemetry_dir.glob("**/*")) if real_telemetry_dir.exists() else set()
-        after_raw = {p for b in real_boards for p in (real_raw_root / b).glob("**/*")
-                     if (real_raw_root / b).exists()}
+        after_raw = {p for ph in real_phases for p in (real_raw_root / ph).glob("**/*")
+                     if (real_raw_root / ph).exists()}
         check("no test run touched the real data/raw/la/ directory", after_la == before_la)
         check("no test run touched the real data/raw/telemetry/ directory", after_tel == before_tel)
-        check("no test run touched the real data/raw/<board>/ directories",
+        check("no test run touched the real data/raw/phase*/ directories",
               after_raw == before_raw, after_raw - before_raw)
         shutil.rmtree(scratch, ignore_errors=True)
 

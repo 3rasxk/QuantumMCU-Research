@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # phase2_summarize.py
-# อ่านไฟล์ดิบ data/raw/<board>/<circuit>/phase2/raw.csv (ทุก board+circuit ที่มีข้อมูล
+# อ่านไฟล์ดิบ data/raw/phase2/<board>/<circuit>/raw.csv (ทุก board+circuit ที่มีข้อมูล
 # แล้ว — เส้นทางนี้เปลี่ยนจาก data/raw/phase2/{board}_raw.csv เดิมเมื่อ 2026-09-20, ดู
 # run_log.md "per-board per-algorithm layout") แล้วสรุปเป็น Median ± IQR ของ exec_time_us
 # จำแนกตาม board/circuit/n (รายงานแบบ Median ± IQR ตามระเบียบวิธี ไม่ใช่ Mean ± SD
@@ -24,7 +24,7 @@ PROCESSED_DIR = REPO_ROOT / "data" / "processed" / "phase2"
 
 def load_raw():
     rows = []
-    for path in sorted(RAW_ROOT.glob("*/*/phase2/raw.csv")):
+    for path in sorted(RAW_ROOT.glob("phase2/*/*/raw.csv")):
         # data/raw/phase1/ never matches this glob shape (no phase2/raw.csv under it)
         with open(path, newline="") as f:
             for r in csv.DictReader(f):
@@ -35,7 +35,7 @@ def load_raw():
 def main():
     rows = load_raw()
     if not rows:
-        print(f"no raw.csv files found under {RAW_ROOT}/*/*/phase2/")
+        print(f"no raw.csv files found under {RAW_ROOT}/phase2/*/*/")
         return
 
     groups = {}

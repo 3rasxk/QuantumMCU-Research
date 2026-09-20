@@ -5,7 +5,7 @@
 #      Median + แถบ IQR จาก data/processed/phase2/summary.csv
 #      -> data/figures/phase2/exec_time_vs_n.{png,svg}
 #   2. Memory Wall: n สูงสุดตามทฤษฎี (2^n*8 <= SRAM) เทียบ n สูงสุดที่วัดได้จริง
-#      จาก data/raw/<board>/<circuit>/phase2/memory_wall.csv (ทุก board+circuit — เส้นทาง
+#      จาก data/raw/phase2/<board>/<circuit>/memory_wall.csv (ทุก board+circuit — เส้นทาง
 #      นี้เปลี่ยนจาก data/raw/phase2/*_memory_wall.csv เดิมเมื่อ 2026-09-20, ดู run_log.md
 #      "per-board per-algorithm layout")
 #      -> data/processed/phase2/memory_wall_summary.csv
@@ -60,7 +60,7 @@ def load_summary():
 
 def load_memory_wall():
     rows = []
-    for path in sorted(RAW_ROOT.glob("*/*/phase2/memory_wall.csv")):
+    for path in sorted(RAW_ROOT.glob("phase2/*/*/memory_wall.csv")):
         with open(path, newline="") as f:
             rows.extend(csv.DictReader(f))
     return rows
@@ -234,7 +234,7 @@ def main():
     wall_rows = load_memory_wall()
     if not summary_rows and not wall_rows:
         raise SystemExit(f"error: no data. ต้องมี {SUMMARY_PATH} (รัน analysis/phase2_summarize.py) "
-                         f"หรือ {RAW_ROOT}/*/*/phase2/memory_wall.csv")
+                         f"หรือ {RAW_ROOT}/phase2/*/*/memory_wall.csv")
     ps.apply_style()
     if summary_rows:
         plot_exec_time(summary_rows)

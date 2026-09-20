@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # timing_report.py — อ่าน telemetry sessions.csv/points.csv ของทุก (board, circuit, phase)
 # ภายใต้ data/raw/ (2026-09-20: ย้ายจากไฟล์รวมเดียว data/raw/telemetry/{sessions,points}.csv
-# มาเป็นไฟล์แยกต่อ board+circuit ใน data/raw/<board>/<circuit>/phase<N>/ — ดู run_log.md
+# มาเป็นไฟล์แยกต่อ board+circuit ใน data/raw/phase<N>/<board>/<circuit>/ — ดู run_log.md
 # "per-board per-algorithm layout" และ pc/shared/paths.py) แล้วสรุป:
 #   1. actual vs estimated ต่อ session, ต่อวงจร, ต่อ phase
 #   2. ค่ามัธยฐานของ reflash (compile_s + upload_s) ที่วัดจริงต่อบอร์ด — ใช้แทนที่
@@ -36,7 +36,7 @@ def load_all(filename):
     (board, circuit, phase) directory under data/raw/ -- these used to be one
     shared file, now split per algorithm (see module header)."""
     rows = []
-    for path in sorted(RAW_ROOT.glob(f"*/*/phase*/{filename}")):
+    for path in sorted(RAW_ROOT.glob(f"phase*/*/*/{filename}")):
         rows.extend(load_rows(path))
     return rows
 
