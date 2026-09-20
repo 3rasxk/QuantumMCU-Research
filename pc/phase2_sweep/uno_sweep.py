@@ -75,6 +75,7 @@ from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
+from shared import la_capture as lac  # noqa: E402
 
 RESUME_KEY_SPEC = [("circuit", str), ("n", int)]
 
@@ -238,7 +239,28 @@ def main():
     ap.add_argument("--fresh", "--no-resume", dest="fresh", action="store_true",
                      help="ไม่ resume จากผลลัพธ์เดิม — ย้ายไฟล์ raw/memory_wall เดิมไปเป็น "
                           "*.pre-fresh-<timestamp>.csv (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด")
+    ap.add_argument("--la", action="store_true",
+                     help="เปิด Logic Analyzer capture ผ่าน sigrok-cli ต่อจุดข้อมูล "
+                          "(ค่าเริ่มต้นปิด — พฤติกรรมเมื่อปิดเหมือนเดิมทุกประการ ไม่มีการ "
+                          "เรียก sigrok-cli เลยแม้แต่ครั้งเดียว) UNVERIFIED: sigrok-cli "
+                          "command lines ไม่เคยรันกับฮาร์ดแวร์จริง (ดู "
+                          "pc/shared/la_capture.py และ run_checklist.md ส่วน 'sigrok-cli "
+                          "command lines — UNVERIFIED') ต้องมี "
+                          "data/raw/la/capture_plan.csv อยู่แล้ว (จาก "
+                          "analysis/la_capture_plan.py) และ sigrok-cli บน PATH พร้อม "
+                          "อุปกรณ์ที่ตรวจเจอ ไม่งั้นจะรันต่อโดยไม่ capture (ไม่ใช่ error)")
     args = ap.parse_args()
+
+    # --la ปิด (ค่าเริ่มต้น): la_active คงเป็น False เสมอ ไม่มีการเรียก lac.* แม้แต่ครั้ง
+    # เดียวตลอดทั้งการรัน — พฤติกรรมจึงเหมือนก่อนมี flag นี้ทุกประการ (ดู
+    # pc/shared/la_capture_test.py "flag off = unchanged behavior")
+    la_active = False
+    if args.la:
+        scan = lac.check_sigrok()
+        print(f"[la] sigrok-cli check: {scan['note']}")
+        la_active = scan["available"]
+        if not la_active:
+            print("[la] continuing WITHOUT capture (sigrok-cli unavailable or no device found)")
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     raw_path = RESULTS_DIR / "uno_raw.csv"
@@ -320,7 +342,7 @@ def main():
         session.env_json_path = str(env_path)
 
         _sweep_body(args, completed, wall_n_by_circuit, infeasible,
-                    raw_w, raw_f, wall_w, wall_f, session)
+                    raw_w, raw_f, wall_w, wall_f, session, la_active)
 
     raw_f.close()
     wall_f.close()
@@ -329,7 +351,7 @@ def main():
 
 
 def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
-                 raw_w, raw_f, wall_w, wall_f, session):
+                 raw_w, raw_f, wall_w, wall_f, session, la_active=False):
     for circuit in args.circuits:
         print(f"\n=== circuit={circuit} ===")
         n_values = n_values_for_sweep(circuit, args.n_start, args.n_max)
@@ -409,12 +431,39 @@ def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
                 if attempt == 1:
                     print("(retry) ", end="", flush=True)
 
+                # --la: arm the capture BEFORE build_and_upload (compile+upload+the
+                # reset that actually starts the board running) — this can only add
+                # time to the reflash phase (PC-side, outside any timed region), never
+                # to the GPIO pulse or the micros() window it brackets.
+                armed = None
+                plan_entry = None
+                if la_active:
+                    plan_entry = lac.load_plan_entry("uno", circuit, n)
+                    if plan_entry is None:
+                        lac.log_issue("uno", circuit, n,
+                                      "no data/raw/la/capture_plan.csv entry for this point "
+                                      "— skipping capture (run analysis/la_capture_plan.py first)")
+                    else:
+                        out_path = lac.LA_DIR / f"uno_{circuit}_n{n}.csv"
+                        armed = lac.arm_capture("uno", circuit, n, plan_entry, out_path)
+                        if armed is None:
+                            print(f"[la] failed to arm capture for {circuit} n={n} "
+                                  "— continuing without capture for this point")
+
                 attempt_start = datetime.now(timezone.utc).isoformat()
                 result = build_and_upload(circuit, n, args.port, args.build_timeout_s)
                 ts = datetime.now(timezone.utc).isoformat()
                 args.port = result["port"]  # จำ port ล่าสุดที่ใช้สำเร็จ ไว้เป็น hint รอบถัดไป
                 reflash_s = result["compile_s"] + result["upload_s"]
                 point_reflash_s += reflash_s
+
+                if armed is not None and not result["ok"]:
+                    # board never ran (build/upload failed before the reset that
+                    # starts it) — discard the capture, don't run analysis on it.
+                    # This must not touch the micros()/build failure handling below.
+                    lac.stop_capture(armed, "uno", circuit, n)
+                    lac.log_issue("uno", circuit, n, "build/upload failed — capture discarded")
+                    armed = None
 
                 if not result["ok"]:
                     # แยกสาเหตุก่อนตัดสิน: timeout ของ toolchain ไม่ใช่กำแพง และ retry ได้
@@ -459,6 +508,23 @@ def _sweep_body(args, completed, wall_n_by_circuit, infeasible,
                 done, rows, note = read_serial_trials(find_uno_port(args.port), circuit, n, budget_s)
                 device_exec_s = time.perf_counter() - exec_t0
                 point_device_s += device_exec_s
+
+                # --la: stop the capture after the point (regardless of the outcome
+                # timed above, which is already fixed by this point) and only run
+                # the analysis scripts if the point actually produced micros() data
+                # to cross-check against. A capture/analysis problem is logged and
+                # never changes `done`, `rows`, or anything written below.
+                if armed is not None:
+                    cap_ok = lac.stop_capture(armed, "uno", circuit, n)
+                    if cap_ok and done:
+                        expected_reps = plan_entry["n_reps_to_capture"] if plan_entry else len(rows)
+                        lac.run_analysis("uno", circuit, n, armed.out_path, expected_reps)
+                    elif cap_ok and not done:
+                        lac.log_issue("uno", circuit, n,
+                                      "point did not complete (no DONE) — capture kept on disk "
+                                      "but not analyzed, no micros() data to cross-check against")
+                    armed = None
+
                 attempt_end = datetime.now(timezone.utc).isoformat()
 
                 if done:
