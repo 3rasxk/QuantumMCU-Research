@@ -1,0 +1,11 @@
+schema_version,session_id,phase,board,circuit,n,baud,attempt_index,start_utc,end_utc,wall_s,build_compile_s,upload_s,boot_wait_s,device_exec_s,pc_sim_s_total,pc_sim_s_median,serial_transfer_s_total,avg_round_trip_latency_s,crc_error_count,bytes_transferred,retry_count,timeout_hit,failure_type,failure_message,status
+2,20260920T161459-14ed6837,2,uno,steane_encode,7,,0,2026-09-20T16:15:01.848301+00:00,2026-09-20T16:15:15.371435+00:00,13.522,6.33,7.192,,,,,,,,,0,False,build,"k you.
+
+*** [upload] Error 1
+========================== [FAILED] Took 6.65 seconds ==========================
+Environment    Status    Duration
+-------------  --------  ------------
+uno            FAILED    00:00:06.648
+==================== 1 failed, 0 succeeded in 00:00:06.648 ====================
+",retrying
+2,20260920T161459-14ed6837,2,uno,steane_encode,7,,1,2026-09-20T16:15:17.381399+00:00,2026-09-20T16:15:26.507511+00:00,9.119,1.348,3.211,1.0,3.56,,,,,,,1,False,none,,ok
