@@ -1,0 +1,8 @@
+board,circuit,n,theoretical_bytes,compile_ram_used_bytes,compile_ram_pct,status,timestamp_utc,retry_count,timeout_budget_s,expected_point_s,retry_policy
+uno,qpe,2,32,232,11.3,ok,2026-09-20T15:46:59.232492+00:00,0,90,0.1,allowed
+uno,qpe,3,64,264,12.9,ok,2026-09-20T15:47:08.152653+00:00,0,90,0.2,allowed
+uno,qpe,4,128,328,16.0,ok,2026-09-20T15:47:16.600437+00:00,0,90,0.5,allowed
+uno,qpe,5,256,456,22.3,ok,2026-09-20T15:47:25.240761+00:00,0,90,1.4,allowed
+uno,qpe,6,512,712,34.8,ok,2026-09-20T15:47:35.313497+00:00,0,90,3.6,allowed
+uno,qpe,7,1024,1224,59.8,ok,2026-09-20T15:47:47.554044+00:00,0,90,8.9,allowed
+uno,qpe,8,2048,2248,109.8,build_overflow,2026-09-20T15:48:05.227964+00:00,0,90,21.7,allowed
