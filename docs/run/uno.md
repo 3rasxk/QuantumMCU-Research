@@ -16,6 +16,26 @@ circuit's real wall so far has landed at `n=8`, so a run with the default
 before `n=14` is ever reached) — pass `--n-max 8` yourself if you want a
 tighter, faster command for a circuit you already expect to wall at 8.
 
+**`--fresh` changed 2026-09-21** (see `README.md`'s "Fresh runs and the
+archive" and `run_log.md`'s 2026-09-21 entry): it now archives existing
+data to `data/archive/` (moved, not deleted) instead of the delegated
+script's own in-place rename, and defaults `--n-start` to each circuit's own
+minimum *meaningful* `n` instead of a uniform 2:
+
+| Algorithm | Fresh default `--n-start` |
+|---|---|
+| `h_all`, `qft` | 1 |
+| `bell_ghz`, `grover` | 2 |
+| `qpe` | 3 |
+| `steane_encode` | 7 (unchanged, fixed) |
+
+An explicit `--n-start` below that minimum is clamped up with a notice on a
+`--fresh` run; non-fresh runs are unaffected (still default to 2 if
+omitted, exactly as before). The Uno's own wall is structural
+(`theoretical_bytes = 2^n * 8`, independent of circuit), so n=1 vs n=2 makes
+no difference to whether or where the wall lands — this only changes how
+low a fresh sweep starts, not the ceiling.
+
 | Algorithm | `n` range (`--n-start 2`, default `--n-max`) | Expected points | ESTIMATE (device time only, `timing_model.py`, naive) | MEASURED device time: n=2..7 ok points / the n=8 wall attempt itself | Wall |
 |---|---|---|---|---|---|
 | `h_all` | 2–8 (wall), 9–14 never reached | 7 real + up to 6 skipped-by-wall | 20.8 min | **15.98s / 90.74s** (`data/raw/phase2/uno/h_all/points.csv`) | `build_overflow` at n=8, **109.9%** compile RAM |

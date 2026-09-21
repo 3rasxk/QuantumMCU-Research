@@ -35,3 +35,8 @@ pc/phase1_validate/phase1_validate
 
 # --- Microsoft Word lock files ---
 ~$*.docx
+
+# --- pc/run.py --fresh archive (moved-aside old data, never committed by
+#     design -- see README.md "Fresh runs and the archive" and
+#     run_log.md's 2026-09-21 entry) ---
+data/archive/

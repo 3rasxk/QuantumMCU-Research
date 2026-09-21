@@ -81,6 +81,9 @@ data/
   processed/            aggregated summaries (currently just .gitkeep --
                         not yet regenerated for the REPS=100 dataset)
   figures/<board>/<circuit>/*.png     per-run diagnostic charts, PNG only
+  archive/phase{2,3}/<board>/<circuit>/<timestamp>/   --fresh's archived
+                        data, moved not deleted, MANIFEST.json per folder --
+                        read by nothing in the pipeline, safe to delete
 
 docs/
   analysis/<board>/     per-circuit + comparison write-ups (OBSERVED vs
@@ -137,6 +140,12 @@ Requires [PlatformIO](https://platformio.org/) (`pio`) on `PATH`, or set
 
 ## Quick start
 
+**The owner may run any algorithm on any board at any time with `pc/run.py`,
+without waiting for approval** (standing decision, 2026-09-21 — see
+`run_log.md`). This applies only to the owner's own direct use of the
+runner; a task run through Claude Code still follows the one-algorithm-at-
+a-time, stop-and-report workflow.
+
 ```bash
 # 1. See what would run, without touching hardware:
 .venv/bin/python pc/run.py --board uno --algorithm h_all --phase 2 \
@@ -166,13 +175,14 @@ nothing here is invented.
 | `--build-timeout` | passed through unchanged | 300s |
 | `--upload-retry-settle-s` | passed through — **Uno Phase 2 only** | 2.0s |
 | `--la` | passed through — **Uno Phase 2 only**, UNVERIFIED (see Limitations) | off |
-| `--fresh` | passed through — archives (not deletes) existing results and starts over. See "never do this" in `docs/manual_run_guide.md`. | off |
-| `--dry-run` | print the resolved command and preflight info; never touches hardware or calls `pio` | off |
+| `--fresh` | **archives** (moves, never deletes) any existing data/figures/analysis doc for this (board, algorithm, phase) to `data/archive/`, then starts collection at the circuit's own minimum meaningful `n` — see "Fresh runs and the archive" below | off |
+| `--dry-run` | print the resolved command, the planned archive destination (if `--fresh`), and preflight info; never touches hardware, never calls `pio`, never moves a file | off |
 | `--yes` | skip the interactive y/n confirmation | off |
 
-One algorithm, one board, one phase per invocation — this mirrors the
-standing operator decision to collect one algorithm at a time (see below);
-`--algorithm` takes a single value, not a list.
+One algorithm, one board, one phase per invocation — `--algorithm` takes a
+single value, not a list. (This used to also mirror a strict "wait for
+approval" operator decision; that decision now applies only to Claude-Code-
+driven runs, not the owner's own — see Quick start above.)
 
 Per-board command tables (exact commands, expected point counts, estimated
 or measured times, expected walls) live in `docs/run/uno.md`,
@@ -181,6 +191,61 @@ every flag the underlying sweep scripts support that isn't listed above
 (there are a few, e.g. `--wdt-threshold-s`, `--n-start`/`--n-max` edge
 cases), see `docs/manual_run_guide.md`, which documents the scripts
 directly and is the fallback if `pc/run.py` doesn't cover your case.
+
+---
+
+## Fresh runs and the archive
+
+`--fresh` archives (moves, never deletes or copies) that (board, algorithm,
+phase)'s existing `data/raw/`, `data/figures/`, and
+`docs/analysis/<board>/<algorithm>.md` — whichever exist — to
+`data/archive/phase<N>/<board>/<algorithm>/<UTC timestamp>/`, with a
+`MANIFEST.json` (git commit/dirty flag/ref, the reason, the exact command,
+and a sha256 + row count per moved file, computed **before** the move so a
+failure never loses data). If the move or the manifest write fails for any
+reason, everything already moved is rolled back and the run aborts before
+any collection starts — proven in `pc/run_test.py`.
+
+**Nothing in the pipeline reads from `data/archive/`** — not `pc/`, not
+`analysis/`, not `resume.py`/`telemetry.py`, not the graph scripts, not the
+cumulative chart. This is proven, not just asserted:
+`pc/run_test.py`'s `test_archive_independence` greps the whole codebase (the
+only "archive" references outside `pc/run.py` are the unrelated, pre-
+existing `resume.archive_existing()`, an in-place `*.pre-fresh-<ts>.csv`
+rename inside the same directory) and separately runs the real analysis
+pipeline on a scratch copy, deletes `data/archive/` in that copy, and
+confirms byte-identical output (sha256 of every generated figure) before
+and after. **You can delete an archive folder at any time** with a plain
+`rm -r data/archive/phase<N>/<board>/<algorithm>/<timestamp>/` — the runner
+also prints this exact command at the end of every fresh run.
+`data/archive/` is gitignored — nothing under it is ever committed.
+
+**A fresh run starts at the circuit's own minimum *meaningful* `n`, not
+always 2** — investigated read-only against `firmware/common/circuits.hpp`,
+`analysis/phase1_compare.py`, and `pc/shared/timing_model.py` (full
+citations in `run_log.md`'s 2026-09-21 entry). No circuit crashes the
+firmware at n=1, but four of the six produce a degenerate, not-what-the-
+name-implies circuit below a stated minimum:
+
+| Circuit | Min `n` for `--fresh` | Why |
+|---|---|---|
+| `h_all` | 1 | 1-qubit superposition is a real, valid state |
+| `qft` | 1 | 1-qubit QFT literally IS a single H gate |
+| `bell_ghz` | 2 | n=1 runs (just H(0)) but produces no entanglement — not a Bell/GHZ state |
+| `grover` | 2 | no control qubit left for the oracle's multi-controlled-Z (stated in both the firmware source and `phase1_compare.py`, independently) |
+| `qpe` | 3 | n=1 has 0 counting qubits (pure no-op); n=2 has 1 (runs, but below the circuit's own stated 2-counting-qubit minimum) |
+| `steane_encode` | 7 | fixed, unchanged (Steane `[[7,1,3]]` code is defined on exactly 7 physical qubits) |
+
+An explicit `--n-start` below this minimum is clamped up with a printed
+notice on a `--fresh` run — never silently sent to the board, never logged
+as a failure or a wall. **No circuit has ever been Phase 1 (Qiskit)
+validated at n=1** — `analysis/phase1_compare.py`'s own default n-list
+starts at 2 for everything. `pc/shared/timing_model.py` does have a working
+timeout-budget estimate at n=1 for every circuit (verified by calling it —
+no exceptions), so this isn't a blind guess, just an unvalidated one.
+
+Non-fresh (resume/append) runs are **completely unchanged** by any of this —
+no new default, no clamping, exactly the pre-2026-09-21 behavior.
 
 ---
 
@@ -332,7 +397,7 @@ Read directly from `data/raw/phase2/uno/*/memory_wall.csv` and
 | Uno | 2 | `qft` | 2–7 ok, 8 wall | `build_overflow` at n=8, 109.8% compile RAM |
 | Uno | 2 | `qpe` | 2–7 ok, 8 wall | `build_overflow` at n=8, 109.8% compile RAM |
 | Uno | 2 | `steane_encode` | 7 (fixed) ok | no wall — fixed-n circuit never reaches the RAM threshold |
-| Uno | 2 | `grover` | not yet committed | collected once cleanly (n=2–7 ok, n=8 compute-infeasible skip per the 4h ceiling), then an operator-directed forced-n=8 re-run hit a real port collision between two concurrent processes; the resulting local files are uncommitted and untouched pending a clean re-run |
+| Uno | 2 | `grover` | none currently committed | collected once cleanly (n=2–7 ok, n=8 compute-infeasible skip per the 4h ceiling), then an operator-directed forced-n=8 re-run hit a real port collision between two concurrent processes; those leftover files (zero real trial rows survived — only failure records) were archived, not committed, to `data/archive/phase2/uno/grover/20260921T135125Z/` — `grover` needs a clean re-run via `pc/run.py` |
 | Uno | 3 | any | none | not yet run |
 | ESP8266 | 2/3 | any | none | not yet run — UNVERIFIED |
 | ESP32 | 2/3 | any | none | not yet run — UNVERIFIED |

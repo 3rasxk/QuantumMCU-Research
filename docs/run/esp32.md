@@ -19,6 +19,10 @@ UART0 on GPIO1/GPIO3 (never connect a Logic Analyzer there). `--la` is
 `pc/run.py`'s default `--n-max` for this board/phase is **18**
 (`pc/phase2_sweep/esp32_sweep.py`'s own argparse default, line 211).
 
+**`--fresh` changed 2026-09-21** — see `docs/run/uno.md`'s own note and
+`README.md`'s "Fresh runs and the archive". The per-circuit minimum-`n`
+defaults are board-independent, so they apply here identically.
+
 ## The same BOARD_GATE_COST caveat as ESP8266
 
 `timing_model.BOARD_GATE_COST["esp32"]` traces to the same deleted,

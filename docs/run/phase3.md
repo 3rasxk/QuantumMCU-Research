@@ -29,6 +29,13 @@ preflight summary for consistency, but you almost always want to pass an
 explicit `--n-max` — see the ranges below, matched to
 `docs/manual_run_guide.md`'s own established session split.
 
+**`--fresh` changed 2026-09-21** — see `docs/run/uno.md`'s own note and
+`README.md`'s "Fresh runs and the archive". The per-circuit minimum-`n`
+defaults are the same ones used for Phase 2 (`h_all`/`qft`=1,
+`bell_ghz`/`grover`=2, `qpe`=3, `steane_encode`=7 fixed) — Phase 3's own
+per-request cost model doesn't change what n=1 *means* for a circuit, only
+how expensive simulating it is.
+
 | Circuit set | `n` range | Points (per board) | ESTIMATE: PC-side sim time only |
 |---|---|---|---|
 | Cheap (`h_all`, `bell_ghz`, `qft`, `qpe`, `steane_encode`), `--n-max 8` | Uno | 29 | 2.4 min |

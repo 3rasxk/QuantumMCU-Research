@@ -117,6 +117,139 @@ see `pc/shared/resume.py` and `pc/shared/telemetry.py`):
 changes (`pc/phase2_sweep/uno_sweep.py`, new `pc/shared/uno_upload_retry_test.py`)
 land on. All Uno data collected from here on is under this tag.
 
+## Standing Operator Decisions — update (2026-09-21)
+
+Recorded verbatim from the project owner. **These two changes apply only to
+the owner's own runs via `pc/run.py`** — the "one algorithm at a time, stop
+and wait for 'go'" approval workflow (decision 3 above) is explicitly kept
+for any task run through Claude Code; only the owner's own direct use of the
+runner is freed from it.
+
+1. **The owner may run any algorithm on any board at any time with the
+   runner (`pc/run.py`), without waiting for approval from Claude Code or
+   from a report cycle.** Supersedes decision 3's "wait for go" for the
+   owner's own runs specifically — decision 3 itself (one-at-a-time REPS=100,
+   n from 2 upward, stop and report) is unchanged for anything run through
+   Claude Code.
+2. **A fresh run (`--fresh`) starts at n=1, or the circuit's own minimum
+   valid n where 1 isn't meaningful, and archives the old data instead of
+   deleting it.** Implemented entirely in `pc/run.py` (new code, no existing
+   collection path touched — `pc/shared/circuit_ids.py`, `resume.py`,
+   `telemetry.py`, and every delegated sweep script are unchanged):
+   - **Per-circuit minimum n** (`MIN_VALID_N` in `pc/run.py`), investigated
+     read-only against `firmware/common/circuits.hpp`,
+     `analysis/phase1_compare.py`, and `pc/shared/timing_model.py`. No
+     circuit crashes the C++ firmware at n=1 (no assert anywhere in
+     `qsim.hpp`; every circuit's `timing_model.gate_counts()` evaluates
+     cleanly at n=1 too — confirmed by actually calling it, not just reading
+     the code), but four of the six are semantically degenerate below a
+     stated minimum:
+     | Circuit | Min n | Why |
+     |---|---|---|
+     | `h_all` | 1 | 1-qubit superposition is a real, valid state; no stated minimum anywhere |
+     | `qft` | 1 | 1-qubit QFT literally IS a single H gate; no stated minimum |
+     | `bell_ghz` | 2 | `circuits.hpp:28` "n=2 คือ Bell state แท้ ๆ" — n=1 runs (just H(0), the CNOT loop is empty) but is not an entangled state at all |
+     | `grover` | 2 | `circuits.hpp:150` AND `analysis/phase1_compare.py:32`, independently: "no control qubit left for the oracle's multi-controlled-Z" |
+     | `qpe` | 3 | `circuits.hpp:194` "ต้องการ n >= 3"; `phase1_compare.py:33,40` independently filters its own n-list to n>=3 for qpe only. n=1 gives 0 counting qubits (pure no-op past eigenstate prep); n=2 gives 1 (runs, real but low-precision estimate) — still below this stated minimum |
+     | `steane_encode` | 7 | fixed, pre-existing (`FIXED_N_CIRCUITS`), unchanged |
+
+     **No circuit has ever been Phase 1 (Qiskit) validated at n=1** —
+     `analysis/phase1_compare.py:31`'s own `N_VALUES_DEFAULT` starts at 2 for
+     every circuit, always. `timing_model.py` DOES have a working estimate at
+     n=1 for every circuit (verified by calling it directly — no exceptions;
+     `qpe`'s own `gate_counts(1)=(2,0,1)` matches its actual n=1 firmware code
+     path exactly), so a fresh run's timeout budget at n=1 is not a guess,
+     just an unvalidated one.
+
+     **Notable, pre-existing fact surfaced by this investigation, not
+     something this change fixes:** this project's own real committed Uno
+     `qpe` data starts at n=2 (see `data/raw/phase2/uno/qpe/`,
+     `docs/analysis/uno/qpe.md`) — below `qpe`'s own stated minimum of 3, and
+     never Phase-1-validated at 2 either, since the standard sweep always
+     used a uniform `n-start=2` across every circuit with no per-circuit
+     floor. That existing data is untouched (non-fresh behavior is
+     unchanged) and remains valid, real, measured data; it just means "n=2"
+     in `qpe`'s dataset is a lower-precision point (1 counting qubit) than
+     the circuit's own design calls for, not a data-quality problem.
+   - **Explicit `--n-start` below the circuit's minimum is clamped up, with a
+     printed notice, on a `--fresh` run only** — never silently sent to the
+     board, never logged as a failure or a wall (it's simply never
+     attempted). Non-fresh (resume/append) runs are completely unchanged: no
+     new default, no clamping, exactly today's behavior.
+   - **Archive mechanism:** `--fresh` moves (never deletes, never copies)
+     that `(board, algorithm, phase)`'s existing `data/raw/`,
+     `data/figures/`, and `docs/analysis/<board>/<algorithm>.md` (whichever
+     exist) to `data/archive/phase<N>/<board>/<algorithm>/<UTC
+     timestamp>/`, with a `MANIFEST.json` (git commit/dirty/ref, reason, the
+     exact command, and a sha256 + row-count per moved file). Path is
+     **phase-outermost** (`data/archive/phase<N>/...`), matching
+     `pc/shared/paths.raw_dir()`'s own established convention exactly — the
+     board/algorithm/phase order first suggested was not used, to stay
+     consistent with the rest of the project (see the 2026-09-20 "folder
+     structure correction" entry below for why phase-outermost was chosen
+     originally). Hashing/row-counting happens **before** any file is moved;
+     if the move or the manifest write fails partway, everything already
+     moved is rolled back and the run aborts before any collection starts —
+     the original data is left byte-identical, proven in
+     `pc/run_test.py`. Never overwrites an existing archive folder (a
+     second `--fresh` of the same `(board, algorithm, phase)` gets its own,
+     later timestamp).
+   - **Independence proven, not just asserted:** grepped the whole codebase
+     for "archive" — every hit outside `pc/run.py`/`pc/run_test.py` is the
+     pre-existing, unrelated `resume.archive_existing()` (in-place
+     `*.pre-fresh-<ts>.csv` rename inside the same directory, a different
+     mechanism this change does not touch or call). Also proved by actually
+     running `analysis/phase2_uno_run_plots.py` against a real scratch copy
+     of the repo (real `h_all` data), populating `data/archive/` with a
+     dummy entry, deleting it, and confirming byte-identical sha256 on every
+     generated figure before and after (`pc/run_test.py`,
+     `test_archive_independence`).
+   - **Preflight relaxed for the owner's own runs:** a dirty git tree (or a
+     commit that isn't exactly on a known tag) is now a **warning**, printed
+     before the command, not a refusal — the run proceeds. The exact commit
+     hash and dirty flag are still recorded automatically in that session's
+     environment JSON (`telemetry.write_environment_metadata`'s existing
+     `git_commit`/`git_dirty` fields — pre-existing behavior, not a new
+     column, `telemetry.py` untouched). Kept as **hard refusals**: another
+     process already holding the port (`lsof`-checked); the port not
+     existing at all; the `--fresh` archive step failing for any reason;
+     an unsupported board/algorithm/phase/flag combination (e.g. `--la` off
+     the Uno). `--dry-run` still never touches hardware, never calls `pio`,
+     and now also never moves a file — it only *previews* the planned
+     archive destination and any n-start clamp.
+   - **Tests:** 42 checks in `pc/run_test.py` (was 16) — the full
+     36-combination dry-run table, unsupported-combo/missing-port/dirty-tree/
+     busy-port handling, `--reps` validation, per-circuit clamping (all six
+     circuits' defaults and an explicit-too-low case), fresh dry-run
+     preview text, real archive-move + manifest correctness (row counts and
+     sha256 checked against the pre-move originals), abort-on-failure
+     leaving the original byte-identical, two fresh runs of the same
+     circuit getting two distinct timestamps, and the independence proof
+     above. Full existing suite re-run to confirm nothing else broke:
+     `telemetry_test.py` 79, `la_capture_test.py` 19, `la_test.py` 59,
+     `uno_upload_retry_test.py` 57 (214 total, plus `timing_model.py`'s own
+     self-test) — all still 0 failed, and `git diff` confirms no existing
+     file under `pc/`, `firmware/`, or `analysis/` changed, only
+     `pc/run.py`/`pc/run_test.py`.
+
+**Leftover Grover files from the cancelled 2026-09-20 task, archived under
+this same mechanism** (`data/archive/phase2/uno/grover/20260921T135125Z/`,
+`reason: "leftover from cancelled task, code version unknown"`): `raw.csv`
+held **zero real trial rows** (header only) — every real per-rep measurement
+from that cancelled attempt was lost to the multi-process port collision
+described in that day's entries below, not recoverable from this leftover
+directory. `memory_wall.csv` held 4 rows, all `build_or_upload_fail` (n=2-5,
+`retry_count=2` each — 3 attempts exhausted), never `ok`, never a wall.
+`points.csv`: 15 rows (8 `retrying`, 5 `failed`, 2 `skipped_resume`), n=2-6.
+`sessions.csv`: 3 sessions, all citing `git_commit a0dbd3fa74e10564e9bf846aca3bc14924b516c9`
+(tag `pre-run-uno-v5`), two ending via `ConsecutiveUploadFailuresError`. The
+`docs/analysis/uno/grover.md` and 3 figures that were also archived alongside
+it **do** describe real data — they were generated earlier, from the
+original successful collection cycle, before the collision — but the raw
+data that would reproduce them no longer exists in this leftover directory
+(overwritten/lost during the collision); they're preserved as historical
+artifacts, not something to trust as reproducible from what's archived here.
+
 | Date | Reps | Boards/Circuits | Scope | Note | Git ref |
 |------|------|------------------|-------|------|---------|
 | 2026-09-19 | 100 | Uno/ESP8266/ESP32, all 6 circuits | prep, not yet run; hardware not touched | **Run-time timing/telemetry system added** (`pc/shared/telemetry.py`) so the real REPS=100 run produces measured numbers to replace the ~13.9h estimate, instead of another round of guessing. New, additive data layer under `data/raw/telemetry/` — does not touch the schema of `*_raw.csv` / `*_memory_wall.csv` / `*_session_log.csv`, which `pc/shared/resume.py` depends on and which is already tested; adding columns there was judged riskier than a parallel store. **Schema:** `sessions.csv` (one row per script invocation: phase, board, circuits, start/end UTC, wall-clock, device-time-sum and reflash-time-sum kept as two separate numbers — never pre-summed — point outcome counts including resumed-skips, time lost to interruption if resuming, estimated vs actual with their ratio, git commit); `points.csv` (one row per data-point attempt: `build_compile_s` and `upload_s` measured as two separate `pio run` invocations instead of one combined `-t upload` call — PlatformIO's own dependency tracking means this doesn't actually recompile twice, so real behavior is unchanged — plus `boot_wait_s`, `device_exec_s`, Phase-3-only `pc_sim_s_total`/`pc_sim_s_median`/`serial_transfer_s_total`/`avg_round_trip_latency_s`/`crc_error_count`/`bytes_transferred`, retry count, timeout flag, a `failure_type` enum, and status); one environment-metadata JSON per session (git commit + dirty flag, firmware source hash, PlatformIO/Python versions, board/port/baud/F_CPU, host OS/CPU, and a best-effort macOS sleep-prevention check via `pmset -g assertions` — Phase 3 timing is meaningless if the host suspends mid-session). All writes are append-only and flush per row, matching the existing resume contract; a resumed run adds new session/point rows rather than touching old ones, exactly like the terminal-record files already do. `analysis/timing_report.py` reads the logs and prints actual-vs-estimated per session/phase/algorithm plus the measured median reflash cost per board next to the current `REFLASH_COST_S` placeholder (report-only — does not edit `timing_model.py`; replacing the placeholder with measured values is a deliberate follow-up action, not a side effect of running the report). **Explicitly not implemented, per instruction, because it requires a firmware change:** heap/SRAM high-water-mark sampling *during* a circuit run — current firmware only samples before/after `run_circuit()` (already in `*_raw.csv` as `free_heap_before`/`free_heap_after`); getting a true minimum-during-execution would need periodic sampling inside the timed region itself (e.g. a timer interrupt), which would add overhead to the exact code path `micros()` is measuring. **Explicitly not implemented because it requires tooling this project doesn't have:** a true independent cross-check of `micros()` against a Logic Analyzer — `GPIO_TIMING_PIN` toggles already exist in every board's firmware (comment: "สำรองไว้ต่อ Logic Analyzer ในอนาคต") but nothing has ever actually captured them; no `logic_analyzer_exec_time_us`-style column was added to any schema, since a column with no way to populate it would misleadingly suggest data is pending. Verified without touching hardware: 31 checks in the committed `pc/shared/telemetry_test.py` (schema validation, append/never-overwrite across simulated resumes, a regression test for a real bug hit during development — a module-level path constant bound as a function's default parameter value at def-time silently ignores later reassignment of that module attribute, so all path defaults were changed to `None` sentinels resolved at call-time instead — and a full mocked dry-run of `uno_sweep.py` with `build_and_upload`/`read_serial_trials` replaced by fakes), plus separate ad hoc mocked dry-runs of `esp32_sweep.py`, `esp8266_sweep.py`, and the Phase 3 `sweep.py` exercising the Phase-3-only fields (pc-side simulation time, round-trip latency, bytes transferred, CRC count) and confirming the real `data/raw/telemetry/` directory was never touched by any test. | — |

@@ -5,10 +5,23 @@ while running — `run_log.md` is where you write down what happened *after*.
 
 `pc/run.py` (see `README.md`'s "Quick start", `docs/run/<board>.md`) wraps
 the per-command preflight steps this checklist walks through by hand
-(git tree, port, sleep prevention, resume state) for the common case of one
+(port, sleep prevention, resume state) for the common case of one
 algorithm/board/phase at a time. This checklist remains the full manual
 reference, including session planning and the Logic Analyzer procedure,
 which `pc/run.py` does not cover.
+
+**2026-09-21: the owner may run anything, anytime, via `pc/run.py`, without
+waiting for approval** — the strict "one algorithm at a time, stop and wait
+for go" workflow below now applies specifically to tasks run through Claude
+Code, not the owner's own direct use of the runner. A dirty git tree is now
+a warning for the owner's own runs (`pc/run.py`), not a refusal — the exact
+commit/dirty flag is still recorded automatically in the session's
+environment JSON either way. `--fresh` also changed: it now archives
+existing data to `data/archive/` (moved, not deleted, with a manifest)
+instead of the in-place rename described below, and defaults to each
+circuit's own minimum *meaningful* `n` rather than always 2 — see
+`README.md`'s "Fresh runs and the archive" and `run_log.md`'s 2026-09-21
+entry for the full per-circuit table and citations.
 
 **Resume is on by default in every script below.** If a session dies (USB
 drop, laptop sleep, you need to stop for the night), the fix is almost always:
