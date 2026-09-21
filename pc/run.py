@@ -12,12 +12,30 @@
 # `pio` itself — hardware access happens exclusively inside the delegated
 # subprocess, which is the same subprocess a human would start by hand
 # (see docs/manual_run_guide.md).
+#
+# 2026-09-21 standing-decision change (see run_log.md): the owner may now run
+# any algorithm/board/phase at any time via this runner without a Claude Code
+# approval round, and --fresh here means something new -- it ARCHIVES existing
+# data (data/archive/, moved not deleted, with a MANIFEST.json) instead of the
+# delegated scripts' own in-place *.pre-fresh-<ts>.csv rename, and a fresh run
+# starts at each circuit's own minimum *meaningful* n (not always 2) rather
+# than sending a degenerate point to real hardware. All of that logic is new
+# code in THIS file only -- pc/shared/circuit_ids.py, resume.py, telemetry.py,
+# and every delegated sweep script are untouched, and this file still never
+# passes --fresh through to them (see build_command): by the time it would
+# delegate, the archive step has already cleared the directory, so the
+# delegated script's own resume logic already sees a true fresh start on its
+# own, with no flag needed.
 
 import argparse
+import csv
 import glob
+import hashlib
+import json
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -52,6 +70,53 @@ DEFAULT_N_MAX = {
     3: {"uno": 22, "esp8266": 22, "esp32": 22},  # phase3_offload/sweep.py N_SAFETY_CAP
 }
 
+# The delegated scripts' own uniform default when --n-start is omitted (every
+# one of them: uno_sweep.py:325, esp8266_sweep.py:220, esp32_sweep.py:210,
+# phase3_offload/sweep.py:279 -- all "type=int, default=2", identical across
+# every circuit). Only used to describe today's status quo in notices below;
+# never changed for a non-fresh run (standing decision, see module docstring).
+LEGACY_UNIFORM_N_START_DEFAULT = 2
+
+# Per-circuit minimum n at which the circuit is actually MEANINGFUL, not just
+# "doesn't crash." Investigated read-only against firmware/common/circuits.hpp,
+# pc/shared/timing_model.py, and analysis/phase1_compare.py -- see run_log.md's
+# 2026-09-21 entry for the full table and citations. None of the six circuits
+# crash the C++ firmware at n=1 (confirmed: no assert in qsim.hpp, every
+# circuit's own gate-count formula in timing_model.py evaluates cleanly at
+# n=1), but four of them are semantically degenerate below this value:
+#   h_all:         1  -- 1-qubit superposition is a real, valid state (no stated minimum)
+#   qft:           1  -- 1-qubit QFT literally IS a single H gate (no stated minimum)
+#   bell_ghz:      2  -- circuits.hpp:28 "n=2 คือ Bell state แท้ ๆ" -- n=1 runs
+#                        (just H(0), the CNOT loop is empty) but produces no
+#                        entanglement at all, not a Bell/GHZ state by any reading
+#   grover:        2  -- circuits.hpp:150 AND analysis/phase1_compare.py:32,
+#                        both independently state n>=2 ("no control qubit left
+#                        for the oracle's multi-controlled-Z" / "-phase")
+#   qpe:           3  -- circuits.hpp:194 "ต้องการ n >= 3 (อย่างน้อย 2 counting
+#                        qubit + 1 eigenstate qubit)"; analysis/phase1_compare.py:33,40
+#                        independently filters its own default n-list to n>=3 for
+#                        qpe specifically. n=1 gives 0 counting qubits (pure
+#                        no-op past eigenstate prep); n=2 gives 1 counting qubit
+#                        (runs, produces a real but low-precision estimate) --
+#                        still below this stated minimum.
+#   steane_encode: 7  -- circuits.hpp:235-236, fixed n, "ห้ามเรียกที่ n อื่น"
+#                        ("forbidden to call at another n") -- pre-existing
+#                        FIXED_N_CIRCUITS, unchanged, just restated here
+#
+# No circuit has ever been Phase 1 (Qiskit) validated at n=1 --
+# analysis/phase1_compare.py:31's own N_VALUES_DEFAULT starts at 2 for every
+# circuit. This project's real committed Uno qpe data starts at n=2, which is
+# itself below qpe's own stated minimum of 3 and was never Phase-1-validated
+# either -- see docs/analysis/uno/qpe.md and run_log.md's 2026-09-21 entry.
+MIN_VALID_N = {
+    "h_all": 1,
+    "bell_ghz": 2,
+    "qft": 1,
+    "grover": 2,
+    "qpe": 3,
+    "steane_encode": 7,
+}
+
 # --la exists ONLY on uno_sweep.py (Phase 2). Confirmed absent from esp8266_sweep.py,
 # esp32_sweep.py, and pc/phase3_offload/sweep.py's argparse blocks.
 LA_SUPPORTED = {(2, "uno")}
@@ -78,10 +143,17 @@ class RunnerError(Exception):
 
 def build_command(python_exe, board, algorithm, phase, *,
                    n_start=None, n_max=None, build_timeout=None,
-                   upload_retry_settle_s=None, la=False, port, fresh=False):
+                   upload_retry_settle_s=None, la=False, port):
     """Return the exact argv list that would be delegated to, given already-
     validated arguments. Pure function, no I/O, no hardware -- used directly by
-    --dry-run and by the tests, and reused unchanged for a real run."""
+    --dry-run and by the tests, and reused unchanged for a real run.
+
+    Deliberately never adds --fresh: when args.fresh is set, main() archives
+    the existing directory away BEFORE calling this (see perform_fresh_archive),
+    so the delegated script always finds a clean/absent directory and takes its
+    own default (empty) resume path on its own -- no flag needed, and the
+    delegated scripts' own, different --fresh semantics (in-place
+    *.pre-fresh-<ts>.csv rename) is never invoked by this runner."""
     if phase == 2:
         script = PHASE2_SCRIPTS[board]
         argv = [python_exe, str(script), "--port", port, "--circuits", algorithm]
@@ -99,8 +171,6 @@ def build_command(python_exe, board, algorithm, phase, *,
         argv += ["--upload-retry-settle-s", str(upload_retry_settle_s)]
     if la:
         argv += ["--la"]
-    if fresh:
-        argv += ["--fresh"]
     return argv
 
 
@@ -140,6 +210,29 @@ def n_range_note(algorithm, n_start, n_max_effective):
             f"print 'skip: ... is fixed-n and its n is outside [...]' and do nothing.")
 
 
+def effective_n_start_for_fresh(algorithm, requested_n_start):
+    """Only called when --fresh is set (standing decision, see module docstring
+    -- non-fresh runs never clamp, never get an auto default beyond what the
+    delegated script itself already defaults to, per "keep current
+    append/resume behavior unchanged"). Returns (n_start_to_use, notice_or_None).
+
+    Default when omitted: the circuit's own MIN_VALID_N (not the legacy
+    uniform 2). Clamp when explicitly requested below that minimum: never
+    silently send a degenerate point to real hardware, never log it as a
+    failure or a wall -- it's just never attempted."""
+    minimum = MIN_VALID_N[algorithm]
+    if requested_n_start is None:
+        return minimum, None
+    if requested_n_start < minimum:
+        notice = (f"NOTICE: --n-start {requested_n_start} is below {algorithm!r}'s "
+                  f"minimum meaningful n ({minimum}) -- clamped up to {minimum} for "
+                  f"this fresh run. n={requested_n_start} is never sent to the board "
+                  f"and is not logged as a failure or a wall. See MIN_VALID_N in "
+                  f"pc/run.py / docs/run/<board>.md for why.")
+        return minimum, notice
+    return requested_n_start, None
+
+
 def git_state():
     """Read-only. Returns (clean: bool, description: str)."""
     try:
@@ -150,6 +243,18 @@ def git_state():
         return (status.strip() == "", ref)
     except Exception as e:  # noqa: BLE001 -- best-effort informational check
         return (False, f"git check failed: {e}")
+
+
+def git_commit_hash():
+    """Read-only full commit hash -- for the archive MANIFEST.json. Empty
+    string on any failure (best-effort, never raises -- matches
+    telemetry._git_commit_and_dirty()'s own fallback shape, though this is an
+    independent read, not a call into telemetry.py)."""
+    try:
+        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO_ROOT,
+                               capture_output=True, text=True, timeout=10).stdout.strip()
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def port_matches_board(board, port):
@@ -180,7 +285,6 @@ def resume_summary(board, algorithm, phase):
     (board, algorithm, phase) -- reads memory_wall.csv (phase 2) or
     session_log.csv (phase 3) directly with csv.DictReader; never writes
     anything, never imports pc/shared/resume.py's write-side logic."""
-    import csv
     directory = sp.raw_dir(board, algorithm, phase)
     if not directory.exists():
         return f"{directory} does not exist yet -- fresh start."
@@ -200,17 +304,188 @@ def resume_summary(board, algorithm, phase):
     return f"{path}: {len(rows)} point(s) recorded (n={','.join(ns)}), {parts}"
 
 
+# ---------------------------------------------------------------------------
+# Archive (--fresh) -- new in this file only. Nothing under pc/shared/,
+# analysis/, or any delegated sweep script reads from data/archive/ -- proven
+# by pc/run_test.py's archive-independence test (greps the whole tree for
+# "archive" and shows every hit is in this file, its tests, or docs).
+# ---------------------------------------------------------------------------
+
+def archive_dest_dir(board, algorithm, phase, timestamp):
+    """data/archive/phase<N>/<board>/<circuit>/<UTC timestamp>/ -- deliberately
+    phase-outermost, mirroring pc/shared/paths.raw_dir()'s own established
+    convention (data/raw/phase<N>/<board>/<circuit>/, fixed that way on
+    purpose per run_log.md's 2026-09-20 "folder structure correction" entry)
+    rather than the board/algorithm/phase order first suggested for this
+    archive path -- kept consistent with the rest of the project instead."""
+    return REPO_ROOT / "data" / "archive" / f"phase{phase}" / board / algorithm / timestamp
+
+
+def _utc_timestamp():
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _csv_row_count(path):
+    """Data rows only (header excluded). None if the file can't be read as a
+    CSV with a header row at all (e.g. a truly empty file)."""
+    try:
+        with open(path, newline="", encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        return max(0, len(rows) - 1) if rows else 0
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _archive_sources(board, algorithm, phase):
+    """Read-only: what exists right now for this (board, algorithm, phase)
+    that a fresh run would archive. Returns a list of (category, Path)
+    for whichever of raw/figures/docs actually exist and are non-empty.
+    figures/docs are board+algorithm-keyed regardless of phase (see
+    pc/shared/paths.figures_dir/analysis_doc_path -- they don't carry a phase
+    segment at all today), so a Phase 3 fresh run would archive the SAME
+    figures/doc a Phase 2 one would -- both are that (board, algorithm)'s
+    one set of figures/analysis, not per-phase. Documented, not invented:
+    reflects pc/shared/paths.py exactly as it stands."""
+    sources = []
+    raw_src = sp.raw_dir(board, algorithm, phase)
+    if raw_src.exists() and any(raw_src.iterdir()):
+        sources.append(("raw", raw_src))
+    figures_src = sp.figures_dir(board, algorithm)
+    if figures_src.exists() and any(figures_src.iterdir()):
+        sources.append(("figures", figures_src))
+    doc_src = sp.analysis_doc_path(board, algorithm)
+    if doc_src.exists():
+        sources.append(("docs", doc_src))
+    return sources
+
+
+def plan_fresh_archive(board, algorithm, phase):
+    """Read-only preview for --dry-run and for the pre-confirmation notice on
+    a real run: what WOULD be archived and to where, without touching
+    anything. Returns (dest_path_or_None, sources) -- dest is None if there
+    is nothing to archive."""
+    sources = _archive_sources(board, algorithm, phase)
+    if not sources:
+        return None, []
+    return archive_dest_dir(board, algorithm, phase, _utc_timestamp()), sources
+
+
+def _manifest_entries(sources):
+    """Pre-move hashing/row-counts, read from the ORIGINAL location -- called
+    strictly before any move happens, so a failure here means nothing has
+    been touched yet."""
+    entries = []
+    for category, src in sources:
+        if src.is_file():
+            entries.append({
+                "category": category,
+                "relative_path": src.name,
+                "sha256": _sha256_file(src),
+                "rows": _csv_row_count(src) if src.suffix == ".csv" else None,
+            })
+            continue
+        for f in sorted(src.rglob("*")):
+            if f.is_file():
+                entries.append({
+                    "category": category,
+                    "relative_path": str(f.relative_to(src)),
+                    "sha256": _sha256_file(f),
+                    "rows": _csv_row_count(f) if f.suffix == ".csv" else None,
+                })
+    return entries
+
+
+def perform_fresh_archive(board, algorithm, phase, command_str, timestamp=None,
+                           reason="fresh run"):
+    """Actually moves data aside. Returns the archive dest Path, or None if
+    there was nothing to archive (no-op, not an error). Raises RunnerError,
+    with everything already rolled back to its original location, if any step
+    fails -- guaranteeing the original data is untouched and no collection
+    starts. Never overwrites an existing archive folder."""
+    sources = _archive_sources(board, algorithm, phase)
+    if not sources:
+        return None
+
+    ts = timestamp or _utc_timestamp()
+    dest = archive_dest_dir(board, algorithm, phase, ts)
+    if dest.exists():
+        raise RunnerError(f"archive destination {dest} already exists -- refusing to "
+                           f"overwrite it. This should not happen (timestamps are "
+                           f"second-resolution); try again.")
+
+    # Hash/count everything BEFORE any move -- if this raises, nothing has
+    # been touched yet, so there is nothing to roll back.
+    manifest_entries = _manifest_entries(sources)
+
+    try:
+        dest.mkdir(parents=True, exist_ok=False)
+    except OSError as e:
+        raise RunnerError(f"could not create archive directory {dest}: {e} -- "
+                           f"original data untouched, no collection started.")
+
+    moved = []  # [(original_src, moved_to)] -- for rollback
+    try:
+        for category, src in sources:
+            target = dest / category if category != "docs" else dest / "docs" / src.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(target))
+            moved.append((src, target))
+    except Exception as e:  # noqa: BLE001
+        for original, moved_to in reversed(moved):
+            try:
+                shutil.move(str(moved_to), str(original))
+            except Exception:  # noqa: BLE001
+                pass  # best-effort rollback; the error below still surfaces
+        shutil.rmtree(dest, ignore_errors=True)
+        raise RunnerError(f"archive move failed ({e}) -- rolled back, original data "
+                           f"untouched, no collection started.")
+
+    clean, ref = git_state()
+    manifest = {
+        "reason": reason,
+        "command": command_str,
+        "timestamp_utc": ts,
+        "git_commit": git_commit_hash(),
+        "git_dirty": not clean,
+        "git_ref": ref,
+        "board": board,
+        "algorithm": algorithm,
+        "phase": phase,
+        "files": manifest_entries,
+    }
+    try:
+        (dest / "MANIFEST.json").write_text(json.dumps(manifest, indent=2, sort_keys=True))
+    except OSError as e:
+        for original, moved_to in reversed(moved):
+            try:
+                shutil.move(str(moved_to), str(original))
+            except Exception:  # noqa: BLE001
+                pass
+        shutil.rmtree(dest, ignore_errors=True)
+        raise RunnerError(f"could not write MANIFEST.json ({e}) -- rolled back, "
+                           f"original data untouched, no collection started.")
+
+    return dest
+
+
 def print_preflight(board, algorithm, phase, port, dry_run):
     print("--- preflight ---")
     clean, ref = git_state()
     print(f"git: {'clean' if clean else 'DIRTY'}  ({ref})")
-    if not clean and not dry_run:
-        raise RunnerError(
-            f"working tree is dirty ({ref}) -- refusing to start real hardware "
-            f"collection against an uncommitted/uncertain source state. "
-            f"`git status` to see what's dirty, then commit or stash it first "
-            f"(see docs/manual_run_guide.md's preflight checklist). "
-            f"(--dry-run ignores this so the command can still be previewed.)")
+    if not clean:
+        print("WARNING: working tree is dirty -- the run continues (owner-run standing "
+              "decision, 2026-09-21), but the exact commit and dirty flag are recorded "
+              "automatically in this session's environment JSON "
+              "(telemetry.write_environment_metadata's existing git_commit/git_dirty "
+              "fields -- no code changed for this).")
 
     sleep_check = check_sleep_prevention()
     print(f"sleep prevention: prevented={sleep_check.get('prevented')} "
@@ -274,8 +549,11 @@ def main(argv=None):
     ap.add_argument("--port", required=True,
                      help="e.g. /dev/cu.usbmodem1101 -- never auto-guessed")
     ap.add_argument("--n-start", type=int, default=None,
-                     help="passed through as --n-start; omit to use the delegated "
-                          "script's own default (2)")
+                     help="passed through as --n-start; for a non-fresh run, omit to use "
+                          "the delegated script's own default (2, unchanged); for a "
+                          "--fresh run, omit to use the circuit's own minimum meaningful "
+                          "n (see MIN_VALID_N) -- and an explicit value below that "
+                          "minimum is clamped up with a notice, never sent to the board")
     ap.add_argument("--n-max", type=int, default=None,
                      help="passed through as --n-max; omit to use the delegated "
                           "script's own per-board default -- see DEFAULT_N_MAX in this file")
@@ -289,14 +567,19 @@ def main(argv=None):
                      dest="upload_retry_settle_s")
     ap.add_argument("--la", action="store_true")
     ap.add_argument("--fresh", action="store_true",
-                     help="passed through as --fresh -- see docs/manual_run_guide.md's "
-                          "warning against using this 'just in case'")
+                     help="archive (move, never delete) any existing data/figures/analysis "
+                          "doc for this (board, algorithm, phase) to data/archive/ with a "
+                          "MANIFEST.json, THEN start collection at the circuit's minimum "
+                          "meaningful n by default. Does not pass --fresh through to the "
+                          "delegated script -- see build_command's docstring.")
     ap.add_argument("--dry-run", action="store_true",
-                     help="validate and print the exact command; never touch hardware, "
-                          "never call pio, never prompt")
+                     help="validate and print the exact command (and, for --fresh, the "
+                          "planned archive destination and n-range clamp); never touch "
+                          "hardware, never call pio, never move any file, never prompt")
     ap.add_argument("--yes", action="store_true",
                      help="skip the interactive y/n confirmation before touching hardware")
     args = ap.parse_args(argv)
+    command_str = "pc/run.py " + " ".join(argv if argv is not None else sys.argv[1:])
 
     try:
         validate_combination(args.board, args.algorithm, args.phase, args.la,
@@ -316,30 +599,62 @@ def main(argv=None):
                   f"measurement. Do not assume Uno's measured behavior transfers. ***")
 
         n_max_effective = args.n_max if args.n_max is not None else DEFAULT_N_MAX[args.phase][args.board]
-        n_start_effective = args.n_start if args.n_start is not None else 2
-        note = n_range_note(args.algorithm, n_start_effective, n_max_effective)
+
+        fresh_timestamp = _utc_timestamp() if args.fresh else None
+        if args.fresh:
+            n_start_for_command, clamp_notice = effective_n_start_for_fresh(
+                args.algorithm, args.n_start)
+            if clamp_notice:
+                print(clamp_notice)
+        else:
+            n_start_for_command = args.n_start
+
+        n_start_effective_for_notice = n_start_for_command if n_start_for_command is not None \
+            else LEGACY_UNIFORM_N_START_DEFAULT
+        note = n_range_note(args.algorithm, n_start_effective_for_notice, n_max_effective)
         if note:
             print(note)
 
         python_exe = sys.executable
         argv_cmd = build_command(
             python_exe, args.board, args.algorithm, args.phase,
-            n_start=args.n_start, n_max=args.n_max, build_timeout=args.build_timeout,
-            upload_retry_settle_s=args.upload_retry_settle_s, la=args.la,
-            port=args.port, fresh=args.fresh)
+            n_start=n_start_for_command, n_max=args.n_max, build_timeout=args.build_timeout,
+            upload_retry_settle_s=args.upload_retry_settle_s, la=args.la, port=args.port)
 
         print("command:", " ".join(argv_cmd))
 
+        archive_dest = None
+        if args.fresh:
+            planned_dest, planned_sources = plan_fresh_archive(
+                args.board, args.algorithm, args.phase)
+            if planned_dest is None:
+                print("archive: nothing exists yet for this (board, algorithm, phase) "
+                      "-- fresh run starts clean, no archive needed")
+            else:
+                # re-plan with the SAME timestamp already picked above, so the
+                # preview and the real move (later) always agree exactly
+                planned_dest = archive_dest_dir(args.board, args.algorithm, args.phase,
+                                                 fresh_timestamp)
+                cats = ", ".join(c for c, _ in planned_sources)
+                print(f"archive: existing data ({cats}) will be moved to {planned_dest} "
+                      f"(with MANIFEST.json) before collection starts")
+
         if args.dry_run:
             print_preflight(args.board, args.algorithm, args.phase, args.port, dry_run=True)
-            print("[dry-run] stopping here -- no subprocess started")
+            print("[dry-run] stopping here -- no subprocess started, no file moved")
             return 0
 
         print_preflight(args.board, args.algorithm, args.phase, args.port, dry_run=False)
 
         if not confirm(args.yes):
-            print("not confirmed -- exiting without touching hardware")
+            print("not confirmed -- exiting without touching hardware or moving any file")
             return 1
+
+        if args.fresh:
+            archive_dest = perform_fresh_archive(
+                args.board, args.algorithm, args.phase, command_str, timestamp=fresh_timestamp)
+            if archive_dest is not None:
+                print(f"archived -> {archive_dest}")
 
     except RunnerError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -347,14 +662,24 @@ def main(argv=None):
 
     try:
         result = subprocess.run(argv_cmd, cwd=REPO_ROOT)
-        return result.returncode
+        returncode = result.returncode
     except KeyboardInterrupt:
         print("\ninterrupted -- the delegated script's own resume logic (default, no "
               "flag needed) means you can safely re-run the exact same command above "
               "and it will pick up where it left off (see docs/manual_run_guide.md, "
               "'Resume ทำงานอย่างไร'). Any in-flight point without a terminal record "
               "row will be re-run from its first rep, not resumed mid-point.")
-        return 130
+        returncode = 130
+
+    if archive_dest is not None:
+        print(f"\n--- fresh run summary ---")
+        print(f"archive of previous data: {archive_dest}")
+        print(f"delete it any time with:  rm -r {archive_dest}")
+        print(f"deleting it affects NOTHING in the pipeline -- nothing under pc/, "
+              f"analysis/, or any delegated sweep script ever reads from "
+              f"data/archive/ (see pc/run_test.py's archive-independence test).")
+
+    return returncode
 
 
 if __name__ == "__main__":
