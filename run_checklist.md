@@ -3,6 +3,13 @@
 Operator checklist for the actual hardware run. Read this, not `run_log.md`,
 while running — `run_log.md` is where you write down what happened *after*.
 
+`pc/run.py` (see `README.md`'s "Quick start", `docs/run/<board>.md`) wraps
+the per-command preflight steps this checklist walks through by hand
+(git tree, port, sleep prevention, resume state) for the common case of one
+algorithm/board/phase at a time. This checklist remains the full manual
+reference, including session planning and the Logic Analyzer procedure,
+which `pc/run.py` does not cover.
+
 **Resume is on by default in every script below.** If a session dies (USB
 drop, laptop sleep, you need to stop for the night), the fix is almost always:
 **run the exact same command again.** It will print a resume summary showing
@@ -10,9 +17,11 @@ what it's skipping, then continue from where it left off. Do not delete or
 edit the CSVs by hand to "help" — the scripts read them to decide what's done.
 
 If a resume summary looks wrong (skips something it shouldn't, or the
-remaining-point count doesn't match what you expect), **stop and look at the
-`*_memory_wall.csv` / `*_session_log.csv` file before re-running** — don't
-force through it with `--fresh` on a hunch, that archives real data.
+remaining-point count doesn't match what you expect), **stop and look at
+that `(board, circuit)`'s own `memory_wall.csv` / `session_log.csv` file
+(`data/raw/phase<N>/<board>/<circuit>/`, see `pc/shared/paths.py`) before
+re-running** — don't force through it with `--fresh` on a hunch, that
+archives real data.
 
 ---
 
@@ -72,8 +81,9 @@ the order to hit them in, plus what to check between each one.
       per the Logic Analyzer procedure below and do the "First real capture
       checklist" on one point before Session A starts. If not connected yet:
       proceed with Sessions A/B/C now, the LA cross-check is a fully
-      separate, later pass over already-collected `*_raw.csv` files — it
-      does not need to run concurrently with data collection
+      separate, later pass over already-collected `raw.csv` files (one per
+      `(board, circuit)` directory) — it does not need to run concurrently
+      with data collection
 - [ ] `data/raw/phase2/` and `data/raw/phase3/` checked per § 0 — confirm
       resume state matches what you expect (empty for a true first run,
       or existing files if this is a continuation)
@@ -91,8 +101,9 @@ sequence within step 2):
 - [ ] Check the printed resume/session summary — point count matches what
       that session's expected count says (Session A/B/C sections below give
       the exact numbers per command)
-- [ ] Spot-check the terminal-record file (`*_memory_wall.csv` or
-      `*_session_log.csv`) for the board just run — new rows present, no
+- [ ] Spot-check the terminal-record file (`memory_wall.csv` or
+      `session_log.csv`, under that `(board, circuit)`'s own directory) for
+      the board just run — new rows present, no
       unexpected `build_or_upload_fail`/`malloc_failed` at an n lower than
       the known wall (would indicate a regression, not just "reached the
       wall as expected")
@@ -347,8 +358,11 @@ requires touching hardware, which this session was not authorized to do.
 
 ## Telemetry schema (frozen at SCHEMA_VERSION 2, tag `pre-run-schema-v2`)
 
-`pc/shared/telemetry.py` defines the schema for `data/raw/telemetry/sessions.csv`,
-`data/raw/telemetry/points.csv`, and each session's `data/raw/telemetry/env/<session_id>.json`.
+`pc/shared/telemetry.py` defines the schema for `sessions.csv`, `points.csv`,
+and each session's `env/<session_id>.json` — written under
+`data/raw/phase<N>/<board>/<circuit>/`, one directory per `(phase, board,
+circuit)` since `pre-run-uno-v4`/`v5` (`pc/shared/paths.py`), not a single
+shared `data/raw/telemetry/` directory as in an earlier layout.
 **This schema is frozen as of the `pre-run-schema-v2` tag, before any real
 hardware data is collected**, so every row of the REPS=100 run shares one
 schema — do not add, remove, rename, or repurpose a column without bumping
@@ -370,8 +384,9 @@ from two schema versions in one file. It also reads the `schema_version`
 running code's, because a version bump that only changes what values *mean*
 (v1 → v2 did exactly that) leaves the header identical and would otherwise
 go unnoticed. Fix: archive the old file (see
-`pc/shared/resume.archive_existing`, or move it aside by hand) and start a
-new `data/raw/telemetry/` for the new schema, or roll back the code.
+`pc/shared/resume.archive_existing`, or move it aside by hand, or use
+`--fresh`) and start a new one for that `(board, circuit)` under the new
+schema, or roll back the code.
 
 **`data/raw/phase1/` is not affected by the bump.** Those two files
 (`infidelity_tvd.csv`, `phase1_metadata.csv`) are written by
@@ -405,7 +420,7 @@ outcome, one row per attempt:
   captured within budget — which points.csv folds into `failed` rather than
   keeping as a separate value, since `session_incomplete` is really "why it
   failed," recorded instead in `failure_type`/`failure_message` and in the
-  richer `*_session_log.csv` row for that point)
+  richer `session_log.csv` row for that point)
 - `retrying` — attempt 0 of a point that will be retried once (Phase 2's
   retry-once-on-transient-failure policy, budget ≤ 600s only); not a
   terminal status, only ever seen on a non-final attempt row
@@ -522,11 +537,15 @@ single sweep-script invocation's 100-rep loop.
 
 **Capture: one file per data point**, saved as:
 ```
-data/raw/la/<board>_<circuit>_n<N>.csv
+data/raw/phase2/<board>/<circuit>/la/<board>_<circuit>_n<N>.csv
 ```
-e.g. `data/raw/la/uno_h_all_n2.csv`, `data/raw/la/esp32_grover_n10.csv` — this
-naming convention is load-bearing: `la_crosscheck.py` parses board/circuit/n
-directly from the filename, no other metadata is read.
+(one `la/` directory per `(board, circuit)`, `pc/shared/paths.la_dir` —
+changed from an earlier flat `data/raw/la/` layout, `pre-run-uno-v4`) e.g.
+`data/raw/phase2/uno/h_all/la/uno_h_all_n2.csv`,
+`data/raw/phase2/esp32/grover/la/esp32_grover_n10.csv` — the filename itself
+is still load-bearing even though the directory now also encodes
+`(board, circuit)`: `la_crosscheck.py` parses board/circuit/n directly from
+the filename via `FILENAME_RE`, no other metadata is read.
 
 **Export format:** two are supported (auto-detected by `la_pulses.py`, see its
 module docstring for the exact byte-level format of each):
@@ -548,12 +567,16 @@ pulses long enough that 100 full-length captures would be wasteful:
 .venv/bin/python analysis/la_capture_plan.py
 ```
 
-This prints a table and writes `data/raw/la/capture_plan.csv` — `n_reps_to_capture`
-and `recommended_sample_rate_hz` for every point, one row per `(board, circuit, n)`.
+This prints a table and writes one `capture_plan.csv` per `(board, circuit)`
+under that circuit's own `la/` directory
+(`data/raw/phase2/<board>/<circuit>/la/capture_plan.csv`, changed from a
+single shared file, `pre-run-uno-v4`) — `n_reps_to_capture` and
+`recommended_sample_rate_hz` for every `n` of that circuit.
 `la_crosscheck.py` reads this file automatically (via `--plan`, defaulted to
-this path) to know how many reps to expect per point, so generate it before
-running any real capture, then re-check with `analysis/timing_report.py`
-once real device timings replace the estimates it's currently built from.
+`<la-dir>/capture_plan.csv`) to know how many reps to expect per point, so
+generate it before running any real capture, then re-check with
+`analysis/timing_report.py` once real device timings replace the estimates
+it's currently built from.
 
 **Summary from the current plan** (154 points across all three boards, all six
 circuits; regenerate after the REPS=100 run to refresh the pulse-width inputs):
@@ -597,7 +620,7 @@ circuits; regenerate after the REPS=100 run to refresh the pulse-width inputs):
    all 100 reps). The captured file will have fewer pulses than the full
    session; that's expected and required, not an error.
 4. Run `la_crosscheck.py` normally — it reads `n_reps_to_capture` from the
-   plan and joins against the **first** N reps of that point's `*_raw.csv`
+   plan and joins against the **first** N reps of that point's `raw.csv`
    (see the "join reduced captures" comment in `la_crosscheck.py` for why
    that's a safe assumption here specifically, not a general one).
 5. If the pulse count you actually captured doesn't match the plan's
@@ -617,20 +640,20 @@ Full-rate, full-reps point (e.g. `uno_h_all_n2`, 24MHz, FORMAT A one-shot):
 ```bash
 # UNVERIFIED
 sigrok-cli -d <driver-name> --config samplerate=24m --triggers D0=r \
-    --samples 10000000 -O csv -o data/raw/la/uno_h_all_n2.csv
+    --samples 10000000 -O csv -o data/raw/phase2/uno/h_all/la/uno_h_all_n2.csv
 ```
 Low-rate point from the plan (e.g. 100kHz, still full 100 reps):
 ```bash
 # UNVERIFIED
 sigrok-cli -d <driver-name> --config samplerate=100k --triggers D0=r \
-    --time 2s -O csv -o data/raw/la/esp8266_qft_n12.csv
+    --time 2s -O csv -o data/raw/phase2/esp8266/qft/la/esp8266_qft_n12.csv
 ```
 Reduced-rep point (e.g. `esp8266_grover_n9`: 10kHz, 5 reps — stop manually,
 don't rely on `--samples`/`--time` matching exactly, see procedure above):
 ```bash
 # UNVERIFIED
 sigrok-cli -d <driver-name> --config samplerate=10k --triggers D0=r \
-    --continuous -O csv -o data/raw/la/esp8266_grover_n9.csv
+    --continuous -O csv -o data/raw/phase2/esp8266/grover/la/esp8266_grover_n9.csv
 # Ctrl-C after ~5 pulses are visible in a live view / on-device counter
 ```
 FORMAT B ("changes only") export — **the actual sigrok-cli flag for this is
@@ -654,8 +677,9 @@ a ~284µs pulse well within a trivial FORMAT A capture):
 
 - [ ] Wire per the section above, double-check voltage tolerance for the
       specific board
-- [ ] Capture `data/raw/la/uno_h_all_n2.csv` (full 100 reps, no reduction needed)
-- [ ] `.venv/bin/python analysis/la_pulses.py data/raw/la/uno_h_all_n2.csv`
+- [ ] Capture `data/raw/phase2/uno/h_all/la/uno_h_all_n2.csv` (full 100 reps,
+      no reduction needed)
+- [ ] `.venv/bin/python analysis/la_pulses.py data/raw/phase2/uno/h_all/la/uno_h_all_n2.csv`
 - [ ] Confirm: `format:` line shows the format you actually exported (if it
       says `raw` but you exported FORMAT B, or vice versa, the tool guessed
       wrong — **stop, don't proceed to other points until this is understood**;
@@ -776,21 +800,25 @@ pio device monitor -p /dev/cu.usbmodemXXXX -b 115200
 ### (e) Verify the outputs and that measured time is sane
 
 ```bash
-head -3 data/raw/phase2/uno_raw.csv
-cat data/raw/phase2/uno_memory_wall.csv
-tail -1 data/raw/telemetry/points.csv
-tail -1 data/raw/telemetry/sessions.csv
-ls data/raw/telemetry/env/
+head -3 data/raw/phase2/uno/h_all/raw.csv
+cat data/raw/phase2/uno/h_all/memory_wall.csv
+tail -1 data/raw/phase2/uno/h_all/points.csv
+tail -1 data/raw/phase2/uno/h_all/sessions.csv
+ls data/raw/phase2/uno/h_all/env/
 ```
+(paths updated for the per-`(phase, board, circuit)` directory layout,
+`pre-run-uno-v4`/`v5` — see `pc/shared/paths.py`; each circuit now has its
+own `raw.csv`/`memory_wall.csv`/`points.csv`/`sessions.csv`/`env/`, not one
+shared file per board)
 - **Expected:**
-  - `uno_raw.csv`: header + exactly 100 rows for `(h_all, 2)`, `exec_time_us`
+  - `raw.csv`: header + exactly 100 rows for `(h_all, 2)`, `exec_time_us`
     values clustered tightly (the n=30 dataset's IQR was very narrow).
-  - `uno_memory_wall.csv`: one row, `status=ok`.
-  - `points.csv`: one row, `schema_version=1`, `status=ok`,
+  - `memory_wall.csv`: one row, `status=ok`.
+  - `points.csv`: one row, `schema_version=2`, `status=ok`,
     `failure_type=none`, with `build_compile_s` / `upload_s` / `device_exec_s`
     populated.
-  - `sessions.csv`: one row, `schema_version=1`, `n_points_ok=1`.
-  - `env/<session_id>.json`: exists, `schema_version: 1`, non-empty
+  - `sessions.csv`: one row, `schema_version=2`, `n_points_ok=1`.
+  - `env/<session_id>.json`: exists, `schema_version: 2`, non-empty
     `firmware_source_hash`, and `sleep_prevention.prevented: true`.
 - [ ] **Compare measured against estimated.** `timing_model` expects
       `h_all n=2` on Uno at roughly 284 µs per rep (~0.03 s of device time
@@ -866,10 +894,11 @@ full session.
   files are append-only, so a bad point is a *row* problem, not a file
   problem. Preferred, in order:
   1. If the whole pilot should not count, use `--fresh` on the next run: it
-     **renames** `*_raw.csv` / `*_memory_wall.csv` to
-     `*.pre-fresh-<timestamp>.csv` and starts clean. It never deletes.
-  2. To drop one point by hand, delete *both* its `*_raw.csv` rows and its
-     `*_memory_wall.csv` row. Deleting only the terminal record leaves
+     **renames** that `(board, circuit)`'s own `raw.csv` / `memory_wall.csv`
+     to `raw.pre-fresh-<timestamp>.csv` / `memory_wall.pre-fresh-<timestamp>.csv`
+     in place and starts clean. It never deletes.
+  2. To drop one point by hand, delete *both* its `raw.csv` rows and its
+     `memory_wall.csv` row. Deleting only the terminal record leaves
      orphan raw rows — resume will purge those automatically on the next run
      (that is the designed behaviour), but doing it deliberately is cleaner.
   3. Never hand-edit a file to "fix" a value. `phase2_summarize.py` and
@@ -878,7 +907,8 @@ full session.
 - **Telemetry:** `points.csv` / `sessions.csv` rows for a discarded pilot can
   be left in place — every row carries its own `session_id`, so a discarded
   session is identifiable rather than needing removal. If you do want them
-  gone, move the whole `data/raw/telemetry/` directory aside; do not delete
+  gone, move that `(board, circuit)`'s whole
+  `data/raw/phase<N>/<board>/<circuit>/` directory aside; do not delete
   individual rows (the schema-mismatch guard assumes intact headers).
 
 ---

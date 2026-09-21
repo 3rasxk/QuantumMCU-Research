@@ -1,76 +1,54 @@
 # QuantumMCU Research — Quantum Lab
 
-Comparative Performance Benchmarking of Quantum Micro-Simulators Across Diverse
-Microcontroller Architectures for Edge Computing
+Comparative performance benchmarking of quantum micro-simulators across
+diverse microcontroller architectures for edge computing.
 
-**Research question:** for a given circuit and qubit count, should a microcontroller
-simulate the quantum circuit *locally*, or *offload* it to a PC running Qiskit Aer?
+**Research question:** for a given circuit and qubit count, should a
+microcontroller simulate the quantum circuit *locally*, or *offload* it to a
+PC running Qiskit Aer?
 
-The answer is two numbers per board: the **Memory Wall** (largest `n` the board can run
-at all) and the **Crossover Point** (the `n` above which offloading is faster than
-computing locally). This repository contains the simulator, the firmware, the automated
-sweep harness that measures both, and the analysis scripts that turn raw measurements
-into summaries and figures. Written documents (report, proposal, poster, diagrams) are
-being rewritten from scratch once the REPS=100 dataset exists.
+## What is measured, and what is not
 
-Report text and source comments are in Thai; identifiers, protocol names, and CLI
-commands are in English.
+- **Measured (Phase 2, on-device):** wall-clock execution time per circuit
+  repetition, via `micros()` bracketing the simulation loop on the MCU
+  itself, for `n = 2` upward until the board fails. Compile-time RAM usage
+  (`avr-size` / equivalent) is recorded for every point, not just failures.
+  A Logic Analyzer cross-check of the `micros()` timing exists in code
+  (`--la`, Uno only) but has **never been run against real hardware or even
+  a `sigrok-cli` demo driver** — see Limitations.
+- **Measured (Phase 3, offload):** round-trip latency and frame integrity
+  (CRC-8) of a fixed 4-byte request / 6-byte response protocol between MCU
+  and PC. The PC re-simulates with Qiskit Aer from scratch on every request
+  (no caching), so the measured cost reflects genuine offload overhead.
+- **NOT measured, anywhere in this project:** simulation *correctness* on
+  the board itself. Phase 1 validates the hand-written C++ simulator against
+  Qiskit Aer once, on the PC, before any board is trusted — the boards never
+  report a fidelity number back. Phase 3's "board" doesn't compute at all;
+  it only relays a request and receives a numeric outcome. If a board's
+  arithmetic were subtly wrong, this project's current instrumentation would
+  not detect it independently of Phase 1's PC-side check.
 
----
+## Hardware
 
-## Boards under test
+| Board | Word size | FPU | Clock | SRAM | Allocation |
+|---|---|---|---|---|---|
+| Arduino Uno R3 (ATmega328P) | 8-bit | no | 16 MHz | 2 KB | static array only |
+| NodeMCU ESP8266 (ESP-12E) | 32-bit | no | 80 MHz | 80 KB | dynamic (`malloc`) |
+| ESP32 DevKit V1 | 32-bit | **yes** | 240 MHz | 320 KB | dynamic (`malloc`) |
 
-| Class | Board | Word size | FPU | Clock | SRAM | Allocation policy |
-|---|---|---|---|---|---|---|
-| A | Arduino Uno R3 (ATmega328P) | 8-bit | no | 16 MHz | 2 KB | static array only |
-| B | NodeMCU ESP8266 (ESP-12E) | 32-bit | no | 80 MHz | 80 KB | dynamic (`malloc`) |
-| C | ESP32 DevKit V1 | 32-bit | **yes** | 240 MHz | 320 KB | dynamic (`malloc`) |
+**Only the Uno has ever been run against real hardware in this repository.**
+ESP8266 and ESP32 are fully implemented (firmware, sweep scripts, timing
+model) but every number for them anywhere in this repo — timing estimates,
+expected walls — is a **prediction from `pc/shared/timing_model.py` and a
+compile-only build matrix**, not a measurement. Phase 3 (offload) has not
+been run on any board. Treat every ESP8266/ESP32/Phase-3 claim as
+UNVERIFIED until real data exists under `data/raw/phase{2,3}/{esp8266,esp32}/`.
 
-Three test circuits, built from three gates only (H, CNOT, Controlled-Phase):
-
-- `h_all` — Hadamard on every qubit (uniform superposition, no entanglement)
-- `bell_ghz` — Bell state at `n=2`, extended to a GHZ state by a CNOT chain for `n>2`
-- `qft` — Quantum Fourier Transform without the trailing SWAP layer (`do_swaps=False`)
-
----
-
-## Headline results
-
-> **Dataset reset in progress.** The n=30 tables below are the *previous* run and no
-> longer back any file in this working tree — see [`run_log.md`](run_log.md). A fresh
-> REPS=100 rerun (Phase 2 and Phase 3) is planned but not yet executed; these numbers
-> are kept here as the last-known result, recoverable from git history.
-
-**Memory Wall** — largest `n` that runs reliably
-(`data/processed/phase2/memory_wall_summary.csv`, once regenerated):
-
-| Board | Theoretical max `n` | Measured max safe `n` | First failing `n` |
-|---|---|---|---|
-| Arduino Uno R3 | 8 | **7** | 8 |
-| NodeMCU ESP8266 | 13 | **12** | 13 |
-| ESP32 DevKit V1 | 15 | **13** | 14 |
-
-Every board falls 1–2 qubits short of theory; the network/RTOS stack takes the
-difference. ESP32, which carries both WiFi and Bluetooth stacks, loses the most.
-
-**Crossover Point** — first `n` at which offload beats local
-(`data/processed/phase3/crossover_summary.csv`, once regenerated):
-
-| Circuit | Uno | ESP8266 | ESP32 |
-|---|---|---|---|
-| `qft` | 4 | 7 | 12 |
-| `h_all` | 5 | 8 | 13 |
-| `bell_ghz` | 6 | 10 | 13 |
-
-Two findings drive the decision framework:
-
-1. **Offload latency is essentially flat — roughly 1.6–14 ms across every board, every
-   `n`, and every baud rate.** The protocol frames are a fixed 4 and 6 bytes, so almost
-   all of the measured latency is fixed PC/OS/driver overhead. Raising the baud rate
-   does not meaningfully reduce it for a payload this small.
-2. **Crossover varies inversely with local compute speed and with circuit gate count.**
-   A slow board (Uno) benefits from offloading at low `n`; the FPU-equipped ESP32 only
-   benefits near its own Memory Wall. `qft` (O(n²) gates) always crosses over first.
+Six test circuits, built from three gates only (H, CNOT, Controlled-Phase):
+`h_all`, `bell_ghz`, `qft`, `grover`, `qpe`, `steane_encode` (Steane
+`[[7,1,3]]` code, fixed at exactly 7 physical qubits — the only circuit that
+does not scale with `n`). See `pc/shared/circuit_ids.py` and
+`pc/shared/timing_model.gate_counts()` for exact definitions.
 
 ---
 
@@ -78,204 +56,337 @@ Two findings drive the decision framework:
 
 ```
 firmware/
-  common/            portable core — identical on all 3 boards AND the PC
-    qsim.hpp           state-vector simulator over a raw Cplx* buffer
-    circuits.hpp       the 3 test circuits, built from H/CNOT/CPhase only
-    protocol.hpp       Phase 3 serial frame + CRC-8 (mirrors protocol.py)
-  uno/ esp8266/ esp32/
-    src/               Phase 2 firmware — local benchmark
-    src_offload/       Phase 3 firmware — offload benchmark
-    platformio.ini     N_QUBITS / CIRCUIT_ID / BAUD_RATE injected via sysenv
+  common/              portable simulator core (Cplx struct, no std::complex),
+                        identical on all 3 boards AND the PC
+  uno/ esp8266/ esp32/  src/ = Phase 2 firmware, src_offload/ = Phase 3 firmware,
+                        platformio.ini injects N_QUBITS/CIRCUIT_ID/BAUD_RATE
 
 pc/
-  phase1_validate/   C++ runner: prints a state vector for Qiskit to check
-  phase2_sweep/      per-board sweep: build, flash, read serial, repeat for n+1
-  phase3_offload/    serial server (answers frames with Qiskit) + orchestrator
-  shared/            circuit_ids.py — CIRCUIT_IDS/CIRCUIT_NAMES, single source
-                      of truth imported by every sweep script
-                     plot_style.py — board palette/markers/labels + figure
-                      save helper, imported by every plotting script
+  run.py               the manual runner (this doc's main entry point)
+  run_test.py           mocked tests for run.py -- no hardware
+  phase1_validate/      C++ runner: prints a state vector for Qiskit to check
+  phase2_sweep/         one script per board -- build, flash, read serial,
+                        climb n until failure
+  phase3_offload/       serial server (answers frames with Qiskit) +
+                        orchestrator, one script, --board selects
+  shared/                circuit_ids.py, timing_model.py, paths.py (single
+                        source of truth for every data/raw and data/figures
+                        path), telemetry.py, resume.py, plot_style.py
 
-analysis/            validation, statistics, and figure generation
+analysis/               validation, statistics, figure generation, LA tooling
 
 data/
-  raw/               per-repetition measurements straight off the board, per phase
-  processed/         aggregated summaries (memory wall, crossover) derived from raw/
-  figures/           generated figures (300 DPI PNG + SVG), per phase
+  raw/phase{2,3}/<board>/<circuit>/   per-repetition measurements, one
+                                       directory per (phase, board, circuit)
+  processed/            aggregated summaries (currently just .gitkeep --
+                        not yet regenerated for the REPS=100 dataset)
+  figures/<board>/<circuit>/*.png     per-run diagnostic charts, PNG only
 
 docs/
-  proposal/          (empty — to be rewritten from the REPS=100 data)
-  report/            (empty — to be rewritten from the REPS=100 data)
-  poster/            (empty — to be rewritten from the REPS=100 data)
-  diagrams/          (empty — to be rewritten from the REPS=100 data)
+  analysis/<board>/     per-circuit + comparison write-ups (OBSERVED vs
+                        INTERPRETATION, every claim cited by file:line)
+  run/                  per-board runner command reference (this task)
+  manual_run_guide.md   full manual command reference (pre-runner)
+  preflight_report.md   pre-hardware findings (build matrix, fidelity, H1-H4)
+  proposal/ report/ poster/ diagrams/   empty -- to be written from the
+                        REPS=100 dataset once complete
 ```
 
-The simulator core avoids `std::complex` and uses a plain `struct Cplx { float re, im; }`
-because `avr-g++` does not ship a full `libstdc++`. Bit-ordering convention throughout is
-**qubit 0 = LSB** of the state index, matching Qiskit's little-endian ordering.
-
-`firmware/common/` compiles unchanged on all four targets. Only the allocation policy
-differs per board, and it lives in each board's `main.cpp`, never in the core.
-
----
-
-## Experiment phases
-
-### Phase 1 — System Validation
-
-Proves the hand-written C++ simulator agrees with Qiskit Aer before it is trusted to
-measure anything. Same circuit, same gate order, gate by gate, on both sides.
-
-```bash
-pc/phase1_validate/build.sh
-.venv/bin/python analysis/phase1_compare.py
-.venv/bin/python analysis/phase1_plot.py
-```
-
-Pass criterion: Infidelity ≤ 10⁻³ for every circuit and every `n`. Measured infidelity
-is ~10⁻⁷ across all 21 cases — the residual is the float32-vs-float64 difference, not an
-algorithmic error. Toolchain versions are logged automatically to
-`data/raw/phase1/phase1_metadata.csv`. Deterministic per (circuit, n) pair — rerun once,
-no repetitions needed.
-
-### Phase 2 — Edge Benchmark
-
-Sweeps `n` upward one qubit at a time until the board fails, recording execution time
-(REPS repetitions per data point, currently 100) and the exact failure mode.
-
-```bash
-.venv/bin/python pc/phase2_sweep/uno_sweep.py     --port /dev/cu.usbmodemXXXX
-.venv/bin/python pc/phase2_sweep/esp8266_sweep.py --port /dev/cu.usbserialXXXX
-.venv/bin/python pc/phase2_sweep/esp32_sweep.py   --port /dev/cu.usbserialXXXX
-.venv/bin/python analysis/phase2_summarize.py
-.venv/bin/python analysis/phase2_plot.py
-.venv/bin/python analysis/phase2_fpu_ratio_plot.py
-.venv/bin/python analysis/phase2_fpu_ratio_own_n_plot.py
-```
-
-Each data point is a fresh `pio run -t upload`, because `N_QUBITS` is a compile-time
-constant — required on the Uno, where the state vector is a static array and cannot be
-resized at runtime.
-
-Failure modes differ by allocation policy, and both are recorded separately:
-
-- **static (Uno)** — may fail at link time (caught before deployment) *or* hang silently
-  at runtime when `.bss` collides with the stack. No warning in the second case.
-- **dynamic (ESP8266/ESP32)** — `malloc` returns `NULL`, so OOM is detected cleanly.
-  ESP32 additionally logs `heap_caps_get_largest_free_block`, which exposes the case
-  where total free heap is sufficient but too fragmented to serve one large block.
-
-### Phase 3 — Offload Benchmark
-
-The MCU asks the PC to simulate the circuit and measures end-to-end latency. The PC
-re-simulates from scratch on every request (no caching) so the measurement reflects the
-true cost of offloading.
-
-```bash
-.venv/bin/python pc/phase3_offload/sweep.py --board esp32 --port /dev/cu.usbserialXXXX \
-    --circuits h_all bell_ghz qft --n-start 2 --bauds 115200 460800
-.venv/bin/python analysis/phase3_summarize.py
-.venv/bin/python analysis/phase3_crossover_plot.py
-```
-
-Wire protocol (`firmware/common/protocol.hpp` ↔ `pc/phase3_offload/protocol.py`, which
-must stay byte-for-byte identical):
-
-```
-Request  (MCU -> PC), 4 bytes:  [0xAA] [n_qubits] [circuit_type] [CRC8]
-Response (PC -> MCU), 6 bytes:  [0x55] [outcome : uint32 big-endian] [CRC8]
-```
-
-CRC-8/SMBUS, polynomial `0x07`, init `0x00`. Frames are kept this small because the Uno's
-serial RX buffer is only 64 bytes. A bad CRC is deliberately left unanswered so the MCU
-records a real timeout rather than a synthesised one.
-
-`sweep.py` is both the serial server and the orchestrator in one file, because both
-halves must hold the same serial port. It demultiplexes a single byte stream: a leading
-`0xAA` starts a binary frame, anything else is text accumulated until `\n` (the CSV
-summary the firmware prints after all 30 exchanges finish).
-
-### Phase 4 — Decision Framework
-
-Synthesises Phases 2 and 3 into rules expressed in terms of board *characteristics*
-rather than a lookup table for these three boards:
-
-```
-Memory Wall:  n_max = floor( log2( B / 8 ) )
-    B = largest contiguous free block, measured (e.g. heap_caps_get_largest_free_block)
-    if B cannot be measured:  B ≈ total SRAM / 2   (i.e. one qubit below raw theory)
-
-Crossover:    n*(new board) ≈ n*(reference board, same class)
-                            + log2(clock_new / clock_ref)
-                            + architecture adjustment
-    8-bit -> 32-bit, no FPU either side:  +1 qubit
-    adding a hardware FPU to 32-bit:      +2 to +3 qubits
-```
-
-```bash
-.venv/bin/python analysis/phase4_flowchart.py
-```
-
-Boards carrying a large network or RTOS stack should be derated by more than one qubit
-when `B` cannot be measured directly. The adjustment constants come from only two board
-pairs and are rough estimates, not physical laws. They were derived from the superseded
-n=30 dataset and must be re-derived from the REPS=100 rerun before being cited.
+The simulator core avoids `std::complex` (`avr-g++` has no full `libstdc++`)
+and uses `struct Cplx { float re, im; }`. Qubit 0 = LSB of the state index
+(Qiskit's convention). `firmware/common/` compiles unchanged on all four
+targets; only the allocation policy differs per board, in each board's own
+`main.cpp`.
 
 ---
 
 ## Setup
 
 ```bash
-python3 -m venv .venv
-.venv/bin/pip install -r analysis/requirements.txt
+python3.11 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
 
-Requires [PlatformIO](https://platformio.org/) for the firmware. The sweep scripts
-resolve `pio` via `shutil.which("pio")`, or the `PIO_PATH` environment variable if set
-(e.g. `export PIO_PATH=/path/to/pio` when `pio` isn't on `PATH`).
+`requirements.txt` is pinned to the exact versions used for every number in
+`docs/preflight_report.md` (Python 3.11.7, `qiskit==2.5.1`,
+`qiskit-aer==0.17.2`, `numpy==2.4.6`, `pyserial==3.5`, full list in the
+file) — this project's dependent variable is execution *time*, so an
+unpinned `numpy`/`qiskit-aer` upgrade would silently change what Phase 3
+measures. PlatformIO platforms are pinned separately, per board, in
+`firmware/*/platformio.ini` (`atmelavr@5.3.0`, `espressif8266@4.2.1`,
+`espressif32@7.0.1`).
 
-Pinned versions (`analysis/requirements.txt`): `qiskit==2.5.1`, `qiskit-aer==0.17.2`,
-`numpy==2.4.6`, `matplotlib==3.11.1`, `pandas==3.0.5`, `pyserial==3.5`.
+Requires [PlatformIO](https://platformio.org/) (`pio`) on `PATH`, or set
+`PIO_PATH` if it isn't.
 
-Figures are labelled in English (the written report stays in Thai) and use matplotlib's
-bundled DejaVu Sans, so no extra font is needed. Board colours, markers, labels and the
-save helper (300 DPI PNG + SVG per figure) are defined once in `pc/shared/plot_style.py`;
-every script under `analysis/` imports them instead of hardcoding colours.
-
----
-
-## Notes on the measurement harness
-
-Several defensive measures in the sweep scripts exist because of failures observed during
-the actual runs, and are documented here so they are not mistaken for over-engineering:
-
-- **Hard `signal.alarm` deadlines** wrap every serial read. pyserial's `readline()`
-  timeout alone did not reliably return when the Uno's USB-CDC port dropped — one
-  observed hang exceeded 16 minutes with `timeout=2` set.
-- **The serial port is re-scanned before every operation.** The Uno re-enumerates during
-  upload and changes path (`/dev/cu.usbmodem101` → `/dev/cu.usbmodem1101`); the
-  previously used path is treated as a hint only.
-- **A repeated CSV header on the serial line means the board reset mid-run** (watchdog,
-  brown-out, or stack overflow). Captured rows are discarded and the reset is counted.
-- **Failing at the first `n` of a baud rate is treated differently from failing at a high
-  `n`.** The former indicates a cabling or baud problem and skips that baud rate
-  entirely; the latter is a genuine computational limit and only ends that circuit.
-- **The offload firmware buffers all 30 results in RAM** and prints its CSV only after
-  the last frame is exchanged. Any `Serial.print` mid-exchange would corrupt the byte
-  stream the PC is parsing frames from.
-- **WiFi is disabled explicitly on both ESP boards** so the network stack does not compete
-  for the heap being measured.
-- **Every float literal in `firmware/common/` carries an `f` suffix.** Without it the
-  value is promoted to `double`, which the ESP32 FPU cannot handle in hardware — the
-  result is silent software emulation roughly 10× slower.
+**macOS notes:**
+- Serial ports are `/dev/cu.usbmodem*` (Uno) or `/dev/cu.usbserial*` /
+  `/dev/cu.wchusbserial*` / `/dev/cu.SLAB_USBtoUART*` (ESP8266/ESP32,
+  driver-dependent). The Uno's port number can change mid-session
+  (`usbmodem101` → `usbmodem1101`); the sweep scripts re-detect it
+  automatically, you don't need to.
+- Terminal.app / whatever runs `pio upload` needs Full Disk Access if you
+  see `Operation not permitted` opening the port. Avoid running this repo
+  from an iCloud-synced folder — sync can hold a file lock at the exact
+  moment a sweep script tries to write a result row.
+- Prevent sleep before any real collection: `caffeinate -dims` in a
+  separate terminal (or `pc/run.py` will tell you if nothing is
+  preventing it — see below).
 
 ---
 
-## Status
+## Quick start
 
-All four phases previously completed for all three boards at REPS=30; that dataset was
-deleted and superseded in preparation for a fresh REPS=100 rerun (`data/` is currently
-empty except for `.gitkeep` placeholders). See [`run_log.md`](run_log.md) for the run
-history and git history for the last-known n=30 numbers. All prior documents under
-`docs/` (report, proposal, poster, diagrams) were deleted as stale; they will be written
-from scratch once the rerun completes.
+```bash
+# 1. See what would run, without touching hardware:
+.venv/bin/python pc/run.py --board uno --algorithm h_all --phase 2 \
+    --port /dev/cu.usbmodem1101 --dry-run
+
+# 2. Run it for real:
+.venv/bin/python pc/run.py --board uno --algorithm h_all --phase 2 \
+    --port /dev/cu.usbmodem1101
+```
+
+`pc/run.py` is a thin, validating front end — it contains **no** collection
+logic of its own. It resolves the exact command it would run, prints it,
+runs read-only preflight checks (git tree, port, sleep prevention, resume
+state), asks for confirmation, and delegates to the real per-board sweep
+script (`pc/phase2_sweep/<board>_sweep.py` or `pc/phase3_offload/sweep.py`).
+Every flag below is real, read from those scripts' own `argparse` blocks —
+nothing here is invented.
+
+| Flag | Meaning | Default |
+|---|---|---|
+| `--board` (required) | `uno` / `esp8266` / `esp32` | — |
+| `--algorithm` (required) | one of the six circuits | — |
+| `--phase` (required) | `2` or `3` | — |
+| `--port` (required) | serial device path, e.g. `/dev/cu.usbmodem1101` — **never auto-guessed** | — |
+| `--n-start` / `--n-max` | passed through unchanged | the delegated script's own default (varies per board/phase, see `docs/run/<board>.md`) |
+| `--reps` | **validation only**, not passed through — `REPS` is a compile-time firmware constant (`pc/shared/timing_model.REPS = 100`); the run refuses if `--reps` doesn't match it | — |
+| `--build-timeout` | passed through unchanged | 300s |
+| `--upload-retry-settle-s` | passed through — **Uno Phase 2 only** | 2.0s |
+| `--la` | passed through — **Uno Phase 2 only**, UNVERIFIED (see Limitations) | off |
+| `--fresh` | passed through — archives (not deletes) existing results and starts over. See "never do this" in `docs/manual_run_guide.md`. | off |
+| `--dry-run` | print the resolved command and preflight info; never touches hardware or calls `pio` | off |
+| `--yes` | skip the interactive y/n confirmation | off |
+
+One algorithm, one board, one phase per invocation — this mirrors the
+standing operator decision to collect one algorithm at a time (see below);
+`--algorithm` takes a single value, not a list.
+
+Per-board command tables (exact commands, expected point counts, estimated
+or measured times, expected walls) live in `docs/run/uno.md`,
+`docs/run/esp8266.md`, `docs/run/esp32.md`, and `docs/run/phase3.md`. For
+every flag the underlying sweep scripts support that isn't listed above
+(there are a few, e.g. `--wdt-threshold-s`, `--n-start`/`--n-max` edge
+cases), see `docs/manual_run_guide.md`, which documents the scripts
+directly and is the fallback if `pc/run.py` doesn't cover your case.
+
+---
+
+## Data layout
+
+```
+data/raw/phase<N>/<board>/<circuit>/
+  raw.csv            every repetition, 1 row per rep, 100 rows per ok point
+  memory_wall.csv     Phase 2 only: 1 terminal row per (circuit, n) point
+  session_log.csv      Phase 3 only: 1 terminal row per (circuit, n, baud) point
+  points.csv          1 row per upload attempt (a retried point has >1 row)
+  sessions.csv         1 row per script invocation
+  env/<session_id>.json   toolchain versions, firmware_source_hash,
+                        sleep_prevention, per session
+  la/                 Logic Analyzer captures (Uno Phase 2 only, if --la used)
+
+data/figures/<board>/<circuit>/{exec_time_vs_n,outcomes_vs_n,time_per_point}.png
+data/figures/<board>/all_algorithms_so_far.png   cumulative, regenerated every run
+```
+
+**PNG only.** All figure-generation in this project (`pc/shared/plot_style.
+save_figure_png_only`) writes PNG, never SVG, to this tree. (A separate,
+older cross-board comparison tool, `analysis/phase2_plot.py`, targets a
+different path — `data/figures/phase2/` — and still emits PNG+SVG; it has
+not been run against the REPS=100 dataset and that path does not currently
+exist on disk. Out of scope for this doc; see the script itself.)
+
+`pc/shared/paths.py` is the single source of truth for every path above —
+every sweep and analysis script imports it rather than building paths by
+hand.
+
+---
+
+## Resume, interrupt, retry
+
+**Resume is always on, no flag needed.** The safest way to stop and
+continue is Ctrl+C, then re-run the exact same command:
+- A point with a terminal row in `memory_wall.csv`/`session_log.csv` is
+  skipped instantly, whether it recorded `ok` or a wall.
+- A point that died mid-run (rows in `raw.csv` but no matching terminal
+  row) is swept away and re-run from repetition 0 — never assume it
+  resumes mid-point; trials from two different sessions aren't comparable
+  samples.
+- A circuit that already hit a positive-evidence wall (`build_overflow`)
+  skips every higher `n` immediately, even ones with no prior record.
+- **Never run two sweeps against the same port at once.** `pc/run.py`
+  checks for this (via `lsof`) before starting; the underlying scripts do
+  not, and this exact collision has corrupted a real run in this project's
+  own history (concurrent processes fighting over one serial port produces
+  garbled `avrdude` protocol errors that look like a hardware fault but
+  aren't).
+
+**Upload-stage failure retry:** the same `n` is retried immediately, up to
+3 attempts total, each logged (attempt number, avrdude signature,
+timestamps). Exhausting all 3 does **not** abandon the circuit — the sweep
+continues to the next `n`. Two consecutive `n` values each exhausting all 3
+attempts stops the whole run (exit code 2) — a likely cable/port/hardware
+problem, not a data-collection decision.
+
+**Memory Wall is recorded only on positive evidence** — compile-time RAM
+> 100%, a build-time overflow, or (ESP8266/ESP32 only) the board reporting
+`malloc_failed`. A hang or reset *without* that evidence is recorded as
+`runtime_hang_or_reset` (or `watchdog_suspected` on ESP boards past their
+estimated per-rep time), not a wall — it doesn't stop future runs from
+retrying higher `n`. This distinction matters: on the Uno, `avr-ld` links
+successfully even when compile-time RAM exceeds 100% (a real toolchain
+quirk, `docs/preflight_report.md` finding L2), so a wall can only be
+trusted from the RAM percentage, never from link success alone.
+
+One algorithm at a time, `REPS=100`, `n` climbing from 2 until the first
+wall or `n-max`. After each algorithm, the standing practice in this
+project has been to generate and review graphs (see below) before moving
+to the next one — see `run_log.md`'s "Standing Operator Decisions" section
+for the full, dated record of every rule and why it was adopted.
+
+---
+
+## Analysis and graphs
+
+```bash
+.venv/bin/python analysis/phase2_uno_run_plots.py --board uno --circuit <circuit>
+```
+
+Generates the three per-circuit charts plus regenerates the cumulative
+`all_algorithms_so_far.png`, reading only from `data/raw/` (never writes
+there). Older, board-wide comparison tools
+(`analysis/phase2_summarize.py`, `analysis/phase2_plot.py`,
+`analysis/timing_report.py`) exist and are read-only in the same way, but
+have not been re-run against the fresh REPS=100 dataset — their own output
+paths (`data/processed/phase2/`, `data/figures/phase2/`) are currently
+empty except for `.gitkeep`.
+
+**Graph review, as practiced in this project (not automated — a human/LLM
+step):**
+1. Generate that algorithm's graphs.
+2. Check each image visually — pass/fail per chart, spot-check at least two
+   values against the underlying CSV by hand.
+3. Write the analysis into `docs/analysis/<board>/<circuit>.md`, keeping
+   every OBSERVED number separate from any INTERPRETATION, and citing every
+   gate-count or timing-model claim by `file:line`.
+4. Only then write the run report.
+
+This workflow caught two real bugs early (a telemetry-status filter bug
+that under-reported a retried point's true cost, and a legend that
+overlapped a data point on a single-point chart) — see `run_log.md` for
+both.
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | What to do |
+|---|---|---|
+| `avrdude: stk500_getsync() ... not in sync` | Transient upload glitch, **or** two processes are fighting over the same port | Let the built-in retry (up to 3 attempts) run. If it keeps happening, check `ps`/`lsof <port>` for a second process (`pio device monitor` left open, a second sweep, a second `pc/run.py`) — this exact collision has happened in this project |
+| Port name changed mid-run (`usbmodem101` → `usbmodem1101`) | Uno re-enumerates during upload | Expected; the sweep scripts' own `find_uno_port()`/`find_port()` re-detect it automatically — don't edit the command |
+| `Operation not permitted` opening the port (macOS) | No Full Disk Access, or another program (e.g. `pio device monitor`) holds the port | Grant Full Disk Access to your terminal; close any open serial monitor before running a sweep |
+| Board goes silent, no `DONE`, `runtime_hang_or_reset` (no RAM evidence) | Genuine hang, transient glitch, or (rarely) a real wall the compile-time check didn't catch | **Not** automatically a Memory Wall — flagged for manual review, per standing decision. Check `failure_message`/`reset_count` in `points.csv` |
+| A long session appears to have stalled or the laptop slept | Sleep not prevented | `caffeinate -dims` in a separate terminal before starting; `pc/run.py`'s preflight prints the current `pmset -g assertions` status either way |
+| `error: --reps ... given, but REPS is fixed at 100` | Trying to change repetition count from the CLI | Not possible — `REPS` is a `#define` baked into the firmware at compile time (`pc/shared/timing_model.REPS`) |
+
+---
+
+## Git tags
+
+| Tag | Marks |
+|---|---|
+| `pre-run-schema-v1` | Telemetry `SCHEMA_VERSION` frozen at 1; `points.csv` stopped collapsing every skip reason into one generic `skipped` value, before any real hardware data existed |
+| `pre-run-schema-v2` | Hardening before first hardware contact: build-timeout no longer misclassified as a wall, watchdog-suspected distinguished from a genuine hang, walls require positive evidence only, toolchain versions pinned and recorded per session |
+| `pre-run-uno-v1` | Opt-in `--la` (Logic Analyzer, `sigrok-cli`) capture added to the Uno Phase 2 sweep — UNVERIFIED, never run against real `sigrok-cli` |
+| `pre-run-uno-v2` | Uno upload-retry (up to 3 attempts, 2 consecutive-`n` stop rule) and the compile-RAM-wall-after-successful-build fix, addressing the two standing operator decisions that govern every Uno run since |
+| `pre-run-uno-v3` | Per-run diagnostic plotting tool added (`analysis/phase2_uno_run_plots.py`) — 4 charts per algorithm |
+| `pre-run-uno-v4` | `data/raw/`/`data/figures/` migrated to one directory per (board, algorithm); all four sweep scripts restructured so each circuit is a fully independent run |
+| `pre-run-uno-v5` | Raw-data path order corrected to phase-outermost (`data/raw/phase<N>/<board>/<circuit>/`), matching the project's pre-existing phase-first convention |
+
+Every tag and the reasoning behind it is described in full in `run_log.md`,
+which is the append-only source of truth these one-liners summarize.
+
+---
+
+## Current status
+
+Read directly from `data/raw/phase2/uno/*/memory_wall.csv` and
+`docs/analysis/uno/*.md` at the time of writing:
+
+| Board | Phase | Algorithm | `n` collected | Result |
+|---|---|---|---|---|
+| Uno | 2 | `h_all` | 2–7 ok, 8 wall | `build_overflow` at n=8, 109.9% compile RAM |
+| Uno | 2 | `bell_ghz` | 2–7 ok, 8 wall | `build_overflow` at n=8, 110.1% compile RAM |
+| Uno | 2 | `qft` | 2–7 ok, 8 wall | `build_overflow` at n=8, 109.8% compile RAM |
+| Uno | 2 | `qpe` | 2–7 ok, 8 wall | `build_overflow` at n=8, 109.8% compile RAM |
+| Uno | 2 | `steane_encode` | 7 (fixed) ok | no wall — fixed-n circuit never reaches the RAM threshold |
+| Uno | 2 | `grover` | not yet committed | collected once cleanly (n=2–7 ok, n=8 compute-infeasible skip per the 4h ceiling), then an operator-directed forced-n=8 re-run hit a real port collision between two concurrent processes; the resulting local files are uncommitted and untouched pending a clean re-run |
+| Uno | 3 | any | none | not yet run |
+| ESP8266 | 2/3 | any | none | not yet run — UNVERIFIED |
+| ESP32 | 2/3 | any | none | not yet run — UNVERIFIED |
+
+REPS=100 for every Uno point above. Every Uno wall so far has landed at
+`n=8` with RAM evidence in the 109.8–110.1% range regardless of algorithm
+— consistent with the wall being a state-vector memory limit
+(`theoretical_bytes = 2^n * 8`), not a circuit-specific one. Full per-circuit
+analysis, including measured/model timing ratios and open questions, is in
+`docs/analysis/uno/`.
+
+---
+
+## Limitations and known issues
+
+- **Grover fidelity (H3):** the PC-side simulator's own Phase 1 check finds
+  Grover's infidelity crosses the project's own `1e-3` acceptance criterion
+  between `n=8` (3.6e-4) and `n=9` (1.5e-3), reaching `6.5e-3` at `n=10` —
+  the Oracle's multi-controlled-phase decomposition grows circuit depth as
+  `O(3^n)`, and float32 error accumulates accordingly. Report-only by
+  instruction; not fixed, not hidden. See `docs/preflight_report.md` finding
+  H3.
+- **`micros()` resolution:** 4µs/tick on the Uno (timer0, prescale 64 @
+  16MHz), 1µs on the ESP boards. At low `n`, this is a non-negligible
+  fraction of the measured pulse width — plausible explanation for
+  low-`n` measurement variability, not independently confirmed (see next
+  point).
+- **No Logic Analyzer data exists yet.** `--la` (Uno only) is implemented
+  and unit-tested against mocks, but has never captured against real
+  hardware, nor even against `sigrok-cli`'s own demo driver (`sigrok-cli`
+  was not installed in the environment that wrote this integration). Every
+  quantization-noise explanation for low-`n` variability in
+  `docs/analysis/uno/*.md` is therefore INTERPRETATION, not verified.
+- **ESP8266 and ESP32 have no real hardware data.** Every timing/wall
+  number for them is a `timing_model.py` prediction or a compile-only
+  build-matrix figure (`docs/preflight_report.md`), never a measurement.
+- **Phase 3 (offload) has no real hardware data on any board.**
+- **Firmware uses `float` (binary32) throughout**; Qiskit Aer's reference
+  computation uses `complex128`. Residual infidelity in Phase 1's own
+  ~10⁻⁷ pass cases is consistent with this precision difference, not an
+  algorithmic error — but it means this project's own pass/fail numbers
+  are relative to a float32 baseline, not an architecture-independent one.
+- **`REFLASH_COST_S` (compile+upload time estimate) is a model constant**,
+  not a full per-board measurement — only the Uno has real reflash-time
+  data on disk; ESP8266/ESP32 estimates are unverified against real
+  uploads (uploads were never timed in the compile-only preflight matrix).
+
+---
+
+## Citation
+
+_Placeholder — add citation details here (paper/thesis reference, DOI, or
+preferred citation format) once available._
+
+## Contact
+
+_Placeholder — add the maintainer's preferred contact channel here._

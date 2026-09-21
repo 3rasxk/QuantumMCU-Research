@@ -16,6 +16,13 @@
 `.venv/bin/python` (ไม่ใช่ `python` เฉย ๆ — venv มี `qiskit`, `qiskit_aer`,
 `pyserial` ที่สคริปต์ต้องใช้)
 
+**แนะนำ:** สำหรับการรันทั่วไป (หนึ่งวงจร หนึ่งบอร์ด หนึ่ง phase ต่อครั้ง) ใช้
+`pc/run.py` แทน — มันตรวจ input, เช็ค preflight (git tree, พอร์ต, กันเครื่องหลับ,
+สถานะ resume), พิมพ์คำสั่งที่จะรันให้ดูก่อน แล้วค่อยส่งต่อไปยังสคริปต์เดิมด้านล่าง
+ให้เอง ไม่ได้เขียนตรรกะเก็บข้อมูลใหม่ ดู `README.md`'s "Quick start" และ
+`docs/run/<board>.md` เอกสารนี้ (คู่มือรันมือฉบับเต็ม) ยังใช้ได้เสมอสำหรับ flag
+หรือกรณีที่ `pc/run.py` ยังไม่ครอบคลุม (เช่น Phase 3's `--bauds`)
+
 ---
 
 ## 0. ก่อนรันทุกครั้ง (before every run)
@@ -138,9 +145,12 @@ n=8 ที่จะถูกข้ามอัตโนมัติเพรา�
     --circuits h_all bell_ghz qft grover qpe steane_encode --n-start 2 --n-max 8
 ```
 
-**Output:** `data/raw/phase2/uno_raw.csv` (ทุก rep ดิบ), `uno_memory_wall.csv`
-(สรุป 1 แถวต่อจุด), `data/raw/telemetry/points.csv` / `sessions.csv` (schema
-เดียวกันทุกบอร์ด/phase, ดู § "ตรวจผลลัพธ์" ด้านล่าง)
+**Output:** `data/raw/phase2/uno/<circuit>/raw.csv` (ทุก rep ดิบ, ต่อวงจร),
+`data/raw/phase2/uno/<circuit>/memory_wall.csv` (สรุป 1 แถวต่อจุด),
+`data/raw/phase2/uno/<circuit>/points.csv` / `sessions.csv` / `env/*.json`
+(schema เดียวกันทุกบอร์ด/phase, ดู § "ตรวจผลลัพธ์" ด้านล่าง — แยกเป็นหนึ่ง
+โฟลเดอร์ต่อ (phase, board, circuit) ตั้งแต่ `pre-run-uno-v4`/`v5`, ดู
+`pc/shared/paths.py`)
 
 ### Phase 3 (offload)
 
@@ -157,7 +167,10 @@ n=8 ที่จะถูกข้ามอัตโนมัติเพรา�
 ~1.1h เพราะ PC-side Aer simulation ไม่ cache; n=12 ถูกข้ามอัตโนมัติเพราะ
 `skipped_sim_cost_infeasible`)
 
-**Output:** `data/raw/phase3/uno_raw.csv`, `uno_session_log.csv`
+**Output:** `data/raw/phase3/uno/<circuit>/raw.csv`,
+`data/raw/phase3/uno/<circuit>/session_log.csv` (Phase 3's terminal-record
+file — คนละชื่อจาก Phase 2's `memory_wall.csv`, ดู
+`pc/shared/paths.session_log_csv_path`)
 
 ---
 
@@ -192,7 +205,8 @@ implement เฉพาะ Uno เท่านั้นในตอนนี้)
 **⚠ ข้อควรระวังเฉพาะ ESP8266 (ยัง UNVERIFIED-needs-hardware, ดู `docs/preflight_report.md`
 finding H1):** grover ที่ n=8/n=9 คำนวณไว้ว่าอาจชน hardware watchdog (~8 วินาที) ก่อนจบ 1
 rep เพราะ per-rep คาดไว้ 15.6s (n=8) / 130.5s (n=9) — ถ้าบอร์ดเงียบแล้วเจอ
-`watchdog_suspected` ใน `esp8266_memory_wall.csv` **อย่าตีความเป็น Memory Wall จริง**
+`watchdog_suspected` ใน `data/raw/phase2/esp8266/grover/memory_wall.csv`
+**อย่าตีความเป็น Memory Wall จริง**
 (ระบบแยกสถานะนี้ไว้ให้แล้วตั้งแต่ SCHEMA_VERSION 2) — แนะนำรัน grover n=8 เดี่ยว ๆ ก่อน
 ทั้ง session B จริง เพื่อดูผลก่อนลงทุนเวลา 4 ชั่วโมง:
 ```bash
@@ -289,15 +303,17 @@ GPIO1/GPIO3 — **ไม่รองรับ `--la`** เช่นกัน
 
 ## ตรวจผลลัพธ์หลังรัน (how to check after a run)
 
-**ไฟล์ที่ต้องมีหลังทุกจุดสำเร็จ:**
-- `data/raw/phase2/<board>_raw.csv` (หรือ `data/raw/phase3/<board>_raw.csv`) — 1 แถวต่อ
-  1 rep, ต้องมี **100 แถวพอดี** ต่อ `(circuit, n)` ที่ status=ok
-- `data/raw/phase2/<board>_memory_wall.csv` (Phase 2) หรือ
-  `data/raw/phase3/<board>_session_log.csv` (Phase 3) — 1 แถวสรุปต่อจุด
-- `data/raw/telemetry/points.csv` — 1 แถวต่อ attempt (retry แยกแถว)
-- `data/raw/telemetry/sessions.csv` — 1 แถวต่อการรันสคริปต์ 1 ครั้ง
-- `data/raw/telemetry/env/<session_id>.json` — metadata ต่อ session (toolchain
-  version, `firmware_source_hash`, `sleep_prevention`, ฯลฯ)
+**ทุกไฟล์ด้านล่างอยู่ใต้โฟลเดอร์เดียวกัน — หนึ่งโฟลเดอร์ต่อหนึ่ง (phase, board,
+circuit):** `data/raw/phase<N>/<board>/<circuit>/` (ดู `pc/shared/paths.py`,
+เปลี่ยนจาก path แบบเดิม `data/raw/phaseN/<board>_*.csv` ตั้งแต่ `pre-run-uno-v4`/`v5`)
+
+**ไฟล์ที่ต้องมีหลังทุกจุดสำเร็จ (ในโฟลเดอร์ข้างต้น):**
+- `raw.csv` — 1 แถวต่อ 1 rep, ต้องมี **100 แถวพอดี** ต่อ `n` ที่ status=ok
+- `memory_wall.csv` (Phase 2) หรือ `session_log.csv` (Phase 3) — 1 แถวสรุปต่อจุด
+- `points.csv` — 1 แถวต่อ attempt (retry แยกแถว)
+- `sessions.csv` — 1 แถวต่อการรันสคริปต์ 1 ครั้ง
+- `env/<session_id>.json` — metadata ต่อ session (toolchain version,
+  `firmware_source_hash`, `sleep_prevention`, ฯลฯ)
 
 **แถวที่ดี (good row) ใน `points.csv`:** `schema_version=2`, `status=ok`,
 `failure_type=none`, `build_compile_s`/`upload_s`/`device_exec_s` มีค่าเป็นตัวเลขบวก
@@ -309,7 +325,7 @@ GPIO1/GPIO3 — **ไม่รองรับ `--la`** เช่นกัน
   reset ระหว่างทางกี่ครั้ง)
 - `status=failed` กับ `failure_type=build` หรือ `build_timeout` — ปัญหา toolchain/host
   ไม่ใช่ปัญหาบอร์ด (`build_timeout` จะ retry อัตโนมัติ 1 ครั้งใน budget ≤600s)
-- จำนวนแถวใน `<board>_raw.csv` ของจุดนั้นไม่ครบ 100 — ข้อมูลไม่สมบูรณ์ ห้ามใช้
+- จำนวนแถวใน `raw.csv` ของจุดนั้นไม่ครบ 100 — ข้อมูลไม่สมบูรณ์ ห้ามใช้
 - `ratio_actual_over_estimated` ใน `sessions.csv` ต่างจาก 1 เกิน ~2 เท่า — ควรตรวจสอบว่า
   โมเดล/บอร์ด/build flags ตรงกับที่คาดไว้จริงหรือไม่ (ไม่ใช่ "แก้" ตัวเลขโมเดลทันที)
 
@@ -328,9 +344,10 @@ GPIO1/GPIO3 — **ไม่รองรับ `--la`** เช่นกัน
 
 **Resume เปิดเป็นค่าเริ่มต้นเสมอ** ไม่ต้องใส่ flag อะไร — วิธีหยุดและรันต่อที่ปลอดภัยที่สุด
 คือ **กด Ctrl+C แล้วรันคำสั่งเดิมซ้ำทุกตัวอักษร**:
-- จุดที่มีแถว terminal ใน `*_memory_wall.csv` (หรือ `*_session_log.csv`) แล้ว — resume ข้าม
-  ทันที ไม่แตะฮาร์ดแวร์ซ้ำ ไม่ว่าผลจะเป็น ok หรือ wall จริงก็ตาม
-- จุดที่ตายกลางทาง (มีแถวใน `*_raw.csv` แต่ไม่มีแถว terminal คู่กัน — orphan) จะถูก
+- จุดที่มีแถว terminal ใน `memory_wall.csv` (หรือ `session_log.csv` ฝั่ง Phase 3)
+  ของ `(board, circuit)` นั้นแล้ว — resume ข้ามทันที ไม่แตะฮาร์ดแวร์ซ้ำ ไม่ว่าผลจะเป็น
+  ok หรือ wall จริงก็ตาม
+- จุดที่ตายกลางทาง (มีแถวใน `raw.csv` แต่ไม่มีแถว terminal คู่กัน — orphan) จะถูก
   **กวาดทิ้งอัตโนมัติแล้วรันจุดนั้นใหม่ทั้งหมดตั้งแต่ rep 0** — ห้ามคาดหวังว่าจะ "ต่อ" จาก
   rep ที่ค้างไว้ เพราะ trial จาก 2 sessions ไม่ใช่ตัวอย่างเดียวกัน (บอร์ด/อุณหภูมิ/reflash
   ต่างกัน)
@@ -359,8 +376,10 @@ GPIO1/GPIO3 — **ไม่รองรับ `--la`** เช่นกัน
    ```bash
    .venv/bin/python analysis/la_capture_plan.py
    ```
-   จะได้ `data/raw/la/capture_plan.csv` — ถ้าไฟล์นี้ไม่มี `--la` จะข้าม capture ของจุดนั้น
-   โดยอัตโนมัติ (บันทึกเหตุผลไว้ใน `data/raw/la/capture_issues.log`) ไม่ใช่ error, sweep
+   จะได้ `data/raw/phase2/<board>/<circuit>/la/capture_plan.csv` แยกไฟล์ต่อวงจร
+   (ดู `pc/shared/paths.la_dir`) — ถ้าไฟล์นี้ไม่มี `--la` จะข้าม capture ของจุดนั้น
+   โดยอัตโนมัติ (บันทึกเหตุผลไว้ใน
+   `data/raw/phase2/<board>/<circuit>/la/capture_issues.log`) ไม่ใช่ error, sweep
    ยังรันจนจบตามปกติ
 3. เช็ค sigrok-cli พร้อมใช้งาน (สคริปต์เช็คให้อัตโนมัติเมื่อใส่ `--la` แต่เช็คมือได้เช่นกัน):
    ```bash
@@ -374,17 +393,19 @@ GPIO1/GPIO3 — **ไม่รองรับ `--la`** เช่นกัน
        --circuits h_all --n-start 2 --n-max 2 --la
    ```
 5. **capture แรกจริง ๆ ต้องทำตาม "First real capture checklist" ใน `run_checklist.md`
-   ทีละขั้นก่อนไปจุดอื่น** — ตรวจ `data/raw/la/uno_h_all_n2.csv` ด้วย
-   `analysis/la_pulses.py` ว่า `is_clean: True` และจำนวนพัลส์ตรง 100 ก่อนเชื่อผลลัพธ์จาก
-   `analysis/la_crosscheck.py` (`data/raw/telemetry/la_crosscheck.csv`)
+   ทีละขั้นก่อนไปจุดอื่น** — ตรวจ
+   `data/raw/phase2/uno/h_all/la/uno_h_all_n2.csv` ด้วย `analysis/la_pulses.py`
+   ว่า `is_clean: True` และจำนวนพัลส์ตรง 100 ก่อนเชื่อผลลัพธ์จาก
+   `analysis/la_crosscheck.py` (เขียนลง `la_crosscheck.csv` ในโฟลเดอร์ `la/`
+   เดียวกัน — `--la-dir` เป็น flag บังคับของสคริปต์นั้น ไม่มีค่า default อีกต่อไป)
 
 **สิ่งที่รับประกันได้จากโค้ด (ตรวจแล้วด้วย `pc/shared/la_capture_test.py`):**
 - ปิด `--la` = ไม่มีการเรียก sigrok-cli หรือโค้ดใน `pc/shared/la_capture.py` เลยแม้แต่
   ครั้งเดียว
 - capture มีปัญหา (sigrok error, pulse ไม่ครบ, ไฟล์ capture ว่าง) ถูกบันทึกลง
-  `data/raw/la/capture_issues.log` เท่านั้น **ไม่กระทบ** ข้อมูล `micros()` ที่บันทึกลง
-  `*_raw.csv`/`*_memory_wall.csv`/`points.csv` — จุดข้อมูลนั้นยังนับว่า `ok` ตามปกติถ้า
-  บอร์ดตอบสนองถูกต้อง ไม่ว่า LA จะจับสัญญาณได้หรือไม่ก็ตาม
+  `la/capture_issues.log` (ของ circuit นั้น) เท่านั้น **ไม่กระทบ** ข้อมูล `micros()`
+  ที่บันทึกลง `raw.csv`/`memory_wall.csv`/`points.csv` — จุดข้อมูลนั้นยังนับว่า `ok`
+  ตามปกติถ้าบอร์ดตอบสนองถูกต้อง ไม่ว่า LA จะจับสัญญาณได้หรือไม่ก็ตาม
 
 **`GPIO_TIMING_PIN` ต่อบอร์ด (อ้างอิงถ้าจะต่อ LA กับบอร์ดอื่นในอนาคต แม้ `--la` ยังไม่รองรับ
 ESP8266/ESP32):**
