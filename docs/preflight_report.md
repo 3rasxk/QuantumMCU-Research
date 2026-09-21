@@ -460,8 +460,9 @@ why this preflight ran its own comparison out of `/tmp` instead.)
 that file is a regenerable plan, not measurement data.
 
 **M6 — The repo lives in a TCC-protected directory.**
-`/Users/thirasak/Documents/QuantumMCU Research/quantum-lab` is under `~/Documents`,
-which macOS gates behind Privacy & Security → Files and Folders. This is not
+This repo's path is under `~/Documents` (`~/Documents/QuantumMCU
+Research/quantum-lab`), which macOS gates behind Privacy & Security → Files
+and Folders. This is not
 hypothetical here: access to the whole repository was lost twice while building
 this very tooling, mid-task, with `Operation not permitted` on every read. A
 13.9 h append-only collection run in that directory risks the same interruption.
