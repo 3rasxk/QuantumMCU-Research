@@ -138,7 +138,7 @@ Requires [PlatformIO](https://platformio.org/) (`pio`) on `PATH`, or set
 
 ---
 
-## Quick start
+## How to run
 
 **The owner may run any algorithm on any board at any time with `pc/run.py`,
 without waiting for approval** (standing decision, 2026-09-21 — see
@@ -146,55 +146,186 @@ without waiting for approval** (standing decision, 2026-09-21 — see
 runner; a task run through Claude Code still follows the one-algorithm-at-
 a-time, stop-and-report workflow.
 
-```bash
-# 1. See what would run, without touching hardware:
-.venv/bin/python pc/run.py --board uno --algorithm h_all --phase 2 \
-    --port /dev/cu.usbmodem1101 --dry-run
-
-# 2. Run it for real:
-.venv/bin/python pc/run.py --board uno --algorithm h_all --phase 2 \
-    --port /dev/cu.usbmodem1101
-```
-
 `pc/run.py` is a thin, validating front end — it contains **no** collection
 logic of its own. It resolves the exact command it would run, prints it,
 runs read-only preflight checks (git tree, port, sleep prevention, resume
 state), asks for confirmation, and delegates to the real per-board sweep
 script (`pc/phase2_sweep/<board>_sweep.py` or `pc/phase3_offload/sweep.py`).
-Every flag below is real, read from those scripts' own `argparse` blocks —
-nothing here is invented.
+Every flag/example on this page is real, read directly from `pc/run.py
+--help` and its own source — nothing here is invented or carried over from
+an older doc.
 
-| Flag | Meaning | Default |
+### a. One-time setup (each new terminal session)
+
+```bash
+# 1. Activate the venv -- your prompt should now start with "(.venv)".
+#    That prefix IS the confirmation it worked; if you don't see it, the
+#    venv isn't active and `python`/`pip` will resolve to the wrong
+#    interpreter for the rest of this session.
+source .venv/bin/activate
+
+# 2. Keep the machine awake for the WHOLE session, in a SEPARATE terminal.
+#    This command does not return while it's running -- that's normal,
+#    not a hang. Leave that terminal open and don't touch it; Ctrl+C it
+#    only when you're completely done for the day.
+caffeinate -dims
+
+# 3. Confirm the repo is in the state you expect before touching hardware.
+git status
+git describe --tags
+
+# 4. Find your board's port. Do this EVERY session -- the exact number can
+#    change for the SAME physical board/cable (e.g. usbmodem101 vs
+#    usbmodem1101) after a reconnect, a reflash, or a reboot.
+pio device list
+```
+
+`pio device list` prints every serial device currently attached, with a USB
+vendor:product ID. This project has never recorded a confirmed VID:PID for
+its own specific boards (no ESP8266/ESP32 hardware run has completed as of
+this writing) — the table below states the *typical* ID for the chip family
+each board type usually uses, **not a value verified against this repo's
+own hardware**:
+
+| Board | Typical port pattern (macOS) | Typical USB chip (unverified for this repo) |
 |---|---|---|
-| `--board` (required) | `uno` / `esp8266` / `esp32` | — |
-| `--algorithm` (required) | one of the six circuits | — |
-| `--phase` (required) | `2` or `3` | — |
-| `--port` (required) | serial device path, e.g. `/dev/cu.usbmodem1101` — **never auto-guessed** | — |
-| `--n-start` / `--n-max` | passed through unchanged | the delegated script's own default (varies per board/phase, see `docs/run/<board>.md`) |
-| `--reps` | **validation only**, not passed through — `REPS` is a compile-time firmware constant (`pc/shared/timing_model.REPS = 100`); the run refuses if `--reps` doesn't match it | — |
-| `--build-timeout` | passed through unchanged | 300s |
-| `--upload-retry-settle-s` | passed through — **Uno Phase 2 only** | 2.0s |
-| `--la` | passed through — **Uno Phase 2 only**, UNVERIFIED (see Limitations) | off |
-| `--fresh` | **archives** (moves, never deletes) any existing data/figures/analysis doc for this (board, algorithm, phase) to `data/archive/`, then starts collection at the circuit's own minimum meaningful `n` — see "Fresh runs and the archive" below | off |
-| `--dry-run` | print the resolved command, the planned archive destination (if `--fresh`), and preflight info; never touches hardware, never calls `pio`, never moves a file | off |
-| `--yes` | skip the interactive y/n confirmation | off |
+| Uno R3 | `/dev/cu.usbmodemXXXX` | native USB (ATmega16U2) — commonly `2341:0043` or `2341:0001` |
+| ESP8266 (NodeMCU) | `/dev/cu.usbserial-XXXX`, `/dev/cu.wchusbserial-XXXX`, or `/dev/cu.SLAB_USBtoUART` | CH340 (`1A86:7523`) or CP2102 (`10C4:EA60`), board-dependent |
+| ESP32 DevKit | same three patterns as ESP8266 | usually CP2102 (`10C4:EA60`), sometimes CH340 |
 
-One algorithm, one board, one phase per invocation — `--algorithm` takes a
-single value, not a list. (This used to also mirror a strict "wait for
-approval" operator decision; that decision now applies only to Claude-Code-
-driven runs, not the owner's own — see Quick start above.)
+Treat the VID:PID column as a sanity check only. **Always re-run
+`pio device list` in the same session you're about to collect data and pass
+`--port` whatever it shows right then** — never reuse a port string from an
+earlier session, from these docs, or from your shell history.
+
+### b. Full flag reference (from `pc/run.py --help`)
+
+| Flag | Required | Purpose | Default | Applies to |
+|---|---|---|---|---|
+| `--board {uno,esp8266,esp32}` | **yes** | which board | — | all |
+| `--algorithm {h_all,bell_ghz,qft,grover,qpe,steane_encode}` | **yes** | which circuit (one value, not a list) | — | all |
+| `--phase {2,3}` | **yes** | Phase 2 (on-device) or Phase 3 (PC-offload) | — | all |
+| `--port PORT` | **yes** | serial device path, e.g. `/dev/cu.usbmodem1101` — **never auto-guessed** | — | all |
+| `--n-start N_START` | no | sweep starting `n`, passed through unchanged | non-fresh: the delegated script's own default (`2`); `--fresh`: the circuit's own minimum meaningful `n` (see "Fresh runs" below) | all |
+| `--n-max N_MAX` | no | sweep ceiling `n`, passed through unchanged | phase 2: uno `14`, esp8266 `16`, esp32 `18`; phase 3: `22` on every board (`N_SAFETY_CAP`) | all |
+| `--reps REPS` | no | **validation only, never passed through** — must equal `100` (`pc/shared/timing_model.REPS`, a compile-time firmware constant) or the run is refused | — | all |
+| `--build-timeout BUILD_TIMEOUT` | no | max seconds per `pio run` (compile) or `pio run -t upload` call, passed through | `300` | all |
+| `--upload-retry-settle-s UPLOAD_RETRY_SETTLE_S` | no | settle delay before retrying an upload-stage failure | `2.0` | **Uno Phase 2 only** — refused for every other board/phase |
+| `--la` | no | enable Logic Analyzer capture (`sigrok-cli`) | off | **Uno Phase 2 only** — refused for every other board/phase; UNVERIFIED, never run against real `sigrok-cli` (see Limitations) |
+| `--fresh` | no | archive existing data for this (board, algorithm, phase, la) to `data/archive/`, then start at the circuit's own minimum meaningful `n` | off | all |
+| `--dry-run` | no | preview only — print the resolved command, the preflight checks, and (if `--fresh`) the planned archive destination; never touches hardware, never calls `pio`, never moves or writes a data file | off | all |
+| `--yes` | no | skip the interactive y/n confirmation before touching hardware | off | all |
+
+Every invocation of `pc/run.py` — dry-run, refused, real, interrupted — is
+recorded in `data/run_history.jsonl`; see § "Checking results after a run"
+below.
+
+### c. Worked examples, every board × phase
+
+Each block: the exact dry-run first, what to expect from it, then the exact
+real command. **Replace `/dev/cu.usbmodem1101` / `/dev/cu.usbserial-0001` /
+`/dev/cu.SLAB_USBtoUART` below with whatever `pio device list` showed you in
+step (a.4) — these are illustrative examples, not values to copy blindly.**
+
+**Uno, Phase 2** (the only board/phase with real hardware data so far):
+```bash
+.venv/bin/python pc/run.py --board uno --algorithm h_all --phase 2 \
+    --port /dev/cu.usbmodem1101 --dry-run
+```
+Expect: a `--- preflight ---` block (git clean/dirty state, sleep-prevention
+status, resume state read from the existing `no_la/memory_wall.csv` if any),
+the line `command: <python> pc/phase2_sweep/uno_sweep.py --port
+/dev/cu.usbmodem1101 --circuits h_all`, then `port: [dry-run] skipping pio
+device list / port checks -- no hardware access`, and finally `[dry-run]
+stopping here -- no subprocess started, no file moved`. Exit code `0`.
+```bash
+.venv/bin/python pc/run.py --board uno --algorithm h_all --phase 2 \
+    --port /dev/cu.usbmodem1101
+```
+
+**Uno, Phase 3** — **UNVERIFIED: no Phase 3 session has completed on real
+hardware yet, on any board** (see Limitations):
+```bash
+.venv/bin/python pc/run.py --board uno --algorithm h_all --phase 3 \
+    --port /dev/cu.usbmodem1101 --dry-run
+```
+Expect the same preflight block, prefixed with the `*** UNVERIFIED: board='uno'
+phase=3 has never been run against real hardware ... ***` banner (printed
+for every Phase 3 run, on every board — not Uno-specific).
+```bash
+.venv/bin/python pc/run.py --board uno --algorithm h_all --phase 3 \
+    --port /dev/cu.usbmodem1101
+```
+
+**ESP8266, Phase 2** — **UNVERIFIED: no ESP8266 session has completed on
+real hardware yet** (see Limitations):
+```bash
+.venv/bin/python pc/run.py --board esp8266 --algorithm h_all --phase 2 \
+    --port /dev/cu.usbserial-0001 --dry-run
+```
+Expect the same `*** UNVERIFIED: board='esp8266' phase=2 ... ***` banner
+(printed for every ESP8266/ESP32 run, any phase — the board itself is
+unverified, not just Phase 3).
+```bash
+.venv/bin/python pc/run.py --board esp8266 --algorithm h_all --phase 2 \
+    --port /dev/cu.usbserial-0001
+```
+
+**ESP8266, Phase 3** — **UNVERIFIED** (both the board and Phase 3 itself):
+```bash
+.venv/bin/python pc/run.py --board esp8266 --algorithm h_all --phase 3 \
+    --port /dev/cu.usbserial-0001 --dry-run
+.venv/bin/python pc/run.py --board esp8266 --algorithm h_all --phase 3 \
+    --port /dev/cu.usbserial-0001
+```
+
+**ESP32, Phase 2** — **UNVERIFIED: no ESP32 session has completed on real
+hardware yet**:
+```bash
+.venv/bin/python pc/run.py --board esp32 --algorithm h_all --phase 2 \
+    --port /dev/cu.SLAB_USBtoUART --dry-run
+.venv/bin/python pc/run.py --board esp32 --algorithm h_all --phase 2 \
+    --port /dev/cu.SLAB_USBtoUART
+```
+
+**ESP32, Phase 3** — **UNVERIFIED** (both the board and Phase 3 itself):
+```bash
+.venv/bin/python pc/run.py --board esp32 --algorithm h_all --phase 3 \
+    --port /dev/cu.SLAB_USBtoUART --dry-run
+.venv/bin/python pc/run.py --board esp32 --algorithm h_all --phase 3 \
+    --port /dev/cu.SLAB_USBtoUART
+```
 
 Per-board command tables (exact commands, expected point counts, estimated
 or measured times, expected walls) live in `docs/run/uno.md`,
 `docs/run/esp8266.md`, `docs/run/esp32.md`, and `docs/run/phase3.md`. For
 every flag the underlying sweep scripts support that isn't listed above
-(there are a few, e.g. `--wdt-threshold-s`, `--n-start`/`--n-max` edge
-cases), see `docs/manual_run_guide.md`, which documents the scripts
-directly and is the fallback if `pc/run.py` doesn't cover your case.
+(there are a few, e.g. `--wdt-threshold-s`), see `docs/manual_run_guide.md`,
+which documents the scripts directly and is the fallback if `pc/run.py`
+doesn't cover your case.
 
 ---
 
 ## Fresh runs and the archive
+
+**Exact worked example** (discard existing Uno `h_all` Phase 2 data and
+start over from the circuit's own minimum meaningful `n`):
+```bash
+.venv/bin/python pc/run.py --board uno --algorithm h_all --phase 2 \
+    --port /dev/cu.usbmodem1101 --fresh --dry-run   # preview the archive destination first
+.venv/bin/python pc/run.py --board uno --algorithm h_all --phase 2 \
+    --port /dev/cu.usbmodem1101 --fresh              # then run it for real
+```
+The dry-run's `archive: existing data (...) will be moved to <dest> (with
+MANIFEST.json) before collection starts` line names the exact destination
+before anything moves. Find it afterward the same way (it's also printed at
+the end of the real run, under `--- fresh run summary ---`), or list
+`data/archive/phase2/uno/h_all/` directly. Delete a specific archive folder
+any time with:
+```bash
+rm -r data/archive/phase2/uno/h_all/<the-UTC-timestamp-shown>/
+```
+Deleting it affects nothing in the pipeline — proven below.
 
 `--fresh` archives (moves, never deletes or copies) that (board, algorithm,
 phase)'s existing `data/raw/`, `data/figures/`, and
@@ -299,8 +430,27 @@ hand.
 
 ## Resume, interrupt, retry
 
-**Resume is always on, no flag needed.** The safest way to stop and
-continue is Ctrl+C, then re-run the exact same command:
+**Ctrl+C** interrupts the delegated sweep script; `pc/run.py` catches it,
+prints a note that resume will pick up where it left off, records
+`event=interrupted` in `data/run_history.jsonl`, and exits with code `130`.
+
+**Resume is always on, no flag needed — the exact re-run command is the
+same command you just interrupted**, e.g.:
+```bash
+.venv/bin/python pc/run.py --board uno --algorithm h_all --phase 2 \
+    --port /dev/cu.usbmodem1101
+```
+**Telling a resume from a fresh point:** the delegated sweep script's own
+first printed lines are the tell — `resume summary (<board>)` followed by
+`already done: N/M point(s)` and one `skip (<circuit>, <n>): already <status>`
+line per already-completed point means resume found prior work; `already
+done: 0/M point(s)` means it's starting clean (either truly the first run,
+or every previous point was swept away as an orphan — the script prints
+`resume: purged N orphan raw row(s)...` when that happens). `git status`
+itself won't show this — resume state lives in
+`data/raw/.../no_la/memory_wall.csv`, not in what's staged/modified in git;
+check that file directly (or `pc/run_history.py`, see below) if you want to
+confirm before running.
 - A point with a terminal row in `memory_wall.csv`/`session_log.csv` is
   skipped instantly, whether it recorded `ok` or a wall.
 - A point that died mid-run (rows in `raw.csv` but no matching terminal
@@ -338,6 +488,45 @@ wall or `n-max`. After each algorithm, the standing practice in this
 project has been to generate and review graphs (see below) before moving
 to the next one — see `run_log.md`'s "Standing Operator Decisions" section
 for the full, dated record of every rule and why it was adopted.
+
+---
+
+## Checking results after a run
+
+```bash
+# raw trials, terminal-record summary, per-attempt log, session log, env metadata
+head -3 data/raw/phase2/uno/h_all/no_la/raw.csv
+cat data/raw/phase2/uno/h_all/no_la/memory_wall.csv
+tail -1 data/raw/phase2/uno/h_all/no_la/points.csv
+tail -1 data/raw/phase2/uno/h_all/no_la/sessions.csv
+ls data/raw/phase2/uno/h_all/no_la/env/
+```
+Use `with_la/` instead of `no_la/` if you ran with `--la` and sigrok-cli
+actually found a device (see § "no_la vs with_la" under Data layout below).
+
+**A healthy status distribution** in `memory_wall.csv`, one terminal row per
+`n` attempted: a run of consecutive `ok` rows for the low `n` values, then
+exactly one wall-or-stop row where the sweep ended — either `build_overflow`
+(positive RAM evidence, a real wall) or `malloc_failed` (ESP8266/ESP32
+only), or a `runtime_hang_or_reset`/`watchdog_suspected`/`build_or_upload_fail`
+row (not a wall — flagged for manual review, see § "Resume, interrupt,
+retry" above). Any `skipped_resume`/`skipped_known_wall`/
+`skipped_compute_infeasible` rows in `points.csv` are expected on a resumed
+or `--fresh`-clamped run, not a problem.
+
+**This run's own history entry:**
+```bash
+.venv/bin/python pc/run_history.py --board uno --algorithm h_all --phase 2
+```
+(`pc/run_history.py --help` for the full filter list — `--source
+{live,backfill}`, `--since`/`--until` a `YYYY-MM-DD` or full ISO timestamp.
+Run with no flags at all to see every invocation ever recorded.) Each
+invocation prints as one line: timestamp, board/algorithm/phase/bucket,
+`[live]` or `[backfill]`, and the terminal event
+(`completed`/`failed`/`interrupted`/`dry_run`) with its duration and, for a
+completed real run, the same point/status counts as `memory_wall.csv`. A
+`started` line with no matching terminal line is flagged
+`NO COMPLETION RECORDED` — see Troubleshooting below.
 
 ---
 
@@ -379,10 +568,24 @@ both.
 |---|---|---|
 | `avrdude: stk500_getsync() ... not in sync` | Transient upload glitch, **or** two processes are fighting over the same port | Let the built-in retry (up to 3 attempts) run. If it keeps happening, check `ps`/`lsof <port>` for a second process (`pio device monitor` left open, a second sweep, a second `pc/run.py`) — this exact collision has happened in this project |
 | Port name changed mid-run (`usbmodem101` → `usbmodem1101`) | Uno re-enumerates during upload | Expected; the sweep scripts' own `find_uno_port()`/`find_port()` re-detect it automatically — don't edit the command |
-| `Operation not permitted` opening the port (macOS) | No Full Disk Access, or another program (e.g. `pio device monitor`) holds the port | Grant Full Disk Access to your terminal; close any open serial monitor before running a sweep |
+| Port name is different from your last session (any board) | Normal — port numbering isn't stable across reconnects/reboots, only the sweep scripts' own mid-run re-detection is automatic | Re-run `pio device list` (step a.4 above) and pass whatever it shows **this session** — never reuse a port string from an earlier session or from these docs |
+| `Operation not permitted` opening the port (macOS) | No Full Disk Access for your terminal, TCC blocking access to the repo's own directory (this happened twice early in this project — see `docs/preflight_report.md` finding M6, now resolved by moving the repo out of `~/Documents`), or another program (e.g. `pio device monitor`) holds the port | Grant Full Disk Access to your terminal; close any open serial monitor before running a sweep; if it's the repo directory itself (not the port), confirm the repo isn't under `~/Documents`/`~/Desktop`/`~/Downloads` |
+| `git: DIRTY (...)` warning in preflight | Uncommitted changes in the working tree | **Not a refusal** under the current owner-run rules (2026-09-21) — the run continues; the exact commit hash and dirty flag are still recorded automatically in that session's environment JSON and in `data/run_history.jsonl`, so the exact code state is always traceable after the fact even if you don't commit first |
 | Board goes silent, no `DONE`, `runtime_hang_or_reset` (no RAM evidence) | Genuine hang, transient glitch, or (rarely) a real wall the compile-time check didn't catch | **Not** automatically a Memory Wall — flagged for manual review, per standing decision. Check `failure_message`/`reset_count` in `points.csv` |
 | A long session appears to have stalled or the laptop slept | Sleep not prevented | `caffeinate -dims` in a separate terminal before starting; `pc/run.py`'s preflight prints the current `pmset -g assertions` status either way |
 | `error: --reps ... given, but REPS is fixed at 100` | Trying to change repetition count from the CLI | Not possible — `REPS` is a `#define` baked into the firmware at compile time (`pc/shared/timing_model.REPS`) |
+| A file literally named after a flag shows up untracked in the repo root, e.g. `--dry-run` (`git status` shows `?? --dry-run`) | Not caused by this project's code (`pc/run.py`'s `--dry-run` is a normal `argparse` flag, parsed correctly, that never opens a file by that name — confirmed by reading its argument-parsing code) — almost certainly a shell-side accident: a stray output redirection (e.g. an errant `>` before the flag) or a copy/paste artifact in the terminal | Safe to delete — the leading `--` in the filename would otherwise be parsed as an option by `rm` itself, so tell it to stop parsing options: `rm -- --dry-run` (the `--` means "everything after this is a filename, not a flag") |
+
+### If something looks wrong, stop and ask
+
+A resume summary that skips more or fewer points than expected, a failure
+status you don't recognize, a preflight warning you don't understand, or
+any command in this doc producing output that doesn't match what's
+described above — **stop before running the next command and ask**, the
+same way every session on this project has been handled. Guessing and
+continuing risks hours of hardware time producing data that can't later be
+told apart from good data (see `run_log.md`'s "Standing Operator Decisions"
+for the full reasoning). This is cheap to do and expensive to skip.
 
 ---
 
