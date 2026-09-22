@@ -459,18 +459,19 @@ why this preflight ran its own comparison out of `/tmp` instead.)
 `analysis/la_capture_plan.py:202` also writes under `data/raw/` with `"w"`, but
 that file is a regenerable plan, not measurement data.
 
-**M6 — The repo lives in a TCC-protected directory.**
-This repo's path is under `~/Documents` (`~/Documents/QuantumMCU
-Research/quantum-lab`), which macOS gates behind Privacy & Security → Files
-and Folders. This is not
-hypothetical here: access to the whole repository was lost twice while building
-this very tooling, mid-task, with `Operation not permitted` on every read. A
-13.9 h append-only collection run in that directory risks the same interruption.
-iCloud sync is **not** a factor (no `~/Library/Mobile Documents/com~apple~CloudDocs/Documents`,
-no `.icloud` placeholders, no ubiquity attributes) — the risk is TCC alone.
-**Recommended:** confirm the grant for the terminal/host app before starting, and
-prefer starting long sessions from a directory outside `~/Documents` (or accept
-that resume exists exactly for this).
+**M6 — RESOLVED (2026-09-22): the repo lives outside `~/Documents` now.**
+This finding originally reported the repo path under `~/Documents`
+(`~/Documents/QuantumMCU Research/quantum-lab`), which macOS gates behind
+Privacy & Security → Files and Folders — not hypothetical, access to the
+whole repository was lost twice while building this tooling, mid-task, with
+`Operation not permitted` on every read. The working copy has since moved to
+`~/Developer/quantum-lab`, which is not under any TCC-gated folder category
+(Documents/Desktop/Downloads), so this risk no longer applies to collection
+runs from that path. Kept here for the historical record — if the repo is
+ever relocated back under `~/Documents`, `~/Desktop`, or `~/Downloads`, this
+risk returns and the original recommendation applies again: confirm the
+Files and Folders grant for the terminal/host app before starting a
+multi-hour session, or accept that resume exists exactly for this.
 
 **M2 — A cable/port disconnect is tagged `failure_type=hang`.**
 `pc/phase2_sweep/uno_sweep.py:464` (and `esp32_sweep.py:460`,
