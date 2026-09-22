@@ -375,10 +375,10 @@ def main():
         # its SessionRecorder's __exit__ already wrote a session row noting the
         # exception before it got here).
         print(f"\n!!! STOPPING RUN: {e}")
-        print(f"raw -> {sp.raw_csv_path('uno', e.circuit)}\n"
-              f"memory wall -> {sp.memory_wall_csv_path('uno', e.circuit)}")
-        print(f"telemetry -> {sp.sessions_csv_path('uno', e.circuit)}, "
-              f"{sp.points_csv_path('uno', e.circuit)}")
+        print(f"raw -> {sp.raw_csv_path('uno', e.circuit, la=la_active)}\n"
+              f"memory wall -> {sp.memory_wall_csv_path('uno', e.circuit, la=la_active)}")
+        print(f"telemetry -> {sp.sessions_csv_path('uno', e.circuit, la=la_active)}, "
+              f"{sp.points_csv_path('uno', e.circuit, la=la_active)}")
         sys.exit(2)
 
 
@@ -393,13 +393,19 @@ def _run_circuit(args, circuit, la_active):
         print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {args.n_max}]")
         return
 
-    raw_directory = sp.raw_dir("uno", circuit, phase=2)
+    # no_la/with_la split (2026-09-22, see pc/shared/paths.py): la_active, not
+    # args.la, decides the bucket -- if --la was passed but sigrok-cli turned
+    # out unavailable/no device found, la_active is already False and no
+    # capture is ever attempted (see the la_active computation in main()), so
+    # this point belongs under no_la exactly like an ordinary run, not
+    # with_la (which means "a capture was actually attempted").
+    raw_directory = sp.raw_dir("uno", circuit, phase=2, la=la_active)
     raw_directory.mkdir(parents=True, exist_ok=True)
-    raw_path = sp.raw_csv_path("uno", circuit)
-    wall_path = sp.memory_wall_csv_path("uno", circuit)
-    points_csv = sp.points_csv_path("uno", circuit)
-    sessions_csv = sp.sessions_csv_path("uno", circuit)
-    env_directory = sp.env_dir("uno", circuit)
+    raw_path = sp.raw_csv_path("uno", circuit, la=la_active)
+    wall_path = sp.memory_wall_csv_path("uno", circuit, la=la_active)
+    points_csv = sp.points_csv_path("uno", circuit, la=la_active)
+    sessions_csv = sp.sessions_csv_path("uno", circuit, la=la_active)
+    env_directory = sp.env_dir("uno", circuit, la=la_active)
 
     if la_active:
         # per-circuit LA dir/plan/issues-log — reassigning these module attributes
@@ -485,7 +491,7 @@ def _run_circuit(args, circuit, la_active):
                     session.note_interruption_gap(gap)
             env_path = tel.write_environment_metadata(
                 session.session_id, "uno", args.port, BAUD, F_CPU, FW_DIR / "src",
-                env_dir=env_directory, pio_project_dir=FW_DIR, pio_env="uno")
+                env_dir=env_directory, pio_project_dir=FW_DIR, pio_env="uno", la=la_active)
             session.env_json_path = str(env_path)
 
             _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasible,

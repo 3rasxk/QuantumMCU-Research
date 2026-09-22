@@ -16,10 +16,12 @@
 #
 # ---------------------------------------------------------------------------
 # ข้อตกลงชื่อไฟล์ capture (ต้องบันทึกไว้ที่นี่และใน run_checklist.md ให้ตรงกัน):
-#   data/raw/phase2/<board>/<circuit>/la/<board>_<circuit>_n<N>.csv
-#   เช่น data/raw/phase2/uno/h_all/la/uno_h_all_n2.csv
+#   data/raw/phase2/<board>/<circuit>/with_la/la/<board>_<circuit>_n<N>.csv
+#   เช่น data/raw/phase2/uno/h_all/with_la/la/uno_h_all_n2.csv
 #   (2026-09-20: ย้ายจาก data/raw/la/<board>_<circuit>_n<N>.csv เดิมที่ใช้ไดเรกทอรีเดียว
-#   ทุก board/circuit ร่วมกัน มาเป็นหนึ่งไดเรกทอรีต่อ circuit — ดู run_log.md)
+#   ทุก board/circuit ร่วมกัน มาเป็นหนึ่งไดเรกทอรีต่อ circuit — ดู run_log.md
+#   2026-09-22: เพิ่มชั้น with_la/ เพราะ capture ของ LA มีอยู่ได้เฉพาะจุดที่รันด้วย
+#   --la เท่านั้น — ดู pc/shared/paths.py)
 #   1 ไฟล์ = 1 จุดข้อมูล = REPS พัลส์ (ไม่ใช่ 1 ไฟล์ต่อ rep — capture ต่อเนื่องทั้ง
 #   session ของจุดนั้น แล้วแยกพัลส์ทีหลังด้วย la_pulses.py)
 #
@@ -142,8 +144,13 @@ def find_capture_files(la_dir: Path):
 
 def load_mcu_exec_times(board: str, circuit: str, n: int):
     """คืน list ของ exec_time_us เรียงตาม rep (0..) จาก raw.csv ของ (board, circuit)
-    นี้ (pc/shared/paths.raw_csv_path) คืน None ถ้าไม่มีข้อมูลของจุดนี้เลย"""
-    path = sp.raw_csv_path(board, circuit, phase=2)
+    นี้ (pc/shared/paths.raw_csv_path) คืน None ถ้าไม่มีข้อมูลของจุดนี้เลย
+
+    la=True เสมอ (2026-09-22): la_crosscheck.py ทำงานกับ capture ของ Logic
+    Analyzer ซึ่งมีอยู่ได้เฉพาะใน with_la/ bucket เท่านั้น (ดู pc/shared/paths.py) —
+    raw.csv ที่ join ด้วยจึงต้องมาจาก bucket เดียวกันเสมอ ไม่ใช่ no_la/ ของจุดเดียวกัน
+    ซึ่งเป็นคนละ session/การวัดกันโดยสิ้นเชิง"""
+    path = sp.raw_csv_path(board, circuit, phase=2, la=True)
     if not path.exists():
         return None
     rows = []
@@ -291,7 +298,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--la-dir", type=Path, required=True,
                      help="one circuit's own la/ dir, e.g. "
-                          "data/raw/phase2/uno/h_all/la (pc/shared/paths.la_dir)")
+                          "data/raw/phase2/uno/h_all/with_la/la (pc/shared/paths.la_dir)")
     ap.add_argument("--out", type=Path, default=None,
                      help="default: <la-dir>/la_crosscheck.csv (alongside the captures)")
     ap.add_argument("--plan", type=Path, default=None,

@@ -72,7 +72,9 @@ one.
 
 ## What to check afterwards
 
-`data/raw/phase3/<board>/<circuit>/`:
+`data/raw/phase3/<board>/<circuit>/no_la/` — always `no_la/`, Phase 3 has no
+`--la` flag at all (`pc/phase3_offload/sweep.py`'s argparse has no such
+option; see `pc/shared/paths.py`'s no_la/with_la split):
 - `raw.csv`: 100 rows per `n` for an ok point, same as Phase 2.
 - `session_log.csv` (Phase 3's terminal-record file — **not**
   `memory_wall.csv`, different schema, see `pc/shared/paths.py`'s

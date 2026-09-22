@@ -1,8 +1,15 @@
 # Running the Arduino Uno R3 (Phase 2)
 
-The only board with real hardware data in this project. `GPIO_TIMING_PIN =
-D7` (`firmware/uno/src/main.cpp:27`), logic 5V, UART0 on D0/D1 (never
-connect a Logic Analyzer there).
+The only board with real hardware data in this project, and the only one
+`--la` is implemented for. `GPIO_TIMING_PIN = D7` (`firmware/uno/src/main.cpp:27`),
+logic 5V, UART0 on D0/D1 (never connect a Logic Analyzer there).
+
+**no_la vs with_la (2026-09-22):** every path below has an implicit `no_la/`
+or `with_la/` bucket (`pc/shared/paths.py`) — `no_la/` unless you pass `--la`
+*and* sigrok-cli actually finds a device (a `--la` run with no device found
+still lands in `no_la/`, since no capture was attempted). The two buckets are
+never mixed in analysis. All real data collected so far is `no_la/`; see
+`run_checklist.md`'s "Logic Analyzer procedure" for `--la` itself.
 
 ```bash
 .venv/bin/python pc/run.py --board uno --algorithm <circuit> --phase 2 \
@@ -38,11 +45,11 @@ low a fresh sweep starts, not the ceiling.
 
 | Algorithm | `n` range (`--n-start 2`, default `--n-max`) | Expected points | ESTIMATE (device time only, `timing_model.py`, naive) | MEASURED device time: n=2..7 ok points / the n=8 wall attempt itself | Wall |
 |---|---|---|---|---|---|
-| `h_all` | 2–8 (wall), 9–14 never reached | 7 real + up to 6 skipped-by-wall | 20.8 min | **15.98s / 90.74s** (`data/raw/phase2/uno/h_all/points.csv`) | `build_overflow` at n=8, **109.9%** compile RAM |
+| `h_all` | 2–8 (wall), 9–14 never reached | 7 real + up to 6 skipped-by-wall | 20.8 min | **15.98s / 90.74s** (`data/raw/phase2/uno/h_all/no_la/points.csv`) | `build_overflow` at n=8, **109.9%** compile RAM |
 | `bell_ghz` | 2–8 (wall) | 7 real | 4.8 min | **13.03s / 100.02s** | `build_overflow` at n=8, **110.1%** compile RAM |
 | `qft` | 2–8 (wall) | 7 real | 1.3h | **21.84s / 91.94s** | `build_overflow` at n=8, **109.8%** compile RAM |
 | `qpe` | 2–8 (wall) | 7 real | 1.6h | **27.51s / 100.01s** | `build_overflow` at n=8, **109.8%** compile RAM |
-| `steane_encode` | fixed at 7 (ignores `--n-start`/`--n-max` except range membership) | 1 | 1.7s | **3.56s total** (2 upload attempts — 1 retry occurred; `data/raw/phase2/uno/steane_encode/points.csv`) | none — never reaches the RAM threshold |
+| `steane_encode` | fixed at 7 (ignores `--n-start`/`--n-max` except range membership) | 1 | 1.7s | **3.56s total** (2 upload attempts — 1 retry occurred; `data/raw/phase2/uno/steane_encode/no_la/points.csv`) | none — never reaches the RAM threshold |
 | `grover` | 2–8 (`n=8` auto-skipped, `expected 5.1h > 4h ceiling`) | 6 real + 1 skipped (`skipped_compute_infeasible`) | 41.3 min | collected once, **not currently committed** — see `README.md`'s status table | not observed under the default 4h budget ceiling; would need `--force-infeasible` |
 
 The "n=8 wall attempt" column is almost entirely the 90–100s serial-read
@@ -70,7 +77,7 @@ which circuit is running. See `docs/analysis/uno/comparison.md`.
 
 ## What to check afterwards
 
-- `data/raw/phase2/uno/<circuit>/raw.csv`: exactly 100 rows per `n` with
+- `data/raw/phase2/uno/<circuit>/no_la/raw.csv` (or `with_la/` for a `--la` run): exactly 100 rows per `n` with
   `status=ok` in `memory_wall.csv`.
 - `memory_wall.csv`: one terminal row per `n` attempted. `status=ok` is
   good; `status=build_overflow` with `compile_ram_pct` > 100% is a real,

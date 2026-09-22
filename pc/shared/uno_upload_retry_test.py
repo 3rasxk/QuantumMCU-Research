@@ -422,34 +422,37 @@ def test_resume_skips_completed_points_on_second_invocation(scratch: Path):
 
 def test_paths_helper_resolves_per_board_per_algorithm_layout(scratch: Path):
     """pc/shared/paths.py itself: every function resolves to
-    data/raw/phase<N>/<board>/<circuit>/... under whatever REPO_ROOT is set to
-    at call time (not at import/def time -- the same late-binding requirement
-    telemetry.py's write_point_row docstring documents)."""
+    data/raw/phase<N>/<board>/<circuit>/no_la/... (la defaults to False) under
+    whatever REPO_ROOT is set to at call time (not at import/def time -- the
+    same late-binding requirement telemetry.py's write_point_row docstring
+    documents). See paths_test.py for the full no_la/with_la x 3-board matrix
+    (2026-09-22) -- this test only covers uno's default (no_la) branch plus
+    the late-binding behavior, which predates that split."""
     from shared import paths as sp
     root = scratch / "paths_helper"
     sp.REPO_ROOT = root
 
     check("paths: raw_dir",
-          sp.raw_dir("uno", "h_all", phase=2) == root / "data/raw/phase2/uno/h_all")
+          sp.raw_dir("uno", "h_all", phase=2) == root / "data/raw/phase2/uno/h_all/no_la")
     check("paths: raw_csv_path",
-          sp.raw_csv_path("uno", "h_all", phase=2) == root / "data/raw/phase2/uno/h_all/raw.csv")
+          sp.raw_csv_path("uno", "h_all", phase=2) == root / "data/raw/phase2/uno/h_all/no_la/raw.csv")
     check("paths: memory_wall_csv_path",
           sp.memory_wall_csv_path("uno", "h_all", phase=2)
-          == root / "data/raw/phase2/uno/h_all/memory_wall.csv")
+          == root / "data/raw/phase2/uno/h_all/no_la/memory_wall.csv")
     check("paths: points_csv_path",
           sp.points_csv_path("uno", "h_all", phase=2)
-          == root / "data/raw/phase2/uno/h_all/points.csv")
+          == root / "data/raw/phase2/uno/h_all/no_la/points.csv")
     check("paths: sessions_csv_path",
           sp.sessions_csv_path("uno", "h_all", phase=2)
-          == root / "data/raw/phase2/uno/h_all/sessions.csv")
+          == root / "data/raw/phase2/uno/h_all/no_la/sessions.csv")
     check("paths: env_dir",
-          sp.env_dir("uno", "h_all", phase=2) == root / "data/raw/phase2/uno/h_all/env")
-    check("paths: la_dir",
-          sp.la_dir("uno", "h_all", phase=2) == root / "data/raw/phase2/uno/h_all/la")
+          sp.env_dir("uno", "h_all", phase=2) == root / "data/raw/phase2/uno/h_all/no_la/env")
+    check("paths: la_dir (always with_la, no la= parameter)",
+          sp.la_dir("uno", "h_all", phase=2) == root / "data/raw/phase2/uno/h_all/with_la/la")
     check("paths: figures_dir per-circuit",
-          sp.figures_dir("uno", "h_all") == root / "data/figures/uno/h_all")
+          sp.figures_dir("uno", "h_all") == root / "data/figures/uno/h_all/no_la")
     check("paths: figures_dir cumulative (circuit=None)",
-          sp.figures_dir("uno") == root / "data/figures/uno")
+          sp.figures_dir("uno") == root / "data/figures/uno/no_la")
 
     # late-binding check: re-point REPO_ROOT and confirm a function called
     # WITHOUT re-importing picks up the new value (this is the exact bug class
@@ -457,7 +460,7 @@ def test_paths_helper_resolves_per_board_per_algorithm_layout(scratch: Path):
     root2 = scratch / "paths_helper_2"
     sp.REPO_ROOT = root2
     check("paths: REPO_ROOT reassignment takes effect without reimport (late-bound)",
-          sp.raw_csv_path("uno", "h_all", phase=2) == root2 / "data/raw/phase2/uno/h_all/raw.csv")
+          sp.raw_csv_path("uno", "h_all", phase=2) == root2 / "data/raw/phase2/uno/h_all/no_la/raw.csv")
 
 
 def test_two_algorithms_get_two_separate_directories_and_nothing_leaks(scratch: Path):

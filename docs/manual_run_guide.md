@@ -145,12 +145,16 @@ n=8 ที่จะถูกข้ามอัตโนมัติเพรา�
     --circuits h_all bell_ghz qft grover qpe steane_encode --n-start 2 --n-max 8
 ```
 
-**Output:** `data/raw/phase2/uno/<circuit>/raw.csv` (ทุก rep ดิบ, ต่อวงจร),
-`data/raw/phase2/uno/<circuit>/memory_wall.csv` (สรุป 1 แถวต่อจุด),
-`data/raw/phase2/uno/<circuit>/points.csv` / `sessions.csv` / `env/*.json`
+**Output:** `data/raw/phase2/uno/<circuit>/no_la/raw.csv` (ทุก rep ดิบ, ต่อวงจร),
+`data/raw/phase2/uno/<circuit>/no_la/memory_wall.csv` (สรุป 1 แถวต่อจุด),
+`data/raw/phase2/uno/<circuit>/no_la/points.csv` / `sessions.csv` / `env/*.json`
 (schema เดียวกันทุกบอร์ด/phase, ดู § "ตรวจผลลัพธ์" ด้านล่าง — แยกเป็นหนึ่ง
 โฟลเดอร์ต่อ (phase, board, circuit) ตั้งแต่ `pre-run-uno-v4`/`v5`, ดู
-`pc/shared/paths.py`)
+`pc/shared/paths.py`) — `no_la/` เพราะคำสั่งด้านบนไม่มี `--la`; ถ้าใส่ `--la`
+และ sigrok-cli เจออุปกรณ์จริง ผลจะไปอยู่ `with_la/` แทน (ดู § "มี LA" ด้านล่าง
+และ `pc/shared/paths.py`'s no_la/with_la split, 2026-09-22) — **ห้ามผสม
+ข้อมูลสองชุดนี้ในการวิเคราะห์เดียวกัน**: `no_la/` วัดแค่เวลา `micros()`,
+`with_la/` มี Logic Analyzer cross-check ด้วย เป็นคนละการวัดกัน
 
 ### Phase 3 (offload)
 
@@ -167,10 +171,11 @@ n=8 ที่จะถูกข้ามอัตโนมัติเพรา�
 ~1.1h เพราะ PC-side Aer simulation ไม่ cache; n=12 ถูกข้ามอัตโนมัติเพราะ
 `skipped_sim_cost_infeasible`)
 
-**Output:** `data/raw/phase3/uno/<circuit>/raw.csv`,
-`data/raw/phase3/uno/<circuit>/session_log.csv` (Phase 3's terminal-record
+**Output:** `data/raw/phase3/uno/<circuit>/no_la/raw.csv`,
+`data/raw/phase3/uno/<circuit>/no_la/session_log.csv` (Phase 3's terminal-record
 file — คนละชื่อจาก Phase 2's `memory_wall.csv`, ดู
-`pc/shared/paths.session_log_csv_path`)
+`pc/shared/paths.session_log_csv_path`) — Phase 3 ไม่รองรับ `--la` เลย
+(ไม่มี flag นี้ใน `pc/phase3_offload/sweep.py`) จึงอยู่ `no_la/` เสมอ
 
 ---
 
@@ -205,7 +210,7 @@ implement เฉพาะ Uno เท่านั้นในตอนนี้)
 **⚠ ข้อควรระวังเฉพาะ ESP8266 (ยัง UNVERIFIED-needs-hardware, ดู `docs/preflight_report.md`
 finding H1):** grover ที่ n=8/n=9 คำนวณไว้ว่าอาจชน hardware watchdog (~8 วินาที) ก่อนจบ 1
 rep เพราะ per-rep คาดไว้ 15.6s (n=8) / 130.5s (n=9) — ถ้าบอร์ดเงียบแล้วเจอ
-`watchdog_suspected` ใน `data/raw/phase2/esp8266/grover/memory_wall.csv`
+`watchdog_suspected` ใน `data/raw/phase2/esp8266/grover/no_la/memory_wall.csv`
 **อย่าตีความเป็น Memory Wall จริง**
 (ระบบแยกสถานะนี้ไว้ให้แล้วตั้งแต่ SCHEMA_VERSION 2) — แนะนำรัน grover n=8 เดี่ยว ๆ ก่อน
 ทั้ง session B จริง เพื่อดูผลก่อนลงทุนเวลา 4 ชั่วโมง:
@@ -304,8 +309,10 @@ GPIO1/GPIO3 — **ไม่รองรับ `--la`** เช่นกัน
 ## ตรวจผลลัพธ์หลังรัน (how to check after a run)
 
 **ทุกไฟล์ด้านล่างอยู่ใต้โฟลเดอร์เดียวกัน — หนึ่งโฟลเดอร์ต่อหนึ่ง (phase, board,
-circuit):** `data/raw/phase<N>/<board>/<circuit>/` (ดู `pc/shared/paths.py`,
-เปลี่ยนจาก path แบบเดิม `data/raw/phaseN/<board>_*.csv` ตั้งแต่ `pre-run-uno-v4`/`v5`)
+circuit, no_la/with_la):** `data/raw/phase<N>/<board>/<circuit>/{no_la,with_la}/`
+(ดู `pc/shared/paths.py`, เปลี่ยนจาก path แบบเดิม `data/raw/phaseN/<board>_*.csv`
+ตั้งแต่ `pre-run-uno-v4`/`v5`; ชั้น `no_la`/`with_la` เพิ่มเข้ามา 2026-09-22 —
+ไม่ใส่ `--la` = `no_la/` เสมอ)
 
 **ไฟล์ที่ต้องมีหลังทุกจุดสำเร็จ (ในโฟลเดอร์ข้างต้น):**
 - `raw.csv` — 1 แถวต่อ 1 rep, ต้องมี **100 แถวพอดี** ต่อ `n` ที่ status=ok
@@ -362,8 +369,14 @@ circuit):** `data/raw/phase<N>/<board>/<circuit>/` (ดู `pc/shared/paths.py`,
 ## รันแบบมี/ไม่มี Logic Analyzer
 
 **ไม่มี LA (ค่าเริ่มต้นของทุกคำสั่งข้างบน):** ไม่ต้องทำอะไรเพิ่ม พฤติกรรมเดิมทุกประการ
+ผลลัพธ์อยู่ `no_la/` เสมอ
 
-**มี LA (เฉพาะ Uno เท่านั้น ผ่าน flag `--la`):**
+**มี LA (เฉพาะ Uno เท่านั้น ผ่าน flag `--la`):** ผลลัพธ์อยู่ `with_la/` แทน — **แต่เฉพาะ
+จุดที่ sigrok-cli เจออุปกรณ์จริงเท่านั้น** ถ้าใส่ `--la` แต่ sigrok-cli หาไม่เจอ/ไม่มี
+อุปกรณ์ จุดนั้นยังคงถูกบันทึกลง `no_la/` เหมือนเดิม (ดู `la_active` ใน
+`pc/phase2_sweep/uno_sweep.py`) เพราะไม่มี capture เกิดขึ้นจริง — **ห้ามรวม `no_la/`
+กับ `with_la/` เข้าด้วยกันตอนวิเคราะห์** สองชุดนี้วัดคนละอย่าง (timing เฉยๆ vs
+timing + LA cross-check)
 
 ⚠ **UNVERIFIED ทั้งหมด** — sigrok-cli integration นี้ไม่เคยรันกับฮาร์ดแวร์จริงหรือแม้แต่
 `sigrok-cli`'s demo driver ในสภาพแวดล้อมที่เขียนโค้ดนี้ (ไม่มี `sigrok-cli` ติดตั้งเลย ณ ตอน
@@ -376,10 +389,11 @@ circuit):** `data/raw/phase<N>/<board>/<circuit>/` (ดู `pc/shared/paths.py`,
    ```bash
    .venv/bin/python analysis/la_capture_plan.py
    ```
-   จะได้ `data/raw/phase2/<board>/<circuit>/la/capture_plan.csv` แยกไฟล์ต่อวงจร
-   (ดู `pc/shared/paths.la_dir`) — ถ้าไฟล์นี้ไม่มี `--la` จะข้าม capture ของจุดนั้น
+   จะได้ `data/raw/phase2/<board>/<circuit>/with_la/la/capture_plan.csv` แยกไฟล์ต่อวงจร
+   (ดู `pc/shared/paths.la_dir` — อยู่ใต้ `with_la/` เสมอ เพราะ capture มีอยู่ได้
+   เฉพาะจุดที่รันด้วย `--la` เท่านั้น) — ถ้าไฟล์นี้ไม่มี `--la` จะข้าม capture ของจุดนั้น
    โดยอัตโนมัติ (บันทึกเหตุผลไว้ใน
-   `data/raw/phase2/<board>/<circuit>/la/capture_issues.log`) ไม่ใช่ error, sweep
+   `data/raw/phase2/<board>/<circuit>/with_la/la/capture_issues.log`) ไม่ใช่ error, sweep
    ยังรันจนจบตามปกติ
 3. เช็ค sigrok-cli พร้อมใช้งาน (สคริปต์เช็คให้อัตโนมัติเมื่อใส่ `--la` แต่เช็คมือได้เช่นกัน):
    ```bash
@@ -394,10 +408,11 @@ circuit):** `data/raw/phase<N>/<board>/<circuit>/` (ดู `pc/shared/paths.py`,
    ```
 5. **capture แรกจริง ๆ ต้องทำตาม "First real capture checklist" ใน `run_checklist.md`
    ทีละขั้นก่อนไปจุดอื่น** — ตรวจ
-   `data/raw/phase2/uno/h_all/la/uno_h_all_n2.csv` ด้วย `analysis/la_pulses.py`
+   `data/raw/phase2/uno/h_all/with_la/la/uno_h_all_n2.csv` ด้วย `analysis/la_pulses.py`
    ว่า `is_clean: True` และจำนวนพัลส์ตรง 100 ก่อนเชื่อผลลัพธ์จาก
-   `analysis/la_crosscheck.py` (เขียนลง `la_crosscheck.csv` ในโฟลเดอร์ `la/`
-   เดียวกัน — `--la-dir` เป็น flag บังคับของสคริปต์นั้น ไม่มีค่า default อีกต่อไป)
+   `analysis/la_crosscheck.py` (เขียนลง `la_crosscheck.csv` ในโฟลเดอร์ `with_la/la/`
+   เดียวกัน — `--la-dir` เป็น flag บังคับของสคริปต์นั้น ไม่มีค่า default อีกต่อไป,
+   `analysis/la_crosscheck.py` เอง join กับ `with_la/raw.csv` เสมอ ไม่ใช่ `no_la/`)
 
 **สิ่งที่รับประกันได้จากโค้ด (ตรวจแล้วด้วย `pc/shared/la_capture_test.py`):**
 - ปิด `--la` = ไม่มีการเรียก sigrok-cli หรือโค้ดใน `pc/shared/la_capture.py` เลยแม้แต่

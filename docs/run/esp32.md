@@ -54,7 +54,7 @@ here).
 ## What to check afterwards
 
 Same file layout as `docs/run/uno.md` —
-`data/raw/phase2/esp32/<circuit>/{raw.csv,memory_wall.csv,points.csv,sessions.csv}`.
+`data/raw/phase2/esp32/<circuit>/no_la/{raw.csv,memory_wall.csv,points.csv,sessions.csv}` — always `no_la/` (this board never supports `--la`, see pc/shared/paths.py's no_la/with_la split).
 ESP32 has both a hardware watchdog (ESP-IDF task WDT, ~5s default per
 `timing_model.WDT_PER_REP_THRESHOLD_S["esp32"]`) and dynamic allocation —
 same `watchdog_suspected` vs `malloc_failed`/build-RAM-over-100%

@@ -120,10 +120,20 @@ def test_flag_off_zero_la_calls(scratch: Path):
     _run(us, la=False)
 
     check("flag off: zero calls into la_capture", lac_calls == [], lac_calls)
+    check("flag off: written under no_la/", sp.raw_csv_path("uno", "h_all", la=False).exists())
     raw_rows = list(csv.DictReader(open(sp.raw_csv_path("uno", "h_all"))))
     check("flag off: 100 raw rows written", len(raw_rows) == 100, len(raw_rows))
     wall_rows = list(csv.DictReader(open(sp.memory_wall_csv_path("uno", "h_all"))))
     check("flag off: wall status=ok", wall_rows[0]["status"] == "ok", wall_rows[0]["status"])
+
+    import json
+    env_files = list(sp.env_dir("uno", "h_all", la=False).glob("*.json"))
+    check("flag off: exactly one env json written under no_la/env/", len(env_files) == 1, env_files)
+    meta = json.loads(env_files[0].read_text())
+    check("flag off: env json la_used=False", meta["la_used"] is False, meta["la_used"])
+    check("flag off: env json la_dir_bucket=no_la", meta["la_dir_bucket"] == "no_la", meta["la_dir_bucket"])
+    check("flag off: env json la_dir_matches_flag=True",
+          meta["la_dir_matches_flag"] is True, meta["la_dir_matches_flag"])
     return raw_rows, wall_rows
 
 
@@ -205,10 +215,23 @@ def test_flag_on_clean_capture(scratch: Path, baseline_raw, baseline_wall):
           len(analysis_calls) == 1 and analysis_calls[0][4] == 100, analysis_calls)
     check("clean capture: no issues logged", issues == [], issues)
 
-    raw_rows = list(csv.DictReader(open(sp.raw_csv_path("uno", "h_all"))))
-    wall_rows = list(csv.DictReader(open(sp.memory_wall_csv_path("uno", "h_all"))))
+    # la_active=True here (sigrok available) -> this point's files live under
+    # with_la/, not the flag-off baseline's no_la/ (see pc/shared/paths.py)
+    check("clean capture: written under with_la/ (sigrok was available)",
+          sp.raw_csv_path("uno", "h_all", la=True).exists())
+    raw_rows = list(csv.DictReader(open(sp.raw_csv_path("uno", "h_all", la=True))))
+    wall_rows = list(csv.DictReader(open(sp.memory_wall_csv_path("uno", "h_all", la=True))))
     check("clean capture: raw rows match flag-off baseline (LA wiring doesn't change data)",
           raw_rows == baseline_raw)
+
+    import json
+    env_files = list(sp.env_dir("uno", "h_all", la=True).glob("*.json"))
+    check("clean capture: exactly one env json written under with_la/env/", len(env_files) == 1, env_files)
+    meta = json.loads(env_files[0].read_text())
+    check("clean capture: env json la_used=True", meta["la_used"] is True, meta["la_used"])
+    check("clean capture: env json la_dir_bucket=with_la", meta["la_dir_bucket"] == "with_la", meta["la_dir_bucket"])
+    check("clean capture: env json la_dir_matches_flag=True",
+          meta["la_dir_matches_flag"] is True, meta["la_dir_matches_flag"])
     check("clean capture: wall status matches flag-off baseline",
           [dict(w, timestamp_utc="") for w in wall_rows]
           == [dict(w, timestamp_utc="") for w in baseline_wall])
@@ -234,8 +257,8 @@ def test_flag_on_capture_failure_does_not_affect_micros_data(scratch: Path, base
 
     _run(us, la=True)
 
-    raw_rows = list(csv.DictReader(open(sp.raw_csv_path("uno", "h_all"))))
-    wall_rows = list(csv.DictReader(open(sp.memory_wall_csv_path("uno", "h_all"))))
+    raw_rows = list(csv.DictReader(open(sp.raw_csv_path("uno", "h_all", la=True))))
+    wall_rows = list(csv.DictReader(open(sp.memory_wall_csv_path("uno", "h_all", la=True))))
     check("capture failure: run_analysis is never called on a failed capture",
           analysis_calls == [], analysis_calls)
     check("capture failure: raw (micros()) data unaffected, matches flag-off baseline",
@@ -266,8 +289,59 @@ def test_flag_on_missing_plan_entry_skips_capture(scratch: Path, baseline_raw):
 
     check("no plan entry: capture skipped and logged, point still completes",
           any("no capture_plan.csv entry" in m for m in issues), issues)
-    raw_rows = list(csv.DictReader(open(sp.raw_csv_path("uno", "h_all"))))
+    raw_rows = list(csv.DictReader(open(sp.raw_csv_path("uno", "h_all", la=True))))
     check("no plan entry: raw rows still match flag-off baseline", raw_rows == baseline_raw)
+
+
+def test_resume_never_crosses_no_la_with_la_boundary(scratch: Path):
+    """2026-09-22: a point completed without --la (no_la/) must NOT be treated
+    as satisfying a --la request for the same (circuit, n), and vice versa --
+    they're different measurements (see pc/shared/paths.py). Runs the SAME
+    n=2 point twice, once in each bucket, and asserts hardware is touched
+    both times (never skipped_resume across the boundary)."""
+    us, tel, lac, sp = _fresh_uno_sweep(scratch / "resume_boundary")
+    order = []
+    _install_fake_build_and_upload(us, order)
+    _install_fake_read_serial_trials(us, order)
+
+    # first: no --la -> writes under no_la/
+    lac.check_sigrok = lambda: {"available": False, "driver": None, "note": "n/a"}
+    _run(us, la=False)
+    check("resume boundary: first run (no_la) touched hardware",
+          ("build_and_upload", "h_all", 2) in order, order)
+    no_la_calls_after_first = order.count(("build_and_upload", "h_all", 2))
+
+    # second: --la with sigrok available -> writes under with_la/, a
+    # DIFFERENT (circuit, n) key as far as resume is concerned, even though
+    # circuit/n are identical -- resume must not skip it
+    lac.check_sigrok = lambda: {"available": True, "driver": None, "note": "found demo device"}
+    lac.load_plan_entry = lambda board, circuit, n, plan_path=None: {
+        "n_reps_to_capture": 100, "recommended_sample_rate_hz": 24_000_000.0}
+    from types import SimpleNamespace
+    armed_obj = SimpleNamespace(out_path=None)
+    lac.arm_capture = lambda board, circuit, n, plan_entry, out_path: armed_obj
+    lac.stop_capture = lambda *a, **kw: True
+    lac.run_analysis = lambda *a, **kw: {"ok": True}
+    lac.log_issue = lambda *a, **kw: None
+
+    _run(us, la=True)
+    check("resume boundary: second run (with_la, SAME n) still touched hardware "
+          "-- not skipped as already-resumed from the no_la point",
+          order.count(("build_and_upload", "h_all", 2)) > no_la_calls_after_first, order)
+
+    check("resume boundary: no_la/ point still recorded (untouched by the with_la run)",
+          sp.raw_csv_path("uno", "h_all", la=False).exists())
+    check("resume boundary: with_la/ point now also recorded, independently",
+          sp.raw_csv_path("uno", "h_all", la=True).exists())
+
+    # third: re-run no_la again -> THIS time it must resume/skip (same bucket,
+    # already-completed point) -- proves the boundary check isn't just "always
+    # re-run", it's specifically bucket-scoped resume still working normally
+    order.clear()
+    lac.check_sigrok = lambda: {"available": False, "driver": None, "note": "n/a"}
+    _run(us, la=False)
+    check("resume boundary: re-running the SAME bucket (no_la) DOES resume/skip",
+          ("build_and_upload", "h_all", 2) not in order, order)
 
 
 def main():
@@ -278,6 +352,7 @@ def main():
         test_flag_on_clean_capture(scratch, baseline_raw, baseline_wall)
         test_flag_on_capture_failure_does_not_affect_micros_data(scratch, baseline_raw, baseline_wall)
         test_flag_on_missing_plan_entry_skips_capture(scratch, baseline_raw)
+        test_resume_never_crosses_no_la_with_la_boundary(scratch)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

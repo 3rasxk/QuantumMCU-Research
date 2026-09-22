@@ -32,9 +32,24 @@ edit the CSVs by hand to "help" — the scripts read them to decide what's done.
 If a resume summary looks wrong (skips something it shouldn't, or the
 remaining-point count doesn't match what you expect), **stop and look at
 that `(board, circuit)`'s own `memory_wall.csv` / `session_log.csv` file
-(`data/raw/phase<N>/<board>/<circuit>/`, see `pc/shared/paths.py`) before
-re-running** — don't force through it with `--fresh` on a hunch, that
-archives real data.
+(`data/raw/phase<N>/<board>/<circuit>/{no_la,with_la}/`, see
+`pc/shared/paths.py`) before re-running** — don't force through it with
+`--fresh` on a hunch, that archives real data.
+
+**no_la vs with_la (2026-09-22).** Every path under `data/raw/` and
+`data/figures/` in this checklist has an implicit `no_la/` or `with_la/`
+bucket you'll actually find files in — `no_la/` for every command that omits
+`--la` (every command in this checklist except § "Logic Analyzer procedure"),
+`with_la/` only once sigrok-cli actually found a device for a `--la` run (if
+`--la` was passed but sigrok was unavailable, the point still lands in
+`no_la/` — see `pc/phase2_sweep/uno_sweep.py`'s `la_active`). Resume never
+crosses this boundary: a point completed in one bucket is never treated as
+satisfying a request for the other, even for the identical `(circuit, n)`.
+**Never mix `no_la/` and `with_la/` data in the same analysis** — they
+measure different things (plain `micros()` timing vs. LA-cross-checked
+timing). Every point collected before this date lives under `no_la/`
+(migrated losslessly with `git mv`, see `run_log.md`); no `with_la/` data
+exists yet anywhere in this repo.
 
 ---
 
@@ -587,12 +602,12 @@ single sweep-script invocation's 100-rep loop.
 
 **Capture: one file per data point**, saved as:
 ```
-data/raw/phase2/<board>/<circuit>/la/<board>_<circuit>_n<N>.csv
+data/raw/phase2/<board>/<circuit>/with_la/la/<board>_<circuit>_n<N>.csv
 ```
 (one `la/` directory per `(board, circuit)`, `pc/shared/paths.la_dir` —
 changed from an earlier flat `data/raw/la/` layout, `pre-run-uno-v4`) e.g.
-`data/raw/phase2/uno/h_all/la/uno_h_all_n2.csv`,
-`data/raw/phase2/esp32/grover/la/esp32_grover_n10.csv` — the filename itself
+`data/raw/phase2/uno/h_all/with_la/la/uno_h_all_n2.csv`,
+`data/raw/phase2/esp32/grover/with_la/la/esp32_grover_n10.csv` — the filename itself
 is still load-bearing even though the directory now also encodes
 `(board, circuit)`: `la_crosscheck.py` parses board/circuit/n directly from
 the filename via `FILENAME_RE`, no other metadata is read.
@@ -619,7 +634,7 @@ pulses long enough that 100 full-length captures would be wasteful:
 
 This prints a table and writes one `capture_plan.csv` per `(board, circuit)`
 under that circuit's own `la/` directory
-(`data/raw/phase2/<board>/<circuit>/la/capture_plan.csv`, changed from a
+(`data/raw/phase2/<board>/<circuit>/with_la/la/capture_plan.csv`, changed from a
 single shared file, `pre-run-uno-v4`) — `n_reps_to_capture` and
 `recommended_sample_rate_hz` for every `n` of that circuit.
 `la_crosscheck.py` reads this file automatically (via `--plan`, defaulted to
@@ -690,20 +705,20 @@ Full-rate, full-reps point (e.g. `uno_h_all_n2`, 24MHz, FORMAT A one-shot):
 ```bash
 # UNVERIFIED
 sigrok-cli -d <driver-name> --config samplerate=24m --triggers D0=r \
-    --samples 10000000 -O csv -o data/raw/phase2/uno/h_all/la/uno_h_all_n2.csv
+    --samples 10000000 -O csv -o data/raw/phase2/uno/h_all/with_la/la/uno_h_all_n2.csv
 ```
 Low-rate point from the plan (e.g. 100kHz, still full 100 reps):
 ```bash
 # UNVERIFIED
 sigrok-cli -d <driver-name> --config samplerate=100k --triggers D0=r \
-    --time 2s -O csv -o data/raw/phase2/esp8266/qft/la/esp8266_qft_n12.csv
+    --time 2s -O csv -o data/raw/phase2/esp8266/qft/with_la/la/esp8266_qft_n12.csv
 ```
 Reduced-rep point (e.g. `esp8266_grover_n9`: 10kHz, 5 reps — stop manually,
 don't rely on `--samples`/`--time` matching exactly, see procedure above):
 ```bash
 # UNVERIFIED
 sigrok-cli -d <driver-name> --config samplerate=10k --triggers D0=r \
-    --continuous -O csv -o data/raw/phase2/esp8266/grover/la/esp8266_grover_n9.csv
+    --continuous -O csv -o data/raw/phase2/esp8266/grover/with_la/la/esp8266_grover_n9.csv
 # Ctrl-C after ~5 pulses are visible in a live view / on-device counter
 ```
 FORMAT B ("changes only") export — **the actual sigrok-cli flag for this is
@@ -727,9 +742,9 @@ a ~284µs pulse well within a trivial FORMAT A capture):
 
 - [ ] Wire per the section above, double-check voltage tolerance for the
       specific board
-- [ ] Capture `data/raw/phase2/uno/h_all/la/uno_h_all_n2.csv` (full 100 reps,
+- [ ] Capture `data/raw/phase2/uno/h_all/with_la/la/uno_h_all_n2.csv` (full 100 reps,
       no reduction needed)
-- [ ] `.venv/bin/python analysis/la_pulses.py data/raw/phase2/uno/h_all/la/uno_h_all_n2.csv`
+- [ ] `.venv/bin/python analysis/la_pulses.py data/raw/phase2/uno/h_all/with_la/la/uno_h_all_n2.csv`
 - [ ] Confirm: `format:` line shows the format you actually exported (if it
       says `raw` but you exported FORMAT B, or vice versa, the tool guessed
       wrong — **stop, don't proceed to other points until this is understood**;
@@ -850,12 +865,14 @@ pio device monitor -p /dev/cu.usbmodemXXXX -b 115200
 ### (e) Verify the outputs and that measured time is sane
 
 ```bash
-head -3 data/raw/phase2/uno/h_all/raw.csv
-cat data/raw/phase2/uno/h_all/memory_wall.csv
-tail -1 data/raw/phase2/uno/h_all/points.csv
-tail -1 data/raw/phase2/uno/h_all/sessions.csv
-ls data/raw/phase2/uno/h_all/env/
+head -3 data/raw/phase2/uno/h_all/no_la/raw.csv
+cat data/raw/phase2/uno/h_all/no_la/memory_wall.csv
+tail -1 data/raw/phase2/uno/h_all/no_la/points.csv
+tail -1 data/raw/phase2/uno/h_all/no_la/sessions.csv
+ls data/raw/phase2/uno/h_all/no_la/env/
 ```
+(`no_la/` because this example command has no `--la` — swap for `with_la/`
+if you're checking a `--la` run, see § "no_la vs with_la" at the top)
 (paths updated for the per-`(phase, board, circuit)` directory layout,
 `pre-run-uno-v4`/`v5` — see `pc/shared/paths.py`; each circuit now has its
 own `raw.csv`/`memory_wall.csv`/`points.csv`/`sessions.csv`/`env/`, not one

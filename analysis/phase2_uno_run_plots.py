@@ -21,9 +21,10 @@
 # incompatible output trees in one file.
 #
 # Read-only against data/raw/ -- every function here only ever opens raw/
-# telemetry files for reading. Output: data/figures/<board>/<algorithm>/*.png
+# telemetry files for reading. Output: data/figures/<board>/<algorithm>/<bucket>/*.png
 # (PNG only, via pc/shared/plot_style.save_figure_png_only) plus
-# data/figures/<board>/all_algorithms_so_far.png, and nothing else.
+# data/figures/<board>/<bucket>/all_algorithms_so_far.png, and nothing else,
+# where <bucket> is no_la or with_la (see 2026-09-22 entry below).
 #
 # 2026-09-20: moved from figures/phase2/<board>/ (with .svg siblings) to
 # data/figures/<board>/<algorithm>/ (PNG only) -- see run_log.md "per-board
@@ -34,9 +35,14 @@
 # circuit's charts; the cumulative chart globs across every circuit directory
 # for one board instead.
 #
+# 2026-09-22: every path gained a no_la/with_la bucket (--la flag on this
+# script, matching pc/shared/paths.py's split) -- a chart never mixes
+# timing-only and LA-cross-checked points. Default (no --la) reads/writes
+# no_la/, matching every point collected so far.
+#
 # ใช้:
 #   .venv/bin/python analysis/phase2_uno_run_plots.py --board uno --circuit h_all
-# (สร้างกราฟ 3 อันของ h_all + กราฟสะสม all_algorithms_so_far ใหม่ทั้งหมด)
+# (สร้างกราฟ 3 อันของ h_all + กราฟสะสม all_algorithms_so_far ใหม่ทั้งหมด, no_la bucket)
 
 import argparse
 import csv
@@ -57,53 +63,61 @@ from shared.telemetry import is_warmup  # noqa: E402
 
 FIGURES_ROOT = REPO_ROOT / "data" / "figures"
 
-SUBTITLE = "Uno R3, Phase 2, micros() timing (no Logic Analyzer data)"
+def SUBTITLE(la=False):
+    """2026-09-22: text now reflects which bucket the figure's data actually
+    came from (pc/shared/paths.py's no_la/with_la split) instead of a
+    hardcoded "no Logic Analyzer data" that was only ever true because --la
+    had never been run for real when this line was first written."""
+    return ("Uno R3, Phase 2, micros() timing + Logic Analyzer cross-check"
+            if la else "Uno R3, Phase 2, micros() timing (no Logic Analyzer data)")
 
 
 def _board_sram_bytes(board):
     return {"uno": 2048, "esp8266": 81920, "esp32": 327680}[board]
 
 
-def _known_circuits(board):
-    """Every circuit this board has a raw.csv for, discovered by listing
-    data/raw/phase2/<board>/ -- used only by plot_cumulative to find what to
-    include, since circuits are no longer listed anywhere centrally."""
+def _known_circuits(board, la=False):
+    """Every circuit this board has a raw.csv for in the given no_la/with_la
+    bucket, discovered by listing data/raw/phase2/<board>/*/<bucket>/ --
+    used only by plot_cumulative to find what to include, since circuits are
+    no longer listed anywhere centrally."""
     base = REPO_ROOT / "data" / "raw" / "phase2" / board
     if not base.exists():
         return []
+    bucket = "with_la" if la else "no_la"
     return sorted(p.name for p in base.iterdir()
-                  if p.is_dir() and (p / "raw.csv").exists())
+                  if p.is_dir() and (p / bucket / "raw.csv").exists())
 
 
-def load_raw(board, circuit):
-    path = sp.raw_csv_path(board, circuit, phase=2)
+def load_raw(board, circuit, la=False):
+    path = sp.raw_csv_path(board, circuit, phase=2, la=la)
     if not path.exists():
         return []
     with open(path, newline="") as f:
         return list(csv.DictReader(f))
 
 
-def load_wall(board, circuit):
-    path = sp.memory_wall_csv_path(board, circuit, phase=2)
+def load_wall(board, circuit, la=False):
+    path = sp.memory_wall_csv_path(board, circuit, phase=2, la=la)
     if not path.exists():
         return []
     with open(path, newline="") as f:
         return list(csv.DictReader(f))
 
 
-def load_points(board, circuit):
-    path = sp.points_csv_path(board, circuit, phase=2)
+def load_points(board, circuit, la=False):
+    path = sp.points_csv_path(board, circuit, phase=2, la=la)
     if not path.exists():
         return []
     with open(path, newline="") as f:
         return list(csv.DictReader(f))
 
 
-def collection_commit(board, circuit):
+def collection_commit(board, circuit, la=False):
     """git commit these points were collected under, per this circuit's own
     sessions.csv -- more accurate than the script's own current HEAD, which
     may have moved on by the time this is run."""
-    path = sp.sessions_csv_path(board, circuit, phase=2)
+    path = sp.sessions_csv_path(board, circuit, phase=2, la=la)
     if not path.exists():
         return "unknown"
     commit = "unknown"
@@ -129,20 +143,20 @@ def _title(board, circuit, extra, commit_note):
             f"{extra} (REPS={tm.REPS}, {commit_note})")
 
 
-def _finish(fig, ax_or_axes, board, circuit, title_extra, commit_note):
+def _finish(fig, ax_or_axes, board, circuit, title_extra, commit_note, la=False):
     fig.suptitle(_title(board, circuit, title_extra, commit_note))
     axes = ax_or_axes if isinstance(ax_or_axes, (list, tuple, np.ndarray)) else [ax_or_axes]
     axes = list(np.ravel(axes))
-    axes[0].text(0.0, 1.10, SUBTITLE, transform=axes[0].transAxes,
+    axes[0].text(0.0, 1.10, SUBTITLE(la), transform=axes[0].transAxes,
                  fontsize=8.5, color=ps.INK_SECONDARY, ha="left")
 
 
-def plot_exec_time_vs_n(board, circuit):
+def plot_exec_time_vs_n(board, circuit, la=False):
     """1. Per-rep execution time vs n: median + IQR from the raw trials of
     each ok point (warm-up reps excluded per telemetry.is_warmup), log y,
     with the timing_model per-rep estimate overlaid as its own series."""
-    raw = load_raw(board, circuit)
-    wall = load_wall(board, circuit)
+    raw = load_raw(board, circuit, la)
+    wall = load_wall(board, circuit, la)
     ok_ns = sorted({int(r["n"]) for r in wall if r["status"] == "ok"})
     if not ok_ns:
         print(f"[{circuit}] no ok points -- skipping exec_time_vs_n")
@@ -182,10 +196,10 @@ def plot_exec_time_vs_n(board, circuit):
     # legend box (found via the required visual self-check, not code review)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=2)
 
-    commit_note = f"commit {collection_commit(board, circuit)}"
-    _finish(fig, ax, board, circuit, "per-rep execution time vs n", commit_note)
+    commit_note = f"commit {collection_commit(board, circuit, la)}"
+    _finish(fig, ax, board, circuit, "per-rep execution time vs n", commit_note, la)
     ps.add_footnote(fig, ps.reps_phrase(ntrials) + "; error bars = IQR (25th-75th pct).")
-    return ps.save_figure_png_only(fig, sp.figures_dir(board, circuit), "exec_time_vs_n")
+    return ps.save_figure_png_only(fig, sp.figures_dir(board, circuit, la), "exec_time_vs_n")
 
 
 def _outcome_category(status):
@@ -198,12 +212,12 @@ def _outcome_category(status):
     return "failed"  # build_or_upload_fail, build_timeout, skipped_* never reach here (filtered)
 
 
-def plot_outcomes_vs_n(board, circuit):
+def plot_outcomes_vs_n(board, circuit, la=False):
     """2. Point outcomes vs n: ok / failed (upload/build) / wall (positive
     evidence, annotated) / hang-no-evidence (distinct marker, flagged for
     review). Title states what was observed, never just "Memory Wall", so a
     build/upload failure can never be read as a wall from the chart."""
-    wall = [r for r in load_wall(board, circuit) if not r["status"].startswith("skipped_")]
+    wall = [r for r in load_wall(board, circuit, la) if not r["status"].startswith("skipped_")]
     if not wall:
         print(f"[{circuit}] no point-outcome rows -- skipping outcomes_vs_n")
         return None
@@ -241,17 +255,17 @@ def plot_outcomes_vs_n(board, circuit):
     ax.grid(False, axis="y")
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=2)
 
-    commit_note = f"commit {collection_commit(board, circuit)}"
-    _finish(fig, ax, board, circuit, "point outcomes and RAM-overflow wall", commit_note)
-    return ps.save_figure_png_only(fig, sp.figures_dir(board, circuit), "outcomes_vs_n")
+    commit_note = f"commit {collection_commit(board, circuit, la)}"
+    _finish(fig, ax, board, circuit, "point outcomes and RAM-overflow wall", commit_note, la)
+    return ps.save_figure_png_only(fig, sp.figures_dir(board, circuit, la), "outcomes_vs_n")
 
 
-def plot_time_per_point(board, circuit):
+def plot_time_per_point(board, circuit, la=False):
     """3. Time per point vs n: compile_s + upload_s stacked (summed across
     every attempt for that n, so a retried point's true reflash cost shows),
     with the number of upload attempts annotated per n so retries stay
     visible."""
-    pts = load_points(board, circuit)
+    pts = load_points(board, circuit, la)
     # every real attempt has a row -- "retrying" is a non-terminal attempt that still
     # consumed real compile/upload time and must count; only skip_* rows (status
     # skipped_resume/skipped_known_wall/skipped_compute_infeasible/skipped_sim_cost_infeasible,
@@ -292,26 +306,30 @@ def plot_time_per_point(board, circuit):
     ax.set_ylim(0, max(c + u for c, u in zip(compile_s, upload_s)) * 1.18)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=2)
 
-    commit_note = f"commit {collection_commit(board, circuit)}"
+    commit_note = f"commit {collection_commit(board, circuit, la)}"
     _finish(fig, ax, board, circuit, "reflash time per point (compile+upload, attempts labelled)",
-            commit_note)
-    return ps.save_figure_png_only(fig, sp.figures_dir(board, circuit), "time_per_point")
+            commit_note, la)
+    return ps.save_figure_png_only(fig, sp.figures_dir(board, circuit, la), "time_per_point")
 
 
-def plot_cumulative(board):
-    """4. data/figures/<board>/all_algorithms_so_far.png -- median per-rep
-    time vs n for every algorithm completed so far on this board, one colour
-    per algorithm, wall n marked. Regenerated after each algorithm."""
-    all_circuits = _known_circuits(board)
+def plot_cumulative(board, la=False):
+    """4. data/figures/<board>/{no_la,with_la}/all_algorithms_so_far.png --
+    median per-rep time vs n for every algorithm completed so far on this
+    board IN THIS BUCKET, one colour per algorithm, wall n marked.
+    Regenerated after each algorithm. Never mixes no_la and with_la data into
+    one chart -- timing-only and LA-cross-checked points measure different
+    things (see pc/shared/paths.py)."""
+    all_circuits = _known_circuits(board, la)
     circuits = [c for c in ps.CIRCUIT_ORDER if c in all_circuits]
     if not circuits:
-        print(f"[{board}] no data at all -- skipping cumulative chart")
+        print(f"[{board}] no data at all in the "
+              f"{'with_la' if la else 'no_la'} bucket -- skipping cumulative chart")
         return None
 
     fig, ax = plt.subplots(figsize=(8, 5.5), layout="constrained")
     for circuit in circuits:
-        raw = load_raw(board, circuit)
-        c_wall = load_wall(board, circuit)
+        raw = load_raw(board, circuit, la)
+        c_wall = load_wall(board, circuit, la)
         ok_ns = sorted({int(r["n"]) for r in c_wall if r["status"] == "ok"})
         wall_ns = sorted({int(r["n"]) for r in c_wall if rs.is_wall_status(r["status"])})
         if not ok_ns:
@@ -345,31 +363,38 @@ def plot_cumulative(board):
 
     fig.suptitle(f"{ps.BOARD_LABEL[board]} -- all algorithms completed so far "
                  f"(REPS={tm.REPS}, generated at commit {current_head()})")
-    ax.text(0.0, 1.06, SUBTITLE, transform=ax.transAxes, fontsize=8.5,
+    ax.text(0.0, 1.06, SUBTITLE(la), transform=ax.transAxes, fontsize=8.5,
             color=ps.INK_SECONDARY, ha="left")
     ps.add_footnote(fig, "One colour per algorithm; wall n annotated where a positive-evidence "
                      "wall was hit; steane_encode is a single fixed-n point (n=7).")
-    return ps.save_figure_png_only(fig, sp.figures_dir(board), "all_algorithms_so_far")
+    return ps.save_figure_png_only(fig, sp.figures_dir(board, la=la), "all_algorithms_so_far")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--board", default="uno")
     ap.add_argument("--circuit", required=True, help="the algorithm that just finished")
+    ap.add_argument("--la", action="store_true",
+                     help="this run's points were collected with --la (sigrok capture actually "
+                          "active, not just requested) -- selects the with_la bucket for both "
+                          "reading raw/wall/points data and writing figures; omit for the "
+                          "default no_la bucket. Must match how the data was actually collected "
+                          "(see pc/phase2_sweep/uno_sweep.py's la_active, not args.la).")
     args = ap.parse_args()
 
     ps.apply_style()
     generated = []
     for fn in (plot_exec_time_vs_n, plot_outcomes_vs_n, plot_time_per_point):
-        paths = fn(args.board, args.circuit)
+        paths = fn(args.board, args.circuit, args.la)
         if paths:
             generated.extend(paths)
-    paths = plot_cumulative(args.board)
+    paths = plot_cumulative(args.board, args.la)
     if paths:
         generated.extend(paths)
 
-    print(f"\n{len(generated)} figure file(s) written under {FIGURES_ROOT / args.board}/ "
-          "(PNG only)")
+    bucket = "with_la" if args.la else "no_la"
+    print(f"\n{len(generated)} figure file(s) written under "
+          f"{FIGURES_ROOT / args.board}/*/{bucket}/ (PNG only)")
 
 
 if __name__ == "__main__":

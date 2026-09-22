@@ -252,19 +252,37 @@ no new default, no clamping, exactly the pre-2026-09-21 behavior.
 ## Data layout
 
 ```
-data/raw/phase<N>/<board>/<circuit>/
+data/raw/phase<N>/<board>/<circuit>/{no_la,with_la}/
   raw.csv            every repetition, 1 row per rep, 100 rows per ok point
   memory_wall.csv     Phase 2 only: 1 terminal row per (circuit, n) point
   session_log.csv      Phase 3 only: 1 terminal row per (circuit, n, baud) point
   points.csv          1 row per upload attempt (a retried point has >1 row)
   sessions.csv         1 row per script invocation
   env/<session_id>.json   toolchain versions, firmware_source_hash,
-                        sleep_prevention, per session
-  la/                 Logic Analyzer captures (Uno Phase 2 only, if --la used)
+                        sleep_prevention, per session, la_used +
+                        la_dir_bucket + la_dir_matches_flag (cross-check)
+  la/                 with_la/ only — Logic Analyzer captures, capture_plan.csv,
+                        capture_issues.log (can't exist without --la)
 
-data/figures/<board>/<circuit>/{exec_time_vs_n,outcomes_vs_n,time_per_point}.png
-data/figures/<board>/all_algorithms_so_far.png   cumulative, regenerated every run
+data/figures/<board>/<circuit>/{no_la,with_la}/{exec_time_vs_n,outcomes_vs_n,time_per_point}.png
+data/figures/<board>/{no_la,with_la}/all_algorithms_so_far.png   cumulative, regenerated every run
 ```
+
+**no_la vs with_la (2026-09-22).** Every point lives under `no_la/` (default,
+plain `micros()` timing) or `with_la/` (collected with `--la` — Uno Phase 2
+only, and only once sigrok-cli actually found a device; if `--la` was passed
+but sigrok was unavailable, the point still lands under `no_la/`, since no
+capture was actually attempted — see `pc/phase2_sweep/uno_sweep.py`'s
+`la_active`). **The two are never mixed in analysis**: timing-only and
+LA-cross-checked points are different measurements of the same circuit, not
+interchangeable samples of the same thing — a sweep resuming a `no_la` run
+never treats an existing `with_la` point (or vice versa) as already done,
+and every plotting/summarize script reads from exactly one bucket per
+invocation. Every point collected so far (all of it, prior to 2026-09-22)
+was collected without `--la` and now lives under `no_la/` — migrated
+losslessly with `git mv` (row counts + sha256 verified identical before and
+after, see `run_log.md`), never rewritten. No `with_la/` data exists yet
+anywhere in this repo (`--la` has never completed against real hardware).
 
 **PNG only.** All figure-generation in this project (`pc/shared/plot_style.
 save_figure_png_only`) writes PNG, never SVG, to this tree. (A separate,
@@ -387,8 +405,9 @@ which is the append-only source of truth these one-liners summarize.
 
 ## Current status
 
-Read directly from `data/raw/phase2/uno/*/memory_wall.csv` and
-`docs/analysis/uno/*.md` at the time of writing:
+Read directly from `data/raw/phase2/uno/*/no_la/memory_wall.csv` and
+`docs/analysis/uno/*.md` at the time of writing (all of it `no_la` — no
+`--la` run has completed against real hardware yet):
 
 | Board | Phase | Algorithm | `n` collected | Result |
 |---|---|---|---|---|
