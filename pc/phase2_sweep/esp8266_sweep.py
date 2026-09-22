@@ -81,6 +81,7 @@ from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
 from shared import paths as sp  # noqa: E402
+from shared import upload_retry as ur  # noqa: E402
 
 RESUME_KEY_SPEC = [("circuit", str), ("n", int)]
 
@@ -93,15 +94,68 @@ BOOT_WAIT_S = 1.5  # เผื่อบอร์ด reset ตัวเองห�
 # เวลารอสูงสุดต่อจุดข้อมูลไม่ใช่ค่าคงที่อีกต่อไป — คำนวณต่อ (circuit, n) จาก
 # pc/shared/timing_model.timeout_budget_s() ดูเหตุผลใน header ของไฟล์นี้
 
+ESP_PORT_GLOBS = ("/dev/cu.usbserial*", "/dev/cu.wchusbserial*", "/dev/cu.SLAB_USBtoUART*")
+
+# Standing operator decision 1 (2026-09-20 for Uno, ported here 2026-09-22 —
+# see run_log.md "port upload-retry to ESP boards"): an upload failure gets
+# up to UPLOAD_MAX_ATTEMPTS attempts before the point is logged failed and
+# the sweep moves to the NEXT n in the SAME circuit (never abandons it).
+# Deterministic failures (compile error, link overflow) still stop climbing
+# immediately, same as before -- this only changes upload-stage failures.
+#
+# esptool signature markers (this platform pins espressif8266@4.2.1, which
+# pulls tool-esptoolpy ~1.30000.0 -- the single-file esptool.py, confirmed via
+# ~/.platformio/platforms/espressif8266/platform.json's uploader pin, distinct
+# from the ESP32 platform's newer modular esptool -- see esp32_sweep.py):
+#   - "Failed to connect to" -- esptool.py's connect(), wraps the underlying
+#     sync error (tool-esptoolpy@1.30000.201119/esptool.py:529)
+#   - "timed out waiting for packet" -- the underlying sync error text itself
+#     (same file:2636, raised by the SLIP packet reader on read timeout)
+#   - "a fatal error occurred" -- esptool.py's top-level handler, always
+#     wraps whichever FatalError above fired (same file:3964) -- present in
+#     the captured `pio run -t upload` output for every esptool FatalError,
+#     so it's kept as a catch-all alongside the two more specific markers.
+# None of these ever fire on a build_overflow (compile-stage, never reaches
+# esptool) or a determinstic flash-content mismatch.
+UPLOAD_SYNC_FAILURE_MARKERS = (
+    "failed to connect to",
+    "timed out waiting for packet",
+    "a fatal error occurred",
+)
+UPLOAD_RETRY_SETTLE_S_DEFAULT = 2.0
+UPLOAD_MAX_ATTEMPTS = ur.UPLOAD_MAX_ATTEMPTS
+CONSECUTIVE_UPLOAD_FAIL_LIMIT = ur.CONSECUTIVE_UPLOAD_FAIL_LIMIT
+ConsecutiveUploadFailuresError = ur.ConsecutiveUploadFailuresError
+
+
+def is_upload_sync_failure(log: str) -> bool:
+    return ur.is_upload_sync_failure(log, UPLOAD_SYNC_FAILURE_MARKERS)
+
+
+def is_upload_stage_failure(build_status: str, result: dict) -> bool:
+    return ur.is_upload_stage_failure(build_status, result)
+
 
 def find_esp_port(hint: str) -> str:
     """สแกน port ใหม่ทุกครั้ง กันกรณี re-enumerate เหมือนที่เจอกับ Uno"""
-    candidates = sorted(glob.glob("/dev/cu.usbserial*") + glob.glob("/dev/cu.wchusbserial*") + glob.glob("/dev/cu.SLAB_USBtoUART*"))
+    candidates = sorted(p for pat in ESP_PORT_GLOBS for p in glob.glob(pat))
     if not candidates:
         return hint
     if hint in candidates:
         return hint
     return candidates[0]
+
+
+def port_still_enumerated() -> bool:
+    """Best-effort check that some ESP8266-shaped port still exists before
+    retrying an upload. Unlike the Uno (native USB-CDC, re-enumerates to a
+    new /dev path on reset -- see uno_sweep.py's find_uno_port docstring),
+    the ESP8266 boards this project uses go through a USB-UART bridge chip
+    (CH340/CP2102-family) whose /dev path stays stable across resets -- this
+    check is still worth doing (catches the board/cable being fully
+    unplugged before wasting a retry attempt) but reuses find_esp_port's own
+    glob patterns rather than assuming a Uno-style re-enumeration."""
+    return any(glob.glob(pat) for pat in ESP_PORT_GLOBS)
 
 
 def build_and_upload(circuit: str, n: int, port_hint: str, build_timeout_s=None):
@@ -138,7 +192,7 @@ def build_and_upload(circuit: str, n: int, port_hint: str, build_timeout_s=None)
 
     if c_rc != 0:
         return {"ok": False, "log": c_stdout[-4000:] + c_stderr[-2000:], "port": port,
-                "compile_s": compile_s, "upload_s": 0.0,
+                "compile_s": compile_s, "upload_s": 0.0, "stage": "compile",
                 "ram_pct": ram_pct, "ram_bytes": ram_bytes, "timed_out": timed_out}
 
     t0 = time.perf_counter()
@@ -157,7 +211,7 @@ def build_and_upload(circuit: str, n: int, port_hint: str, build_timeout_s=None)
 
     ok = u_rc == 0
     return {"ok": ok, "log": u_stdout[-4000:] + u_stderr[-2000:], "port": port,
-            "compile_s": compile_s, "upload_s": upload_s,
+            "compile_s": compile_s, "upload_s": upload_s, "stage": "upload",
             "ram_pct": ram_pct, "ram_bytes": ram_bytes, "timed_out": timed_out}
 
 
@@ -233,11 +287,29 @@ def main():
     ap.add_argument("--fresh", "--no-resume", dest="fresh", action="store_true",
                      help="ไม่ resume จากผลลัพธ์เดิม — ย้ายไฟล์ raw/memory_wall เดิมไปเป็น "
                           "*.pre-fresh-<timestamp>.csv (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด")
+    ap.add_argument("--upload-retry-settle-s", type=float, default=UPLOAD_RETRY_SETTLE_S_DEFAULT,
+                     help="วินาทีที่รอก่อน retry เมื่อเจอ esptool sync failure (signature "
+                          "match เท่านั้น ไม่ใช่ปัญหาหน่วยความจำ) แล้วเช็คว่า port ยังอยู่ "
+                          f"ก่อน retry จริง — ค่าเริ่มต้น {UPLOAD_RETRY_SETTLE_S_DEFAULT}s "
+                          "(standing decision 1, ported from uno_sweep.py 2026-09-22)")
     args = ap.parse_args()
 
-    for circuit in args.circuits:
-        print(f"\n=== circuit={circuit} ===")
-        _run_circuit(args, circuit)
+    try:
+        for circuit in args.circuits:
+            print(f"\n=== circuit={circuit} ===")
+            _run_circuit(args, circuit)
+    except ConsecutiveUploadFailuresError as e:
+        # standing decision 1: stop the whole run, don't crash past the point
+        # of having flushed everything collected so far (_run_circuit's own
+        # try/finally already closed that circuit's raw/wall file handles and
+        # its SessionRecorder's __exit__ already wrote a session row noting
+        # the exception before it got here) -- mirrors uno_sweep.py's main().
+        print(f"\n!!! STOPPING RUN: {e}")
+        print(f"raw -> {sp.raw_csv_path('esp8266', e.circuit)}\n"
+              f"memory wall -> {sp.memory_wall_csv_path('esp8266', e.circuit)}")
+        print(f"telemetry -> {sp.sessions_csv_path('esp8266', e.circuit)}, "
+              f"{sp.points_csv_path('esp8266', e.circuit)}")
+        sys.exit(2)
 
 
 def _run_circuit(args, circuit):
@@ -342,6 +414,16 @@ def _run_circuit(args, circuit):
 
 def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasible,
                  raw_w, raw_f, wall_w, wall_f, session, points_csv):
+    # standing decision 1 (ported from uno_sweep.py 2026-09-22): settle once,
+    # consumed once, before the very next build_and_upload call regardless of
+    # which point that's for -- the port doesn't know about the n boundary.
+    pending_settle = False
+    pending_settle_reason = None
+
+    # two consecutive n values that each exhaust all UPLOAD_MAX_ATTEMPTS
+    # upload attempts stop the whole run -- see ConsecutiveUploadFailuresError.
+    prev_upload_exhausted_n = None
+
     for n in n_values:
         skip_ts = datetime.now(timezone.utc).isoformat()
         if (circuit, n) in completed:
@@ -398,21 +480,46 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
         retry_used = 0
         point_device_s = 0.0
         point_reflash_s = 0.0
+        upload_fail_exhausted = False  # this point's terminal outcome: ran out
+        # of all UPLOAD_MAX_ATTEMPTS upload attempts (standing decision 1)
 
-        # attempt 0 = ครั้งแรก, attempt 1 = retry เดียว — เฉพาะ runtime_hang_or_reset
-        # เท่านั้นที่ retry ได้ (อาจเป็นสายหลุด/USB glitch ชั่วคราว) build/upload fail
-        # และ malloc_failed ไม่ retry เพราะเป็น deterministic
-        # ข้อยกเว้นใหม่ (REPS=100 + 6 วงจร): จุดที่ budget สูงกว่า
-        # RETRY_MAX_BUDGET_S จะไม่ retry เพราะต้นทุน retry แปรผันตาม budget
-        # แต่ประโยชน์คงที่ — รันซ้ำเฉพาะจุดนั้นทีหลังถูกกว่ามาก (ไฟล์เป็น
-        # append-only) ดู timing_model.retry_allowed()
-        max_attempts = 2 if may_retry else 1
-        for attempt in range(max_attempts):
+        # attempt loop: three independent retry policies share this loop, each
+        # gated on the failure kind of the attempt that just happened --
+        #   - runtime hang/reset/watchdog/build_timeout: unchanged existing
+        #     policy, one retry only (2 attempts total), gated by may_retry
+        #     (budget rule, see timing_model.retry_allowed).
+        #   - upload-stage failure (esptool never got a working sync):
+        #     standing decision 1 -- up to UPLOAD_MAX_ATTEMPTS (3) attempts
+        #     total, NOT gated by the budget rule, and exhausting all 3 does
+        #     NOT stop climbing / does NOT abandon the circuit.
+        #   - malloc_failed / compile-stage failure: deterministic, one
+        #     attempt only, regardless of which of the above this attempt
+        #     would otherwise have matched.
+        attempt = 0
+        while True:
             print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  "
-                  f"budget={budget_s}s (expected {tm.human_duration(expected_s)})  ",
-                  end="", flush=True)
-            if attempt == 1:
+                  f"budget={budget_s}s (expected {tm.human_duration(expected_s)})  "
+                  f"attempt={attempt + 1}  ", end="", flush=True)
+            if attempt > 0:
                 print("(retry) ", end="", flush=True)
+
+            # settle + port-still-enumerated check BEFORE this build_and_upload
+            # if the previous action on the port ended in hard_timeout=true or
+            # an upload-stage failure -- see uno_sweep.py for the root-cause
+            # this addresses (avrdude/esptool retried too soon after the OS
+            # hadn't yet released the port).
+            settle_note = ""
+            if pending_settle:
+                print(f"\n-- settling {args.upload_retry_settle_s}s before the next "
+                      f"build_and_upload (previous: {pending_settle_reason})")
+                time.sleep(args.upload_retry_settle_s)
+                port_ok = port_still_enumerated()
+                print(f"-- port re-enumeration check: {'found' if port_ok else 'NOT FOUND'}")
+                settle_note = (f"[settled {args.upload_retry_settle_s}s after "
+                                f"{pending_settle_reason}; port_reenum="
+                                f"{'ok' if port_ok else 'missing'}] ")
+                pending_settle = False
+                pending_settle_reason = None
 
             attempt_start = datetime.now(timezone.utc).isoformat()
             result = build_and_upload(circuit, n, args.port, args.build_timeout_s)
@@ -427,12 +534,23 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                 build_status = rs.classify_build_failure(
                     result["log"], result.get("ram_pct"), result.get("timed_out", False))
                 is_timeout = build_status == "build_timeout"
-                print({
+                is_upload_fail = is_upload_stage_failure(build_status, result)
+                is_upload_sync = is_upload_fail and is_upload_sync_failure(result["log"])
+                label = {
                     "build_overflow": "BUILD OVERFLOW -> Memory Wall (positive evidence: linker/RAM)",
                     "build_timeout": "BUILD TIMEOUT -> toolchain/host problem, NOT a wall",
                     "build_or_upload_fail": "UPLOAD/BUILD FAIL -> not a wall (no memory evidence)",
-                }[build_status])
+                }[build_status]
+                print(label + ("  (matched upload-sync-failure signature)" if is_upload_sync else ""))
                 print(result["log"][-800:])
+
+                will_retry = False
+                if is_timeout and attempt == 0 and may_retry:
+                    will_retry = True
+                elif is_upload_fail and attempt < UPLOAD_MAX_ATTEMPTS - 1:
+                    will_retry = True
+
+                failure_message = settle_note + result["log"][-300:]
                 tel.write_point_row({
                     "session_id": session.session_id, "phase": 2, "board": "esp8266",
                     "circuit": circuit, "n": n, "attempt_index": attempt,
@@ -441,22 +559,40 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                     "upload_s": round(result["upload_s"], 3),
                     "retry_count": retry_used, "timeout_hit": is_timeout,
                     "failure_type": "build_timeout" if is_timeout else "build",
-                    "failure_message": result["log"][-300:],
-                    "status": "failed" if not (is_timeout and attempt == 0 and may_retry) else "retrying",
+                    "failure_message": failure_message,
+                    "status": "retrying" if will_retry else "failed",
                 }, points_csv)
-                # build_timeout เป็นความล้มเหลวชั่วคราว จึงเข้านโยบาย retry-once
-                # เดียวกับ runtime hang — ยังถูกข้ามถ้า budget > 600s
-                if is_timeout and attempt == 0 and may_retry:
-                    retry_used = 1
-                    print("-- transient build timeout, retrying once at the same n")
+                if will_retry:
+                    retry_used += 1
+                    if is_upload_fail:
+                        pending_settle = True
+                        pending_settle_reason = f"upload-stage failure (attempt {attempt + 1})"
+                        print(f"-- upload-stage failure, will retry (attempt "
+                              f"{attempt + 2}/{UPLOAD_MAX_ATTEMPTS})")
+                    else:
+                        print("-- transient build timeout, retrying once at the same n")
+                    attempt += 1
                     continue
+
+                if is_upload_fail:
+                    upload_fail_exhausted = True
+
                 wall_w.writerow(["esp8266", circuit, n, theoretical_bytes,
                                   result.get("ram_bytes"), result.get("ram_pct"),
                                   build_status, ts, retry_used,
                                   budget_s, round(expected_s, 1), retry_policy])
                 wall_f.flush()
                 session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
-                wall_found = rs.stops_climbing(build_status)
+                if upload_fail_exhausted:
+                    # standing decision 1: an upload failure (even after
+                    # exhausting all attempts) is never treated as a reason to
+                    # stop climbing n in this circuit -- it carries no memory
+                    # evidence at all.
+                    wall_found = False
+                    print(f"-- exhausted all {UPLOAD_MAX_ATTEMPTS} upload attempts for n={n} "
+                          "-- NOT abandoning the circuit, continuing to the next n")
+                else:
+                    wall_found = rs.stops_climbing(build_status)
                 break
 
             time.sleep(BOOT_WAIT_S)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
@@ -464,6 +600,9 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
             done, rows, malloc_failed, note = read_serial_trials(find_esp_port(args.port), budget_s)
             device_exec_s = time.perf_counter() - exec_t0
             point_device_s += device_exec_s
+            if "hard_timeout=true" in note:
+                pending_settle = True
+                pending_settle_reason = f"hard_timeout on {circuit} n={n}"
             attempt_end = datetime.now(timezone.utc).isoformat()
 
             if malloc_failed:
@@ -535,6 +674,7 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                 print(f"NO 'DONE' within {budget_s}s -> {status}  "
                       "-- transient failure, retrying once at same n before declaring "
                       "Memory Wall (deviation from n=30 methodology, see run_log.md)")
+                attempt += 1
                 continue
 
             tail = "(after retry)" if retry_used else f"(no retry: {retry_policy})"
@@ -545,6 +685,14 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
             wall_f.flush()
             session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
             wall_found = rs.stops_climbing(status)
+            break
+
+        if upload_fail_exhausted:
+            if prev_upload_exhausted_n is not None:
+                raise ConsecutiveUploadFailuresError("esp8266", circuit, prev_upload_exhausted_n, n)
+            prev_upload_exhausted_n = n
+        else:
+            prev_upload_exhausted_n = None
 
         if wall_found:
             break

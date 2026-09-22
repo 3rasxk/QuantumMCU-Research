@@ -87,6 +87,7 @@ from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
 from shared import la_capture as lac  # noqa: E402
 from shared import paths as sp  # noqa: E402
+from shared import upload_retry as ur  # noqa: E402
 
 RESUME_KEY_SPEC = [("circuit", str), ("n", int)]
 
@@ -133,26 +134,26 @@ UPLOAD_RETRY_SETTLE_S_DEFAULT = 2.0
 # the NEXT n in the SAME circuit (never abandons the circuit). Two consecutive
 # n values that each exhaust all 3 attempts stop the whole run — that pattern
 # means the point failures aren't independent (cable/port/hardware problem),
-# not that n=2 has been reached.
-UPLOAD_MAX_ATTEMPTS = 3
-CONSECUTIVE_UPLOAD_FAIL_LIMIT = 2
+# not that n=2 has been reached. Constants and the stage classifier now live
+# in pc/shared/upload_retry.py so esp8266_sweep.py/esp32_sweep.py share the
+# exact same policy instead of drifting copies (2026-09-22, see run_log.md
+# "port upload-retry to ESP boards").
+UPLOAD_MAX_ATTEMPTS = ur.UPLOAD_MAX_ATTEMPTS
+CONSECUTIVE_UPLOAD_FAIL_LIMIT = ur.CONSECUTIVE_UPLOAD_FAIL_LIMIT
 
 
 def is_upload_sync_failure(log: str) -> bool:
-    low = (log or "").lower()
-    return any(m in low for m in UPLOAD_SYNC_FAILURE_MARKERS)
+    return ur.is_upload_sync_failure(log, UPLOAD_SYNC_FAILURE_MARKERS)
 
 
 def is_upload_stage_failure(build_status: str, result: dict) -> bool:
     """True iff this failure happened during the upload step (avrdude), not
     during compile — i.e. compile succeeded (ram_pct is meaningful) and the
-    subsequent `pio run -t upload` is what failed. This is what standing
-    decision 1 calls an "upload failure": stage-based, not log-signature-based,
-    so it also covers avrdude failures whose log text doesn't match
-    UPLOAD_SYNC_FAILURE_MARKERS. Deterministic compile-stage failures
-    (build_status == "build_or_upload_fail" with result["stage"] == "compile")
-    are excluded on purpose — those are never retried."""
-    return build_status == "build_or_upload_fail" and result.get("stage") == "upload"
+    subsequent `pio run -t upload` is what failed. See
+    pc/shared/upload_retry.is_upload_stage_failure for the full docstring —
+    it's stage-based, not log-signature-based, so it also covers avrdude
+    failures whose log text doesn't match UPLOAD_SYNC_FAILURE_MARKERS."""
+    return ur.is_upload_stage_failure(build_status, result)
 
 
 def port_still_enumerated() -> bool:
@@ -162,18 +163,12 @@ def port_still_enumerated() -> bool:
     return bool(glob.glob("/dev/cu.usbmodem*"))
 
 
-class ConsecutiveUploadFailuresError(Exception):
-    """Raised when CONSECUTIVE_UPLOAD_FAIL_LIMIT n-values in a row each
-    exhausted all UPLOAD_MAX_ATTEMPTS upload attempts — standing decision 1's
-    stop condition (likely cable/port/hardware problem, not a per-point
-    fluke)."""
-
-    def __init__(self, circuit, n_prev, n_cur):
-        self.circuit, self.n_prev, self.n_cur = circuit, n_prev, n_cur
-        super().__init__(
-            f"circuit={circuit}: n={n_prev} and n={n_cur} each exhausted all "
-            f"{UPLOAD_MAX_ATTEMPTS} upload attempts back-to-back -- stopping "
-            "the whole run (likely cable/port/hardware problem)")
+# pc/shared/upload_retry.ConsecutiveUploadFailuresError — shared across
+# uno/esp8266/esp32 sweeps now (2026-09-22). Message gained a board prefix
+# ("uno circuit=..." instead of bare "circuit=...") as part of that sharing;
+# nothing reads the message text programmatically (only e.circuit/e.n_prev/
+# e.n_cur below and SystemExit code 2, both unchanged).
+ConsecutiveUploadFailuresError = ur.ConsecutiveUploadFailuresError
 
 
 def find_uno_port(hint: str) -> str:
@@ -900,7 +895,7 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
 
         if upload_fail_exhausted:
             if prev_upload_exhausted_n is not None:
-                raise ConsecutiveUploadFailuresError(circuit, prev_upload_exhausted_n, n)
+                raise ConsecutiveUploadFailuresError("uno", circuit, prev_upload_exhausted_n, n)
             prev_upload_exhausted_n = n
         else:
             prev_upload_exhausted_n = None
