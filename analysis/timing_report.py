@@ -20,8 +20,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared import timing_model as tm  # noqa: E402
-
-RAW_ROOT = REPO_ROOT / "data" / "raw"
+from shared.paths import RAW_ROOT  # noqa: E402
 
 
 def load_rows(path: Path):

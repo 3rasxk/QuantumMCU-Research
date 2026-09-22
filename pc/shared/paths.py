@@ -17,6 +17,17 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
+# data/raw/ itself -- analysis/reporting scripts that scan across every
+# board+circuit (phase2_summarize.py, phase2_plot.py, timing_report.py,
+# phase3_summarize.py) used to each define their own REPO_ROOT/RAW_ROOT (or
+# RAW_DIR for phase3_summarize.py, which only ever reads phase3) by hand; they
+# now import this instead (2026-09-22, see run_log.md). Plain module-level
+# constant, unlike the functions above -- these scripts are standalone CLI
+# tools, not exercised by the REPO_ROOT-reassignment late-binding tests the
+# sweep scripts' paths go through (see uno_upload_retry_test.py's
+# "late-binding check").
+RAW_ROOT = REPO_ROOT / "data" / "raw"
+
 
 def raw_dir(board: str, circuit: str, phase: int = 2) -> Path:
     """data/raw/phase<N>/<board>/<circuit>/ -- everything collected for one

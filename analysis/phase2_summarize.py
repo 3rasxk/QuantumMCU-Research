@@ -17,8 +17,8 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared.timing_model import REPS  # noqa: E402
+from shared.paths import RAW_ROOT  # noqa: E402
 
-RAW_ROOT = REPO_ROOT / "data" / "raw"
 PROCESSED_DIR = REPO_ROOT / "data" / "processed" / "phase2"
 
 
