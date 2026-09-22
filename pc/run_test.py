@@ -317,11 +317,13 @@ def test_fresh_dry_run_cli_shows_clamp_and_archive_destination():
           not h_all_archive_dir.exists())
 
 
-def _make_fake_dataset(root, board, algorithm, phase, n_points=2):
+def _make_fake_dataset(root, board, algorithm, phase, n_points=2, la=False):
     """Build a minimal but realistic data/raw + figures + docs tree for one
-    (board, algorithm, phase), entirely inside a scratch root -- never touches
-    the real repo's data/."""
-    raw_dir = root / "data" / "raw" / f"phase{phase}" / board / algorithm
+    (board, algorithm, phase, la), entirely inside a scratch root -- never
+    touches the real repo's data/. `la` picks the no_la/with_la bucket
+    (2026-09-22, see pc/shared/paths.py)."""
+    bucket = "with_la" if la else "no_la"
+    raw_dir = root / "data" / "raw" / f"phase{phase}" / board / algorithm / bucket
     (raw_dir / "env").mkdir(parents=True, exist_ok=True)
     with open(raw_dir / "raw.csv", "w", newline="") as f:
         w = csv.writer(f)
@@ -336,7 +338,7 @@ def _make_fake_dataset(root, board, algorithm, phase, n_points=2):
             w.writerow([board, algorithm, n, "ok"])
     (raw_dir / "env" / "fake-session.json").write_text('{"schema_version": 2}')
 
-    figures_dir = root / "data" / "figures" / board / algorithm
+    figures_dir = root / "data" / "figures" / board / algorithm / bucket
     figures_dir.mkdir(parents=True, exist_ok=True)
     (figures_dir / "exec_time_vs_n.png").write_bytes(b"fake-png-bytes")
 
@@ -509,7 +511,7 @@ def test_archive_independence():
 
         def run_and_hash():
             subprocess.run(cmd, cwd=copy_root, capture_output=True, text=True, timeout=60)
-            fig_dir = copy_root / "data" / "figures" / "uno" / "h_all"
+            fig_dir = copy_root / "data" / "figures" / "uno" / "h_all" / "no_la"
             return {f.name: hashlib.sha256(f.read_bytes()).hexdigest()
                     for f in sorted(fig_dir.glob("*.png"))} if fig_dir.exists() else {}
 
@@ -533,6 +535,17 @@ def test_archive_independence():
 
 
 def main():
+    # run_mod.main() now writes to the run-history ledger (pc/shared/run_history.py)
+    # on every call -- redirect it to a scratch file for this WHOLE test module
+    # (not just the tests that also redirect REPO_ROOT/sp.REPO_ROOT) so no test
+    # run here ever appends to the real repo's data/run_history.jsonl. See
+    # pc/run_history_test.py for the ledger's own dedicated tests.
+    import tempfile
+    real_ledger = REPO_ROOT / "data" / "run_history.jsonl"
+    real_ledger_before = real_ledger.read_bytes() if real_ledger.exists() else None
+    ledger_scratch = Path(tempfile.mkdtemp(prefix="run_test_ledger_")) / "run_history.jsonl"
+    run_mod.rh.LEDGER_PATH = ledger_scratch
+
     test_build_command_matches_every_board_algorithm_phase_combination()
     test_dry_run_cli_all_combinations_no_hardware_subprocess()
     test_unsupported_combinations_rejected()
@@ -547,6 +560,9 @@ def main():
     test_archive_abort_on_failure_leaves_original_byte_identical()
     test_second_fresh_run_creates_a_different_timestamped_archive()
     test_archive_independence()
+
+    check("no test run touched the real data/run_history.jsonl ledger",
+          (real_ledger.read_bytes() if real_ledger.exists() else None) == real_ledger_before)
 
     n_fail = sum(1 for _, s in RESULTS if s == "FAIL")
     print(f"\n{len(RESULTS)} checks, {n_fail} failed")

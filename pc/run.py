@@ -44,6 +44,7 @@ sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared.circuit_ids import CIRCUIT_IDS, FIXED_N_CIRCUITS  # noqa: E402
 from shared import paths as sp  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
+from shared import run_history as rh  # noqa: E402
 from shared.telemetry import check_sleep_prevention  # noqa: E402
 
 BOARDS = ("uno", "esp8266", "esp32")
@@ -280,16 +281,19 @@ def port_holder_pids(port):
         return None
 
 
-def resume_summary(board, algorithm, phase):
+def resume_summary(board, algorithm, phase, la=False):
     """Read-only summary of what already exists under data/raw/ for this
-    (board, algorithm, phase) -- reads memory_wall.csv (phase 2) or
+    (board, algorithm, phase, la) -- reads memory_wall.csv (phase 2) or
     session_log.csv (phase 3) directly with csv.DictReader; never writes
-    anything, never imports pc/shared/resume.py's write-side logic."""
-    directory = sp.raw_dir(board, algorithm, phase)
+    anything, never imports pc/shared/resume.py's write-side logic. `la`
+    selects the no_la/with_la bucket (2026-09-22, pc/shared/paths.py) --
+    resume must only ever compare within the same bucket a run would
+    actually write into."""
+    directory = sp.raw_dir(board, algorithm, phase, la)
     if not directory.exists():
         return f"{directory} does not exist yet -- fresh start."
-    path = sp.memory_wall_csv_path(board, algorithm, phase) if phase == 2 \
-        else sp.session_log_csv_path(board, algorithm, phase)
+    path = sp.memory_wall_csv_path(board, algorithm, phase, la) if phase == 2 \
+        else sp.session_log_csv_path(board, algorithm, phase, la)
     if not path.exists():
         return f"{directory} exists but {path.name} does not -- fresh start."
     with open(path, newline="", encoding="utf-8") as f:
@@ -302,6 +306,24 @@ def resume_summary(board, algorithm, phase):
     ns = sorted({r["n"] for r in rows}, key=lambda x: int(x))
     parts = ", ".join(f"{k}={v}" for k, v in sorted(by_status.items()))
     return f"{path}: {len(rows)} point(s) recorded (n={','.join(ns)}), {parts}"
+
+
+def point_counts_by_status(board, algorithm, phase, la=False):
+    """Read-only status->count dict from the terminal-record file, for the
+    run-history ledger's "point/status counts if it completed" field (see
+    pc/shared/run_history.py) -- same file resume_summary() reads, just
+    returned as data instead of a formatted string. None if the file doesn't
+    exist (e.g. a dry-run, or a run that never wrote a single point)."""
+    path = sp.memory_wall_csv_path(board, algorithm, phase, la) if phase == 2 \
+        else sp.session_log_csv_path(board, algorithm, phase, la)
+    if not path.exists():
+        return None
+    with open(path, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    counts = {}
+    for r in rows:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    return counts
 
 
 # ---------------------------------------------------------------------------
@@ -344,21 +366,22 @@ def _csv_row_count(path):
         return None
 
 
-def _archive_sources(board, algorithm, phase):
-    """Read-only: what exists right now for this (board, algorithm, phase)
+def _archive_sources(board, algorithm, phase, la=False):
+    """Read-only: what exists right now for this (board, algorithm, phase, la)
     that a fresh run would archive. Returns a list of (category, Path)
-    for whichever of raw/figures/docs actually exist and are non-empty.
-    figures/docs are board+algorithm-keyed regardless of phase (see
-    pc/shared/paths.figures_dir/analysis_doc_path -- they don't carry a phase
-    segment at all today), so a Phase 3 fresh run would archive the SAME
-    figures/doc a Phase 2 one would -- both are that (board, algorithm)'s
-    one set of figures/analysis, not per-phase. Documented, not invented:
+    for whichever of raw/figures/docs actually exist and are non-empty. `la`
+    selects the no_la/with_la bucket for raw/figures (2026-09-22, see
+    pc/shared/paths.py) -- a fresh run only ever archives the bucket it is
+    about to write into, never the other one. docs are board+algorithm-keyed
+    regardless of phase OR la (see pc/shared/paths.analysis_doc_path -- one
+    write-up per (board, algorithm), not split by la), so a fresh run in
+    either bucket would archive the SAME doc. Documented, not invented:
     reflects pc/shared/paths.py exactly as it stands."""
     sources = []
-    raw_src = sp.raw_dir(board, algorithm, phase)
+    raw_src = sp.raw_dir(board, algorithm, phase, la)
     if raw_src.exists() and any(raw_src.iterdir()):
         sources.append(("raw", raw_src))
-    figures_src = sp.figures_dir(board, algorithm)
+    figures_src = sp.figures_dir(board, algorithm, la)
     if figures_src.exists() and any(figures_src.iterdir()):
         sources.append(("figures", figures_src))
     doc_src = sp.analysis_doc_path(board, algorithm)
@@ -367,12 +390,12 @@ def _archive_sources(board, algorithm, phase):
     return sources
 
 
-def plan_fresh_archive(board, algorithm, phase):
+def plan_fresh_archive(board, algorithm, phase, la=False):
     """Read-only preview for --dry-run and for the pre-confirmation notice on
     a real run: what WOULD be archived and to where, without touching
     anything. Returns (dest_path_or_None, sources) -- dest is None if there
     is nothing to archive."""
-    sources = _archive_sources(board, algorithm, phase)
+    sources = _archive_sources(board, algorithm, phase, la)
     if not sources:
         return None, []
     return archive_dest_dir(board, algorithm, phase, _utc_timestamp()), sources
@@ -404,13 +427,14 @@ def _manifest_entries(sources):
 
 
 def perform_fresh_archive(board, algorithm, phase, command_str, timestamp=None,
-                           reason="fresh run"):
+                           reason="fresh run", la=False):
     """Actually moves data aside. Returns the archive dest Path, or None if
     there was nothing to archive (no-op, not an error). Raises RunnerError,
     with everything already rolled back to its original location, if any step
     fails -- guaranteeing the original data is untouched and no collection
-    starts. Never overwrites an existing archive folder."""
-    sources = _archive_sources(board, algorithm, phase)
+    starts. Never overwrites an existing archive folder. `la` selects the
+    no_la/with_la bucket, see _archive_sources."""
+    sources = _archive_sources(board, algorithm, phase, la)
     if not sources:
         return None
 
@@ -476,7 +500,15 @@ def perform_fresh_archive(board, algorithm, phase, command_str, timestamp=None,
     return dest
 
 
-def print_preflight(board, algorithm, phase, port, dry_run):
+def print_preflight(board, algorithm, phase, port, dry_run, la=False):
+    """`la` here is the REQUESTED --la flag, not the resolved la_active this
+    runner never learns (that's decided inside uno_sweep.py's own main(), by
+    whether sigrok-cli is actually available -- this runner never imports
+    pc/shared/la_capture.py). If --la is requested but sigrok turns out
+    unavailable, the delegated script silently falls back to no_la and this
+    preflight's resume-state line (which assumed with_la) would show "fresh
+    start" even though no_la data may already exist -- a known limitation of
+    checking resume state before delegating, not a bug to fix here."""
     print("--- preflight ---")
     clean, ref = git_state()
     print(f"git: {'clean' if clean else 'DIRTY'}  ({ref})")
@@ -491,7 +523,7 @@ def print_preflight(board, algorithm, phase, port, dry_run):
     print(f"sleep prevention: prevented={sleep_check.get('prevented')} "
           f"({sleep_check.get('note')})")
 
-    print(f"resume state: {resume_summary(board, algorithm, phase)}")
+    print(f"resume state: {resume_summary(board, algorithm, phase, la)}")
 
     if dry_run:
         print("port: [dry-run] skipping pio device list / port checks -- no hardware access")
@@ -579,7 +611,16 @@ def main(argv=None):
     ap.add_argument("--yes", action="store_true",
                      help="skip the interactive y/n confirmation before touching hardware")
     args = ap.parse_args(argv)
-    command_str = "pc/run.py " + " ".join(argv if argv is not None else sys.argv[1:])
+    argv_for_history = ["pc/run.py"] + (list(argv) if argv is not None else sys.argv[1:])
+    command_str = " ".join(argv_for_history)
+
+    # run-history ledger (2026-09-22, pc/shared/run_history.py): "started" is
+    # written HERE, before any validation, so a refused run (unknown board,
+    # unsupported --la, busy port) or a crash still leaves a record -- every
+    # exit path below (including the except RunnerError block) calls
+    # rh.finish_invocation exactly once with a terminal event.
+    inv = rh.start_invocation(argv_for_history, args.board, args.algorithm, args.phase,
+                               la=args.la, fresh=args.fresh, dry_run=args.dry_run)
 
     try:
         validate_combination(args.board, args.algorithm, args.phase, args.la,
@@ -626,9 +667,9 @@ def main(argv=None):
         archive_dest = None
         if args.fresh:
             planned_dest, planned_sources = plan_fresh_archive(
-                args.board, args.algorithm, args.phase)
+                args.board, args.algorithm, args.phase, args.la)
             if planned_dest is None:
-                print("archive: nothing exists yet for this (board, algorithm, phase) "
+                print("archive: nothing exists yet for this (board, algorithm, phase, la) "
                       "-- fresh run starts clean, no archive needed")
             else:
                 # re-plan with the SAME timestamp already picked above, so the
@@ -640,26 +681,33 @@ def main(argv=None):
                       f"(with MANIFEST.json) before collection starts")
 
         if args.dry_run:
-            print_preflight(args.board, args.algorithm, args.phase, args.port, dry_run=True)
+            print_preflight(args.board, args.algorithm, args.phase, args.port, dry_run=True,
+                             la=args.la)
             print("[dry-run] stopping here -- no subprocess started, no file moved")
+            rh.finish_invocation(inv, "dry_run")
             return 0
 
-        print_preflight(args.board, args.algorithm, args.phase, args.port, dry_run=False)
+        print_preflight(args.board, args.algorithm, args.phase, args.port, dry_run=False,
+                         la=args.la)
 
         if not confirm(args.yes):
             print("not confirmed -- exiting without touching hardware or moving any file")
+            rh.finish_invocation(inv, "failed", error="not confirmed by operator")
             return 1
 
         if args.fresh:
             archive_dest = perform_fresh_archive(
-                args.board, args.algorithm, args.phase, command_str, timestamp=fresh_timestamp)
+                args.board, args.algorithm, args.phase, command_str, timestamp=fresh_timestamp,
+                la=args.la)
             if archive_dest is not None:
                 print(f"archived -> {archive_dest}")
 
     except RunnerError as e:
         print(f"error: {e}", file=sys.stderr)
+        rh.finish_invocation(inv, "failed", error=str(e))
         return 1
 
+    interrupted = False
     try:
         result = subprocess.run(argv_cmd, cwd=REPO_ROOT)
         returncode = result.returncode
@@ -670,6 +718,7 @@ def main(argv=None):
               "'Resume ทำงานอย่างไร'). Any in-flight point without a terminal record "
               "row will be re-run from its first rep, not resumed mid-point.")
         returncode = 130
+        interrupted = True
 
     if archive_dest is not None:
         print(f"\n--- fresh run summary ---")
@@ -678,6 +727,22 @@ def main(argv=None):
         print(f"deleting it affects NOTHING in the pipeline -- nothing under pc/, "
               f"analysis/, or any delegated sweep script ever reads from "
               f"data/archive/ (see pc/run_test.py's archive-independence test).")
+
+    # point_counts uses args.la (the REQUESTED flag), which may not match
+    # la_active if --la was requested but sigrok turned out unavailable --
+    # same known limitation as print_preflight's resume-state line above,
+    # see its docstring.
+    point_counts = point_counts_by_status(args.board, args.algorithm, args.phase, args.la)
+    if interrupted:
+        rh.finish_invocation(inv, "interrupted", returncode=returncode,
+                              point_counts=point_counts, archive_dest=archive_dest)
+    elif returncode == 0:
+        rh.finish_invocation(inv, "completed", returncode=returncode,
+                              point_counts=point_counts, archive_dest=archive_dest)
+    else:
+        rh.finish_invocation(inv, "failed", returncode=returncode,
+                              point_counts=point_counts, archive_dest=archive_dest,
+                              error=f"delegated script exited with returncode={returncode}")
 
     return returncode
 
