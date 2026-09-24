@@ -574,7 +574,9 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
         while True:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] "
                   f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  "
+                  f"({theoretical_bytes / tm.TOTAL_RAM_BYTES['esp32'] * 100:.1f}% RAM)  "
                   f"budget={budget_s}s (expected {tm.human_duration(expected_s)})  "
+                  f"run done <= {tm.finish_clock_estimate('esp32', circuit, n, n_values, completed)}  "
                   f"attempt={attempt + 1}  ", end="", flush=True)
             if attempt > 0:
                 print("(retry) ", end="", flush=True)

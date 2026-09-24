@@ -289,6 +289,21 @@ def format_memory_note(board, theoretical_bytes, rows=None, ram_pct=None, ram_by
     return "  ".join(out)
 
 
+def finish_clock_estimate(board, circuit, n, n_values, completed=()):
+    """เวลานาฬิกาที่คาดว่า circuit นี้จะรันเสร็จ นับจากจุดปัจจุบัน n ไปจนถึง n สุดท้าย
+    (ข้ามจุดที่ทำเสร็จแล้ว และจุดที่ state vector ใหญ่กว่า RAM ทั้งชิป เพราะไปไม่ถึงแน่)
+    เป็นขอบบน: sweep หยุดที่กำแพงแรก อาจเสร็จเร็วกว่านี้ รูปแบบ 'HH:MM' หรือมีวันที่ถ้าข้ามวัน"""
+    total = TOTAL_RAM_BYTES[board]
+    secs = sum(point_wall_estimate_s(board, circuit, m) for m in n_values
+               if m >= n and (circuit, m) not in completed and (1 << m) * 8 <= total)
+    try:
+        end = datetime.now() + timedelta(seconds=secs)
+    except OverflowError:
+        return "far future"
+    same_day = end.date() == datetime.now().date()
+    return end.strftime("%H:%M" if same_day else "%a %d %b %H:%M")
+
+
 def point_wall_estimate_s(board, circuit, n, reps=REPS):
     """wall-clock ต่อจุดที่ควรคาดจริง = เวลารันบนบอร์ด + compile/upload (REFLASH_COST_S,
     ยังเป็นค่าประมาณ ไม่ได้วัด) — expected_point_time_s เดี่ยว ๆ ไม่รวม reflash จึงทำให้
