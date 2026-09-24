@@ -127,9 +127,66 @@ def plot_all(rows):
         print(f"warning: {omitted} point(s) <= 0 omitted from log-scale plots")
 
 
+def plot_per_algorithm(rows):
+    """One figure per algorithm: (a) infidelity and (b) TVD versus qubit count n, with the
+    circuit depth annotated on the top axis, saved to data/figures/phase1/<circuit>/."""
+    _pub_rc()
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
+    global FIGURES_DIR
+    base = FIGURES_DIR
+    try:
+        for circuit in ps.CIRCUIT_ORDER:
+            pts = sorted((int(r["n"]), int(r["depth"]), float(r["infidelity"]), float(r["tvd"]))
+                         for r in rows if r["circuit"] == circuit)
+            if not pts:
+                continue
+            fig, axes = plt.subplots(1, 2, figsize=(7.2, 2.9), layout="constrained")
+            for ax, idx, ylab, thr, tag in (
+                    (axes[0], 2, r"Infidelity, $1-F$", THRESHOLD, "a"),
+                    (axes[1], 3, "Total variation distance, TVD", None, "b")):
+                shown = [(p[0], p[idx]) for p in pts if p[idx] > 0]
+                ax.plot([x for x, _ in shown], [y for _, y in shown],
+                        color=PUB_COLOR[circuit], marker=ps.CIRCUIT_MARKER[circuit], markersize=6,
+                        markeredgecolor="black", markeredgewidth=0.5,
+                        linewidth=0 if len(shown) == 1 else 1.3, zorder=3)
+                if thr is not None:
+                    ax.axhline(thr, color="#444444", linestyle=(0, (5, 3)), linewidth=0.9)
+                    ax.text(0.02, thr * 1.25, r"pass threshold ($10^{-3}$)", fontsize=8,
+                            color="#444444", va="bottom", ha="left", transform=ax.get_yaxis_transform())
+                ax.set_yscale("log")
+                ys = [y for _, y in shown]
+                pad = 100 if len(pts) == 1 else 4
+                ax.set_ylim(min(ys) / pad, max(ys) * pad if thr is None else max(thr * 10, max(ys) * pad))
+                if len(pts) == 1:
+                    ax.set_xlim(pts[0][0] - 1, pts[0][0] + 1)
+                    ax.set_xticks([pts[0][0]])
+                else:
+                    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                ax.grid(True, which="major", color="#d0d0d0", linewidth=0.6)
+                ax.grid(True, which="minor", axis="y", color="#ececec", linewidth=0.3)
+                ax.set_axisbelow(True)
+                ax.set_xlabel("Number of qubits, $n$")
+                ax.set_ylabel(ylab)
+                ax.text(-0.02, 1.03, f"({tag})", transform=ax.transAxes, fontweight="bold",
+                        fontsize=10, va="bottom", ha="right")
+                if len(pts) > 1:
+                    sec = ax.secondary_xaxis("top", functions=(lambda v: v, lambda v: v))
+                    sec.set_xticks([p[0] for p in pts])
+                    sec.set_xticklabels([str(p[1]) for p in pts], fontsize=6.5)
+                    sec.set_xlabel("circuit depth", fontsize=8)
+            extra = f" (depth {pts[0][1]})" if len(pts) == 1 else ""
+            fig.suptitle(f"{PUB_LABEL[circuit].replace(' (n=7)', '')}{extra} — C++ simulator vs Qiskit Aer", fontsize=10)
+            FIGURES_DIR = base / circuit
+            _save_pub(fig, "infidelity_tvd")
+    finally:
+        FIGURES_DIR = base
+
+
 def main():
     rows = load_rows()
     plot_all(rows)
+    plot_per_algorithm(rows)
 
 
 if __name__ == "__main__":
