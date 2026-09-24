@@ -33,18 +33,15 @@ def load_rows():
         return list(csv.DictReader(f))
 
 
-def main():
-    ps.apply_style()
-    rows = load_rows()
-
+def plot_metric(rows, column, ylabel, title, filename, threshold=None):
     fig, ax = plt.subplots(figsize=(7.5, 4.8), layout="constrained")
 
     omitted = 0
     for circuit in ps.CIRCUIT_ORDER:
-        pts = sorted((int(r["depth"]), float(r["infidelity"])) for r in rows if r["circuit"] == circuit)
+        pts = sorted((int(r["depth"]), float(r[column])) for r in rows if r["circuit"] == circuit)
         if not pts:
             continue
-        # infidelity = 1 − F อาจออกมา <= 0 จากการปัดเศษ float64 ซึ่งแสดงบนแกน log ไม่ได้
+        # ค่าอาจออกมา <= 0 จากการปัดเศษ float64 ซึ่งแสดงบนแกน log ไม่ได้
         # ตัดออกจากเส้นแต่บอกจำนวนบนกราฟ ไม่ปล่อยให้หายไปเงียบ ๆ
         shown = [(d, v) for d, v in pts if v > 0]
         omitted += len(pts) - len(shown)
@@ -55,22 +52,37 @@ def main():
             markeredgewidth=0.8, linewidth=1.8, label=ps.CIRCUIT_LABEL[circuit], zorder=3,
         )
 
-    ax.axhline(THRESHOLD, color=ps.REFERENCE_LINE, linestyle=(0, (6, 3)), linewidth=1.2, zorder=2,
-               label=f"Pass threshold (infidelity = {THRESHOLD:.0e})")
+    if threshold is not None:
+        ax.axhline(threshold, color=ps.REFERENCE_LINE, linestyle=(0, (6, 3)), linewidth=1.2,
+                   zorder=2, label=f"Pass threshold (infidelity = {threshold:.0e})")
 
     ps.style_axes(ax, log_y=True)
-    ax.set_xlabel("Circuit depth (gate layers)")
-    ax.set_ylabel("Infidelity, 1 − F (dimensionless, log scale)")
-    ax.set_title("Phase 1 — C++ simulator vs Qiskit Aer: infidelity by circuit depth")
+    from matplotlib.ticker import LogLocator, NullFormatter
+    ax.set_xscale("log")  # depth spans 1 .. ~7e5 (grover); linear x squashes every other circuit
+    ax.xaxis.set_major_locator(LogLocator(base=10))
+    ax.xaxis.set_minor_formatter(NullFormatter())
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
     fig.legend(loc="outside lower center", ncol=3)
 
     note = "Deterministic simulation: one run per (circuit, n), no repetitions."
     if omitted:
-        note += f" {omitted} point(s) with infidelity ≤ 0 (float rounding) not shown on log axis."
-        print(f"warning: {omitted} point(s) with infidelity <= 0 omitted from log-scale plot")
-    ps.add_footnote(fig, note)
+        note += f" {omitted} point(s) with value ≤ 0 (float rounding) not shown on log axis."
+        print(f"warning: {omitted} point(s) <= 0 omitted from log-scale plot ({column})")
+    ax.set_xlabel("Circuit depth (gate layers, log scale)\n" + note, fontsize=10)
 
-    ps.save_figure(fig, FIGURES_DIR, "infidelity_vs_depth")
+    ps.save_figure(fig, FIGURES_DIR, filename)
+
+
+def main():
+    ps.apply_style()
+    rows = load_rows()
+    plot_metric(rows, "infidelity", "Infidelity, 1 − F (dimensionless, log scale)",
+                "Phase 1 — C++ simulator vs Qiskit Aer: infidelity by circuit depth",
+                "infidelity_vs_depth", threshold=THRESHOLD)
+    plot_metric(rows, "tvd", "Total variation distance, TVD (log scale)",
+                "Phase 1 — C++ simulator vs Qiskit Aer: TVD by circuit depth",
+                "tvd_vs_depth")
 
 
 if __name__ == "__main__":
