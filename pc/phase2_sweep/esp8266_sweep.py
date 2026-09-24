@@ -691,7 +691,9 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
             attempt_end = datetime.now(timezone.utc).isoformat()
 
             if malloc_failed:
-                print(f"MALLOC_FAILED -> Memory Wall found (n={n})")
+                print(f"MALLOC_FAILED -> Memory Wall found (n={n})\n      "
+                      + tm.format_memory_note("esp8266", theoretical_bytes, rows,
+                                               result.get("ram_pct"), result.get("ram_bytes")))
                 wall_w.writerow(["esp8266", circuit, n, theoretical_bytes, None, None,
                                   "malloc_failed", ts, retry_used,
                                   budget_s, round(expected_s, 1), retry_policy])
@@ -727,7 +729,9 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                 suffix = f"  (succeeded after {retry_used} retry)" if retry_used else ""
                 resumed_note = f"  (resumed, {reps_already_done} prior + {n_written} this attempt)" \
                     if reps_already_done else ""
-                print(f"OK  trials_captured={total_reps_now}{suffix}{resumed_note}")
+                print(f"OK  trials_captured={total_reps_now}{suffix}{resumed_note}\n      "
+                      + tm.format_memory_note("esp8266", theoretical_bytes, rows,
+                                               result.get("ram_pct"), result.get("ram_bytes")))
                 tel.write_point_row({
                     "session_id": session.session_id, "phase": 2, "board": "esp8266",
                     "circuit": circuit, "n": n, "attempt_index": attempt,

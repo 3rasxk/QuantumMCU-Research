@@ -953,7 +953,9 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                 resumed_note = f"  (resumed, {reps_already_done} prior + {n_written} this attempt)" \
                     if reps_already_done else ""
                 print(f"OK  compile_ram={result['ram_pct']}%  trials_captured={total_reps_now}"
-                      f"{suffix}{resumed_note}")
+                      f"{suffix}{resumed_note}\n      "
+                      + tm.format_memory_note("uno", theoretical_bytes, rows,
+                                               result.get("ram_pct"), result.get("ram_bytes")))
                 tel.write_point_row({
                     "session_id": session.session_id, "phase": 2, "board": "uno",
                     "circuit": circuit, "n": n, "attempt_index": attempt,

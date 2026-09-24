@@ -260,6 +260,35 @@ def session_total_s(board, points, phase=2):
     return device, reflash, n_run, n_skipped
 
 
+TOTAL_RAM_BYTES = {"uno": 2048, "esp8266": 81920, "esp32": 327680}
+_LAST_HEAP = {}  # board -> (free_heap, largest_block) from the last point that reported it
+
+
+def format_memory_note(board, theoretical_bytes, rows=None, ram_pct=None, ram_bytes=None):
+    """สรุป 1 บรรทัดสำหรับ log ต่อจุด: state vector (byte ที่คำนวณ) คิดเป็นกี่ % ของ RAM
+    ทั้งชิป, static RAM หลัง compile (% และ byte, ถ้ามี), และ heap ที่เหลือ/ก้อนใหญ่สุด
+    จาก raw row แรกของ ESP (คอลัมน์ 5 = free_heap_before, 7 = largest_block) — ถ้าจุดนี้
+    ไม่มี row (เช่น MALLOC_FAILED) ใช้ค่าล่าสุดที่เคยรายงานแทน"""
+    total = TOTAL_RAM_BYTES[board]
+    out = [f"state={theoretical_bytes} B ({theoretical_bytes / total * 100:.1f}% of {total} B RAM)"]
+    if ram_pct is not None:
+        used = f" ({ram_bytes} B)" if ram_bytes is not None else ""
+        out.append(f"static_ram={ram_pct}%{used}")
+    if board != "uno":
+        if rows:
+            try:
+                f = rows[0].split(",")
+                _LAST_HEAP[board] = (int(f[5]), int(f[7]))
+            except (IndexError, ValueError):
+                pass
+        if board in _LAST_HEAP:
+            free, largest = _LAST_HEAP[board]
+            out.append(f"heap_free={free} B (state={theoretical_bytes / free * 100:.0f}% of it), "
+                       f"largest_block={largest} B"
+                       f"{' < state!' if largest < theoretical_bytes else ''}")
+    return "  ".join(out)
+
+
 def point_wall_estimate_s(board, circuit, n, reps=REPS):
     """wall-clock ต่อจุดที่ควรคาดจริง = เวลารันบนบอร์ด + compile/upload (REFLASH_COST_S,
     ยังเป็นค่าประมาณ ไม่ได้วัด) — expected_point_time_s เดี่ยว ๆ ไม่รวม reflash จึงทำให้
