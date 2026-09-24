@@ -451,7 +451,14 @@ def print_budget_plan(board, circuit_n_pairs, reps=REPS, phase=2):
     plan_start = datetime.now()
     print(f"start {plan_start.strftime('%a %d %b %H:%M')}  (finish@ = cumulative expected "
           "finish clock time, model estimate)")
-    print(f"{'circuit':14s} {'n':>3s} {'expected':>11s} {'finish@':>14s} {'budget_s':>9s}  note")
+    show_mem = phase == 2
+    mem_hdr = f" {'state_B':>10s} {'%RAM':>7s}" if show_mem else ""
+    print(f"budget_s = max(expected board run x {SAFETY_FACTOR}, {FLOOR_S}s): ETA basis and retry "
+          f"gate (retry only if <= {RETRY_MAX_BUDGET_S}s), not a hard cutoff")
+    if show_mem:
+        print(f"state_B = 8 x 2^n bytes of state vector; %RAM = state_B / total "
+              f"{TOTAL_RAM_BYTES[board]} B ({board})")
+    print(f"{'circuit':14s} {'n':>3s} {'expected':>11s} {'finish@':>14s} {'budget_s':>9s}{mem_hdr}  note")
     for circuit, n in circuit_n_pairs:
         if phase == 3:
             expected = pc_sim_time_s(circuit, n) * reps
@@ -478,7 +485,14 @@ def print_budget_plan(board, circuit_n_pairs, reps=REPS, phase=2):
             total_worst += budget
         finish = "-" if unreachable else (
             plan_start + timedelta(seconds=total_expected)).strftime("%d %b %H:%M")
-        print(f"{circuit:14s} {n:3d} {human_duration(expected):>11s} {finish:>14s} {budget:9d}  {note}")
+        mem = ""
+        if show_mem:
+            state_b = (1 << n) * 8
+            pct = state_b / TOTAL_RAM_BYTES[board] * 100
+            mem = f" {state_b:10d} {pct:6.1f}%"
+            if pct > 100:
+                note = (note + "  " if note else "") + "state > total RAM"
+        print(f"{circuit:14s} {n:3d} {human_duration(expected):>11s} {finish:>14s} {budget:9d}{mem}  {note}")
 
     print(f"attempted points: expected total {human_duration(total_expected)}, "
           f"worst case if every point times out {human_duration(total_worst)}")
