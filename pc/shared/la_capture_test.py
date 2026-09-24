@@ -67,7 +67,7 @@ def _install_fake_build_and_upload(us, order):
 
 
 def _install_fake_read_serial_trials(us, order, done=True, n_rows=100):
-    def fake_read_serial_trials(port, circuit, n, timeout_s):
+    def fake_read_serial_trials(port, circuit, n, timeout_s, **kwargs):
         order.append(("read_serial_trials", circuit, n))
         rows = [f"uno,{circuit},{n},{r},284,1780,1780" for r in range(n_rows)]
         return done, rows, "reset_count=0"

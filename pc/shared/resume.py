@@ -26,6 +26,7 @@
 # จาก 2 sessions ไม่ใช่ตัวอย่างที่ "สม่ำเสมอ" เดียวกันอีกต่อไป)
 
 import csv
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,6 +72,61 @@ OVERFLOW_MARKERS = (
     "text section exceeds",
     "not enough room",
 )
+
+
+# ---------------------------------------------------------------------------
+# stopped_by_operator — 2026-09-22, standing decision: ตั้งแต่ Phase 2 เลิกใช้เพดาน
+# เวลาบังคับ (pc/shared/timing_model.py's CEILING_S) จุดที่แพงมาก ๆ (เช่น grover n=8+)
+# ต้องพึ่งผู้ควบคุมกด Ctrl+C เองแทน — เมื่อหยุดกลางจุดข้อมูล ผลที่เก็บมาได้ (น้อยกว่า
+# REPS เต็ม) ยังถือเป็น "ข้อมูลที่ใช้ได้" ไม่ใช่ถูกทิ้งเหมือนแถวกำพร้าทั่วไป (นี่คือ
+# ข้อยกเว้นเดียวที่เจตนา ต่างจากกฎเดิมที่ resume.py ทั้งไฟล์ยึดถือมาตลอด — เหตุผลคือ
+# การหยุดโดยผู้ควบคุมเป็นเหตุการณ์ที่ตั้งใจ รู้ตัว ไม่ใช่ crash/interruption ที่ไม่รู้
+# สถานะ — ยืนยันจากเจ้าของโครงการ 2026-09-22) reps ที่เหลือ (rep 43..99 เช่น) รอ
+# session ถัดไป "ต่อ" ให้ครบ ไม่ใช่รันซ้ำตั้งแต่ rep 0 — encode จำนวน rep ที่เก็บได้แล้ว
+# ไว้ในตัว status string เอง (รูปแบบเดียวกับ runtime_hang_or_reset(...)/
+# watchdog_suspected(...) ที่มีอยู่แล้ว) เพื่อไม่ต้องเพิ่มคอลัมน์ใหม่ให้ memory_wall.csv
+# ---------------------------------------------------------------------------
+
+OPERATOR_STOPPED_PREFIX = "stopped_by_operator"
+
+
+def is_operator_stopped_status(status: str) -> bool:
+    return status.startswith(OPERATOR_STOPPED_PREFIX)
+
+
+def format_operator_stopped_status(reps_completed: int) -> str:
+    """encode ลง status string เดียว ไม่ต้องเพิ่มคอลัมน์ — ดู comment ด้านบน"""
+    return f"{OPERATOR_STOPPED_PREFIX}(reps_completed={reps_completed})"
+
+
+def parse_operator_stopped_reps(status: str) -> int:
+    """ดึงจำนวน rep ที่เก็บมาแล้วจาก status string ที่ format_operator_stopped_status
+    สร้างไว้ คืน 0 ถ้า parse ไม่ได้ (ป้องกันไว้ก่อน ไม่ crash resume ทั้งชุดเพราะแถวเดียว)"""
+    m = re.search(r"reps_completed=(\d+)", status)
+    return int(m.group(1)) if m else 0
+
+
+class OperatorStoppedError(Exception):
+    """Raised by a sweep script's _sweep_body when the operator manually stops
+    a point mid-collection (Ctrl+C during the serial wait). Whatever reps were
+    already received are written as a resumable stopped_by_operator point
+    (see above) BEFORE this is raised -- catching this and printing a clean
+    summary, then exiting (matching ConsecutiveUploadFailuresError's existing
+    exit-2 pattern, here exit 130 to match Ctrl+C convention), is the caller's
+    job. Ends the WHOLE run, not just this point/circuit -- standing decision,
+    2026-09-22: the next n after a manually-stopped one is, by construction,
+    even more expensive (compute cost grows with n), so auto-continuing into
+    it is almost never what an operator who just chose to stop wants."""
+
+    def __init__(self, board, circuit, n, reps_completed, total_reps):
+        self.board, self.circuit, self.n = board, circuit, n
+        self.reps_completed, self.total_reps = reps_completed, total_reps
+        super().__init__(
+            f"{board} circuit={circuit} n={n}: operator stopped mid-point (Ctrl+C) "
+            f"after collecting {reps_completed}/{total_reps} reps -- saved as a "
+            "resumable partial point (stopped_by_operator). Stopping the whole run "
+            "-- re-run the same command to continue collecting the remaining reps "
+            "for this point.")
 
 
 def is_wall_status(status: str) -> bool:

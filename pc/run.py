@@ -570,6 +570,30 @@ def confirm(auto_yes):
     return resp in ("y", "yes")
 
 
+def generate_figures(python_exe, board, algorithm, la=False):
+    """After a completed Phase 2 run, regenerate this algorithm's plots (plus the
+    cumulative chart) into data/figures/<board>/<algorithm>/<bucket>/ via
+    analysis/phase2_uno_run_plots.py. Never affects the run's outcome: any
+    failure is printed and swallowed, the returncode of the sweep is unchanged."""
+    cmd = [python_exe, str(REPO_ROOT / "analysis" / "phase2_uno_run_plots.py"),
+           "--board", board, "--circuit", algorithm]
+    if la:
+        cmd.append("--la")
+    print("\n--- generating figures ---\n" + " ".join(cmd))
+    (REPO_ROOT / "data" / "figures" / board / algorithm / ("with_la" if la else "no_la")
+     ).mkdir(parents=True, exist_ok=True)
+    try:
+        r = subprocess.run(cmd, cwd=REPO_ROOT)
+        if r.returncode != 0:
+            print(f"warning: figure generation exited {r.returncode} "
+                  "(run itself is unaffected; re-run the command above by hand)")
+        elif not any((REPO_ROOT / "data" / "figures" / board / algorithm).rglob("*.png")):
+            print(f"note: no plottable data for {algorithm} (e.g. only wall points) -- "
+                  f"empty folder data/figures/{board}/{algorithm}/ created")
+    except Exception as e:  # noqa: BLE001
+        print(f"warning: figure generation failed: {e} (run itself is unaffected)")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         description="Run one algorithm on one board for one phase, by delegating to "
@@ -719,6 +743,9 @@ def main(argv=None):
               "row will be re-run from its first rep, not resumed mid-point.")
         returncode = 130
         interrupted = True
+
+    if returncode == 0 and args.phase == 2:
+        generate_figures(argv_cmd[0], args.board, args.algorithm, args.la)
 
     if archive_dest is not None:
         print(f"\n--- fresh run summary ---")

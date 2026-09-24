@@ -25,6 +25,7 @@
 # เสร็จควรกลับมา re-fit ค่าคงที่ทั้งหมดจากข้อมูลจริงชุดใหม่
 
 import math
+from datetime import datetime, timedelta
 
 REPS = 100  # ต้องตรงกับ #define REPS ใน firmware/*/src/main.cpp
 
@@ -53,6 +54,16 @@ FLOOR_S = 90
 # ไม่ใช่เรื่องของ timeout อีกต่อไป แต่เป็นขีดจำกัดเชิงการคำนวณจริง ๆ ไม่มีค่า timeout
 # ไหนช่วยได้ — สคริปต์จะข้ามจุดพวกนี้พร้อมบันทึกเหตุผลและตัวเลขประเมินไว้ในผลลัพธ์
 # (ดู is_compute_infeasible) แทนที่จะนั่งรอ 4 ชั่วโมงเพื่อให้ได้ timeout เปล่า ๆ
+#
+# 2026-09-22 — Phase 2 ตัดสินใจใหม่ (ยืนยันจากเจ้าของโครงการ): เพดานนี้ "ไม่บังคับ
+# ใช้กับ Phase 2 อีกต่อไป" — timeout_budget_s()/is_compute_infeasible()/
+# budget_is_capped() ของ Phase 2 ไม่ใช้ค่านี้แล้ว (ดู comment ที่แต่ละฟังก์ชัน) จุดไหน
+# ก็ตามจะถูกพยายามรันจริงเสมอ ไม่มีการ skip ล่วงหน้าอีกต่อไป เหตุผล: ผู้ควบคุมต้องการ
+# ควบคุมเองว่าจะรอนานแค่ไหนต่อจุด (ดู uno_sweep.py's ETA/progress printing + Ctrl+C
+# manual-stop, ที่มาแทนบทบาทเดิมของเพดานนี้ในฐานะกลไก "ป้องกันรอไม่มีที่สิ้นสุด")
+# ตัวแปรนี้ (และค่าคงที่/ฟังก์ชันที่ยังอ้างถึงมันด้านล่าง) คงไว้เฉพาะสำหรับ Phase 3
+# (PHASE3_CEILING_S แยกต่างหากอยู่แล้ว ไม่ถูกกระทบ) และเพื่อไม่ให้โค้ด/เทสต์เก่าที่ยัง
+# import ชื่อนี้พัง — ไม่ใช่ค่าที่มีผลจริงต่อพฤติกรรม Phase 2 อีกต่อไป
 CEILING_S = 14400
 
 # retry: ดูเหตุผลใน retry_allowed()
@@ -249,6 +260,13 @@ def session_total_s(board, points, phase=2):
     return device, reflash, n_run, n_skipped
 
 
+def point_wall_estimate_s(board, circuit, n, reps=REPS):
+    """wall-clock ต่อจุดที่ควรคาดจริง = เวลารันบนบอร์ด + compile/upload (REFLASH_COST_S,
+    ยังเป็นค่าประมาณ ไม่ได้วัด) — expected_point_time_s เดี่ยว ๆ ไม่รวม reflash จึงทำให้
+    ETA ของจุดเล็ก ๆ (ที่บอร์ดรันเสร็จในเสี้ยววินาที) ต่ำกว่าความจริงหลายเท่า"""
+    return expected_point_time_s(board, circuit, n, reps) + REFLASH_COST_S[board]
+
+
 def expected_exec_time_us(board, circuit, n):
     """เวลารันวงจร 1 trial (ไมโครวินาที) ที่ตัวแบบทำนาย"""
     k_h, k_cnot, k_cphase = BOARD_GATE_COST[board]
@@ -266,29 +284,32 @@ def expected_point_time_s(board, circuit, n, reps=REPS):
 
 
 def timeout_budget_s(board, circuit, n, reps=REPS):
-    """timeout ที่ควรใช้กับจุดข้อมูลนี้ (วินาที, ปัดเป็นจำนวนเต็ม)"""
+    """timeout/ETA-basis ที่ควรใช้กับจุดข้อมูลนี้ (วินาที, ปัดเป็นจำนวนเต็ม)
+
+    2026-09-22: ไม่หนีบด้วย CEILING_S อีกต่อไปสำหรับ Phase 2 — เดิมค่านี้ทำหน้าที่สอง
+    อย่างพร้อมกัน (1) ประมาณเวลาที่ "ควร" รอ และ (2) เป็นเพดานบังคับที่ทำให้จุดแพง ๆ
+    ถูกข้ามล่วงหน้า ตอนนี้แยกออกจากกัน: ฟังก์ชันนี้ยังคืนค่าประมาณ (ใช้แสดง ETA/progress
+    เท่านั้น ไม่ใช่ hard cutoff อีกต่อไป) ส่วนการหยุดจริงเป็นหน้าที่ของผู้ควบคุม (Ctrl+C,
+    ดู read_serial_trials ในแต่ละ sweep script) หรือ hard-hang safety-net ภายในที่แยก
+    ต่างหาก (STUCK_READ_ALARM_S ในแต่ละ sweep script เอง ไม่ใช่ค่านี้)"""
     raw = expected_point_time_s(board, circuit, n, reps) * SAFETY_FACTOR
-    return int(min(max(raw, FLOOR_S), CEILING_S))
+    return int(max(raw, FLOOR_S))
 
 
 def budget_is_capped(board, circuit, n, reps=REPS):
-    """True ถ้า budget ดิบ (expected × SAFETY_FACTOR) ชนเพดาน
-
-    จุดแบบนี้ "ยังทำได้" ถ้าค่าประมาณแม่น (เพดานยังมากกว่า expected) แค่เหลือ headroom
-    น้อยลงเท่านั้น — ต่างจาก is_compute_infeasible ที่ทำไม่ได้เลย"""
-    raw = expected_point_time_s(board, circuit, n, reps) * SAFETY_FACTOR
-    return raw > CEILING_S
+    """2026-09-22: Phase 2 ไม่มีเพดานให้ชนอีกต่อไป — คืน False เสมอ (เก็บฟังก์ชันไว้ให้
+    โค้ด/เทสต์เดิมที่ยัง import อยู่ไม่พัง) ดู CEILING_S ด้านบนสำหรับเหตุผลเต็ม"""
+    return False
 
 
 def is_compute_infeasible(board, circuit, n, reps=REPS):
-    """True ถ้า "เวลาที่คาดว่าจะใช้จริง" เกินเพดานไปแล้ว — ไม่มี timeout ไหนช่วยได้
-
-    นี่ไม่ใช่ปัญหาของนโยบาย timeout แต่เป็นขีดจำกัดเชิงการคำนวณของบอร์ด: grover ที่ n
-    สูงมี "compute wall" ต่ำกว่า "memory wall" ของตัวเอง (ESP8266 จองหน่วยความจำสำหรับ
-    n=12 ได้สบาย แต่ต้องใช้เวลา ~95 วันต่อจุดข้อมูล) การพยายามรันจุดพวกนี้ได้แค่ timeout
-    เปล่า ๆ สคริปต์จึงข้ามพร้อมบันทึกค่าประมาณไว้ ให้มันเป็น "ผลการทดลอง" ที่อ่านได้
-    ไม่ใช่ช่องว่างที่ไม่มีคำอธิบาย"""
-    return expected_point_time_s(board, circuit, n, reps) > CEILING_S
+    """2026-09-22: Phase 2 ไม่ skip จุดไหนล่วงหน้าจากเวลาประมาณอีกต่อไป — คืน False
+    เสมอ (เก็บฟังก์ชันไว้ให้โค้ด/เทสต์เดิมที่ยัง import อยู่ไม่พัง เช่น
+    analysis/la_capture_plan.py) จุดที่แพงมากยังคงถูก "พยายามรันจริง" เสมอ ผู้ควบคุม
+    เป็นคนตัดสินใจเองว่าจะรอนานแค่ไหนผ่าน ETA/progress display + Ctrl+C manual-stop
+    แทนที่บทบาทเดิมของเพดานนี้ — ดู CEILING_S ด้านบนสำหรับเหตุผลเต็ม (ยืนยันจากเจ้าของ
+    โครงการ 2026-09-22)"""
+    return False
 
 
 def human_duration(seconds):
@@ -398,7 +419,10 @@ def print_budget_plan(board, circuit_n_pairs, reps=REPS, phase=2):
     total_worst = 0
     infeasible = set()
     print(f"\n--- timeout budget plan (board={board}, phase={phase}, reps={reps}) ---")
-    print(f"{'circuit':14s} {'n':>3s} {'expected':>11s} {'budget_s':>9s}  note")
+    plan_start = datetime.now()
+    print(f"start {plan_start.strftime('%a %d %b %H:%M')}  (finish@ = cumulative expected "
+          "finish clock time, model estimate)")
+    print(f"{'circuit':14s} {'n':>3s} {'expected':>11s} {'finish@':>14s} {'budget_s':>9s}  note")
     for circuit, n in circuit_n_pairs:
         if phase == 3:
             expected = pc_sim_time_s(circuit, n) * reps
@@ -406,7 +430,7 @@ def print_budget_plan(board, circuit_n_pairs, reps=REPS, phase=2):
             capped = phase3_budget_is_capped(circuit, n, reps)
             unreachable = phase3_is_infeasible(circuit, n, reps)
         else:
-            expected = expected_point_time_s(board, circuit, n, reps)
+            expected = point_wall_estimate_s(board, circuit, n, reps)
             budget = timeout_budget_s(board, circuit, n, reps)
             capped = budget_is_capped(board, circuit, n, reps)
             unreachable = is_compute_infeasible(board, circuit, n, reps)
@@ -423,7 +447,9 @@ def print_budget_plan(board, circuit_n_pairs, reps=REPS, phase=2):
         if not unreachable:
             total_expected += expected
             total_worst += budget
-        print(f"{circuit:14s} {n:3d} {human_duration(expected):>11s} {budget:9d}  {note}")
+        finish = "-" if unreachable else (
+            plan_start + timedelta(seconds=total_expected)).strftime("%d %b %H:%M")
+        print(f"{circuit:14s} {n:3d} {human_duration(expected):>11s} {finish:>14s} {budget:9d}  {note}")
 
     print(f"attempted points: expected total {human_duration(total_expected)}, "
           f"worst case if every point times out {human_duration(total_worst)}")

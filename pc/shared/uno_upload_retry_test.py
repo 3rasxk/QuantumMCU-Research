@@ -80,7 +80,7 @@ def _fresh_uno_sweep(scratch: Path):
 
 
 def _install_read_serial_trials(us, n_rows=100, done=True):
-    def fake_read_serial_trials(port, circuit, n, timeout_s):
+    def fake_read_serial_trials(port, circuit, n, timeout_s, **kwargs):
         if not done:
             return False, [], "reset_count=0"
         rows = [f"uno,{circuit},{n},{r},100,1000,1000" for r in range(n_rows)]
@@ -252,7 +252,7 @@ def test_hard_timeout_triggers_settle_before_next_build_and_upload(scratch: Path
 
     call_count = {"n": 0}
 
-    def fake_read_serial_trials(port, circuit, n, timeout_s):
+    def fake_read_serial_trials(port, circuit, n, timeout_s, **kwargs):
         call_count["n"] += 1
         if call_count["n"] == 1:
             return False, [], "hard_timeout=true,reset_count=0"
@@ -304,8 +304,8 @@ def test_compile_ram_wall_stops_climbing_despite_successful_build(scratch: Path)
         open(sp.raw_csv_path("uno", "h_all")),
         fieldnames=["board", "circuit", "n", "rep", "exec_time_us",
                     "free_heap_before", "free_heap_after", "timeout_budget_s"]))
-    check("ram wall: the single observed run's raw trial data is still kept",
-          any(r["circuit"] == "h_all" and r["n"] == "8" for r in raw_rows[1:]))
+    check("ram wall: point is NOT executed (2026-09-24), so no raw trial rows for it",
+          not any(r["circuit"] == "h_all" and r["n"] == "8" for r in raw_rows[1:]))
 
 
 def test_hang_without_ram_evidence_is_not_a_wall(scratch: Path):

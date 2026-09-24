@@ -99,7 +99,7 @@ def _points_rows(sp, circuit):
 def test_upload_failure_at_smallest_n_then_success_on_retry(scratch: Path):
     es, tel, sp = _fresh_esp8266_sweep(scratch / "retry_succeeds")
 
-    def fake_read_serial_trials(port, timeout_s):
+    def fake_read_serial_trials(port, circuit, n, timeout_s, **kwargs):
         return True, _rows_for("h_all", 2), False, "reset_count=0"
     es.read_serial_trials = fake_read_serial_trials
 
@@ -132,7 +132,7 @@ def test_upload_failure_at_smallest_n_then_success_on_retry(scratch: Path):
 def test_retries_exhausted_then_continues_to_next_n(scratch: Path):
     es, tel, sp = _fresh_esp8266_sweep(scratch / "exhaust_continues")
 
-    def fake_read_serial_trials(port, timeout_s):
+    def fake_read_serial_trials(port, circuit, n, timeout_s, **kwargs):
         return True, _rows_for("h_all", 3), False, "reset_count=0"
     es.read_serial_trials = fake_read_serial_trials
 
@@ -166,7 +166,7 @@ def test_retries_exhausted_then_continues_to_next_n(scratch: Path):
 
 def test_two_consecutive_n_exhaustions_stop_the_whole_run(scratch: Path):
     es, tel, sp = _fresh_esp8266_sweep(scratch / "consecutive_stop")
-    es.read_serial_trials = lambda port, timeout_s: (True, _rows_for("h_all", 99), False, "reset_count=0")
+    es.read_serial_trials = lambda port, circuit, n, timeout_s, **kwargs: (True, _rows_for("h_all", 99), False, "reset_count=0")
 
     calls = []
 
@@ -192,7 +192,7 @@ def test_two_consecutive_n_exhaustions_stop_the_whole_run(scratch: Path):
 
 def test_deterministic_overflow_never_retries_and_stops_climbing(scratch: Path):
     es, tel, sp = _fresh_esp8266_sweep(scratch / "overflow")
-    es.read_serial_trials = lambda port, timeout_s: (True, _rows_for("h_all", 99), False, "reset_count=0")
+    es.read_serial_trials = lambda port, circuit, n, timeout_s, **kwargs: (True, _rows_for("h_all", 99), False, "reset_count=0")
 
     calls = []
 
@@ -222,7 +222,7 @@ def test_deterministic_overflow_never_retries_and_stops_climbing(scratch: Path):
 
 def test_resume_unaffected_by_upload_retry_changes(scratch: Path):
     es, tel, sp = _fresh_esp8266_sweep(scratch / "resume")
-    es.read_serial_trials = lambda port, timeout_s: (True, _rows_for("h_all", 2), False, "reset_count=0")
+    es.read_serial_trials = lambda port, circuit, n, timeout_s, **kwargs: (True, _rows_for("h_all", 2), False, "reset_count=0")
     es.build_and_upload = lambda circuit, n, port_hint, build_timeout_s=None: _ok_result()
 
     _run(es, ["h_all"], 2, 3)

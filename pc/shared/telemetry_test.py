@@ -181,7 +181,7 @@ def test_mocked_uno_sweep_dry_run(scratch: Path):
         return {"ok": True, "ram_pct": 50.0, "ram_bytes": 100, "log": "",
                 "port": "/dev/fake", "compile_s": 3.5, "upload_s": 2.1}
 
-    def fake_read_serial_trials(port, circuit, n, timeout_s):
+    def fake_read_serial_trials(port, circuit, n, timeout_s, **kwargs):
         rows = [f"uno,{circuit},{n},{r},999,1000,999" for r in range(100)]
         return True, rows, "reset_count=0"
 
@@ -412,15 +412,48 @@ def test_watchdog_suspected_is_not_a_wall(scratch: Path):
         "ram_pct": None, "ram_bytes": None, "timed_out": False}
     es.find_esp_port = lambda h: "/dev/fake"
     es.BOOT_WAIT_S = 0
-    es.serial.Serial = lambda *a, **k: _FakeSerial()  # silent board
+    # 2026-09-22: Phase 2 no longer gives up on a per-point deadline at all
+    # (CEILING_S removed, see timing_model.py). A board that stays connected
+    # and keeps returning promptly (even with nothing useful to say) is no
+    # longer distinguishable from "still legitimately computing" -- by design
+    # that now loops forever until the operator Ctrl+Cs it (see
+    # uno_manual_stop_test.py). The only automatic give-up left is
+    # STUCK_READ_ALARM_S, which fires only when a SINGLE readline() call
+    # itself never returns control at all (a real stuck OS-level read) --
+    # _FakeSerialBlocking below reproduces exactly that (readline() blocks
+    # past the shrunk alarm, gets interrupted mid-call), instead of the
+    # generic silent _FakeSerial (which returns promptly and would hang this
+    # test forever under the new design, not exercise it).
+    class _FakeSerialBlocking:
+        def __init__(self, *a, **k):
+            self.dtr = True
+            self.rts = True
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def readline(self):
+            time.sleep(1000)  # interrupted by SIGALRM well before this elapses
+            return b""
+
+        def reset_input_buffer(self):
+            pass
+
+    es.serial.Serial = lambda *a, **k: _FakeSerialBlocking()
     orig_budget = tm.timeout_budget_s
     tm.timeout_budget_s = lambda *a, **k: 2
+    orig_stuck_alarm = es.STUCK_READ_ALARM_S
+    es.STUCK_READ_ALARM_S = 1
     try:
         sys.argv = ["esp8266_sweep.py", "--port", "/dev/fake", "--circuits", "grover",
                     "--n-start", "8", "--n-max", "8", "--force-infeasible"]
         es.main()
     finally:
         tm.timeout_budget_s = orig_budget
+        es.STUCK_READ_ALARM_S = orig_stuck_alarm
 
     pts = list(csv.DictReader(open(sp.points_csv_path("esp8266", "grover"))))
     wall = list(csv.DictReader(open(sp.memory_wall_csv_path("esp8266", "grover"))))

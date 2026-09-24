@@ -74,7 +74,7 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import serial
@@ -254,29 +254,69 @@ def _alarm_handler(signum, frame):
     raise HardTimeout()
 
 
-def read_serial_trials(port: str, circuit: str, n: int, timeout_s: int):
-    """เปิด serial แล้วอ่านจนเจอ DONE หรือ timeout (=hang/reset)
+# 2026-09-22 standing decision (Phase 2 ceiling removed, see timing_model.py's
+# CEILING_S comment): a point no longer gives up automatically after some
+# fixed budget -- it runs until DONE, until the operator manually stops it
+# (Ctrl+C), or until STUCK_READ_ALARM_S fires (a real OS/pyserial-level stuck
+# read, NOT "this is taking a long time" -- see the comment this replaced:
+# pyserial's readline() timeout alone once failed to return for 16+ minutes
+# despite timeout=2). Re-armed every loop iteration (readline() itself already
+# returns every ~2s in the normal case via its own timeout=2), so this only
+# ever fires if a SINGLE readline() call itself never returns control at all.
+STUCK_READ_ALARM_S = 900  # 15 min
 
-    timeout_s มาจาก pc/shared/timing_model.timeout_budget_s() ต่อจุดข้อมูล ไม่ใช่ค่าคงที่
-    ค่าเดียวทั้งสวีปอีกต่อไป — grover ที่ n สูงต้องการเวลามากกว่า h_all หลักพันเท่า
+# how often to print reps-received / ETA while waiting -- replaces the old
+# ceiling's role of bounding how long an operator sits without status
+PROGRESS_INTERVAL_S = 1800  # 30 min
 
-    ใช้ signal.alarm บังคับ deadline แข็ง (hard deadline) ครอบทั้งฟังก์ชัน
-    เพราะพบจริงระหว่างทดลองว่า pyserial's readline() timeout เพียงอย่างเดียว
-    "ไม่" รับประกันว่าจะ return ตรงเวลาเสมอเมื่อพอร์ต USB-CDC ของ Uno หลุด
-    (เจอค้างเกิน 16 นาทีทั้งที่ตั้ง timeout=2 มาแล้วครั้งหนึ่ง) — ถ้าไม่มี
-    hard deadline นี้ การสวีปทั้งชุดจะค้างได้โดยไม่มีทางฟื้นเอง
+
+def _print_progress(circuit, n, n_rows, target_reps, start_monotonic, expected_s):
+    elapsed = time.perf_counter() - start_monotonic
+    if n_rows > 0:
+        remaining_s = (elapsed / n_rows) * max(target_reps - n_rows, 0)
+        source = "observed rate"
+    else:
+        remaining_s = max((expected_s or 0.0) - elapsed, 0.0)
+        source = "model estimate, no reps received yet"
+    finish_clock = (datetime.now() + timedelta(seconds=remaining_s)).strftime("%H:%M")
+    print(f"\n-- progress {circuit} n={n}: {n_rows}/{target_reps} reps received, "
+          f"elapsed {tm.human_duration(elapsed)}, ETA {tm.human_duration(remaining_s)} "
+          f"more (expected finish ~{finish_clock}, from {source})", flush=True)
+
+
+def read_serial_trials(port: str, circuit: str, n: int, timeout_s: int,
+                        expected_s: float = None, target_reps: int = None):
+    """เปิด serial แล้วอ่านจนเจอ DONE, ถูกหยุดโดยผู้ควบคุม (Ctrl+C), หรือเจอ
+    stuck-read จริง (ดู STUCK_READ_ALARM_S) — ไม่มี automatic give-up จาก
+    budget อีกต่อไป (2026-09-22, ดู timing_model.py's CEILING_S comment)
+    `timeout_s`/`expected_s` ใช้แค่แสดง ETA เท่านั้น ไม่ใช่ hard cutoff แล้ว
+
+    คืนค่า (done, rows, note) เหมือนเดิม ยกเว้น done ตอนนี้มี 3 ค่าที่เป็นไปได้:
+    True (DONE จริง), False (hang/reset/stuck-read), None (ผู้ควบคุมหยุดเอง —
+    `rows` ยังมีข้อมูลที่เก็บมาได้แล้วอยู่ ไม่ทิ้ง — ดู resume.py's
+    stopped_by_operator)
     """
     rows = []
     reset_count = 0
     old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
-    signal.alarm(timeout_s + 10)
     ser = None
+    start_monotonic = time.perf_counter()
+    last_progress = start_monotonic
+    if target_reps is None:
+        target_reps = tm.REPS
     try:
         ser = serial.Serial(port, BAUD, timeout=2)
-        deadline = time.time() + timeout_s
         done = False
-        while time.time() < deadline:
-            line = ser.readline().decode("utf-8", errors="replace").strip()
+        while True:
+            signal.alarm(STUCK_READ_ALARM_S)
+            try:
+                line = ser.readline().decode("utf-8", errors="replace").strip()
+            finally:
+                signal.alarm(0)
+            now = time.perf_counter()
+            if now - last_progress >= PROGRESS_INTERVAL_S:
+                _print_progress(circuit, n, len(rows), target_reps, start_monotonic, expected_s)
+                last_progress = now
             if not line:
                 continue
             if line == "DONE":
@@ -293,6 +333,14 @@ def read_serial_trials(port: str, circuit: str, n: int, timeout_s: int):
         return False, [], f"serial_error={e}"
     except HardTimeout:
         return False, rows, f"hard_timeout=true,reset_count={reset_count}"
+    except KeyboardInterrupt:
+        # 2026-09-22: caught HERE (not left to propagate) so `rows` -- whatever
+        # was already received -- isn't lost. done=None is the sentinel the
+        # caller checks for explicitly (both True and False are meaningfully
+        # different from "the operator chose to stop").
+        print(f"\n-- Ctrl+C: stopping {circuit} n={n} -- {len(rows)} rep(s) already "
+              "received will be saved as a resumable partial point")
+        return None, rows, "operator_stop"
     finally:
         # เดิม: `with serial.Serial(...) as ser:` ปิด handle ให้ตอน exception หลุดออก
         # จาก with-block อยู่แล้วก็จริง แต่ปิดแบบ implicit และไม่มีใครรอ/ตรวจว่า OS
@@ -310,6 +358,21 @@ def read_serial_trials(port: str, circuit: str, n: int, timeout_s: int):
             close = getattr(ser, "close", None)
             if close is not None and getattr(ser, "is_open", True):
                 close()
+
+
+def _write_raw_rows(raw_w, rows, budget_s, reps_already_done, cap_at=None):
+    """เขียนแถว raw trial ที่เพิ่งได้มาลง raw.csv พร้อม relabel คอลัมน์ rep (index 3
+    เสมอทุกบอร์ด) ให้ต่อจาก reps_already_done แทนเลขที่เฟิร์มแวร์รายงานเอง (2026-09-22,
+    resumable stopped_by_operator points — เฟิร์มแวร์นับ rep 0..REPS-1 ใหม่ทุกครั้งที่
+    reflash เสมอ ไม่รู้จัก "resume" — ดู resume.py) `cap_at` จำกัดจำนวนแถวที่เขียนไม่ให้
+    เกินที่ยังต้องการจริง (ใช้ตอน resume จุดที่เหลือน้อยกว่า REPS เต็ม) คืนจำนวนแถวที่
+    เขียนจริง"""
+    kept = rows if cap_at is None else rows[:cap_at]
+    for i, line in enumerate(kept):
+        parts = line.split(",")
+        parts[3] = str(reps_already_done + i)
+        raw_w.writerow(parts + [budget_s])
+    return len(kept)
 
 
 def main():
@@ -380,6 +443,18 @@ def main():
         print(f"telemetry -> {sp.sessions_csv_path('uno', e.circuit, la=la_active)}, "
               f"{sp.points_csv_path('uno', e.circuit, la=la_active)}")
         sys.exit(2)
+    except rs.OperatorStoppedError as e:
+        # 2026-09-22 standing decision: operator pressed Ctrl+C mid-point --
+        # the partial point (rows + a resumable stopped_by_operator status)
+        # was already written and flushed before this was raised (see
+        # read_serial_trials/_sweep_body). Exit code 130 matches the usual
+        # Ctrl+C convention (128+SIGINT).
+        print(f"\n!!! STOPPED BY OPERATOR: {e}")
+        print(f"raw -> {sp.raw_csv_path('uno', e.circuit, la=la_active)}\n"
+              f"memory wall -> {sp.memory_wall_csv_path('uno', e.circuit, la=la_active)}")
+        print(f"re-run the exact same command to continue collecting the remaining "
+              f"{e.total_reps - e.reps_completed} rep(s) for {e.circuit} n={e.n}")
+        sys.exit(130)
 
 
 def _run_circuit(args, circuit, la_active):
@@ -467,7 +542,8 @@ def _run_circuit(args, circuit, la_active):
         real_remaining = [p for p in remaining_preview if p not in infeasible]
         est_s = sum(tm.expected_point_time_s("uno", c, n) for c, n in real_remaining)
         n_inf_remaining = len(remaining_preview) - len(real_remaining)
-        remaining_human = tm.human_duration(est_s)
+        remaining_human = tm.human_duration(
+            sum(tm.point_wall_estimate_s("uno", c, n) for c, n in real_remaining))
         if n_inf_remaining:
             remaining_human += f" (+{n_inf_remaining} infeasible point(s), skipped near-instantly)"
         rs.print_resume_summary("uno", planned, completed, remaining_human)
@@ -522,17 +598,32 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
 
     for n in n_values:
         skip_ts = datetime.now(timezone.utc).isoformat()
+        reps_already_done = 0
         if (circuit, n) in completed:
-            print(f"n={n:2d}  SKIP (resume): already {completed[(circuit, n)].get('status', '?')}")
-            tel.write_point_row({
-                "session_id": session.session_id, "phase": 2, "board": "uno",
-                "circuit": circuit, "n": n, "attempt_index": 0,
-                "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
-                "retry_count": 0, "timeout_hit": False, "failure_type": "none",
-                "status": "skipped_resume",
-            }, points_csv)
-            session.note_point(status="skipped_resume")
-            continue
+            prior_status = completed[(circuit, n)].get("status", "?")
+            # 2026-09-22 standing decision: a stopped_by_operator point (Ctrl+C
+            # mid-collection, see read_serial_trials) is the ONE resume case
+            # that is NOT skipped outright -- it's resumed and the remaining
+            # reps are appended (see resume.py's module comment for why this
+            # is a deliberate, informed exception to the usual
+            # never-mix-sessions rule: the operator chose to stop, it's not an
+            # unexplained crash/orphan).
+            if rs.is_operator_stopped_status(prior_status):
+                reps_already_done = rs.parse_operator_stopped_reps(prior_status)
+            if not rs.is_operator_stopped_status(prior_status) or reps_already_done >= tm.REPS:
+                print(f"n={n:2d}  SKIP (resume): already {prior_status}")
+                tel.write_point_row({
+                    "session_id": session.session_id, "phase": 2, "board": "uno",
+                    "circuit": circuit, "n": n, "attempt_index": 0,
+                    "start_utc": skip_ts, "end_utc": skip_ts, "wall_s": 0,
+                    "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                    "status": "skipped_resume",
+                }, points_csv)
+                session.note_point(status="skipped_resume")
+                continue
+            print(f"n={n:2d}  RESUME partial (operator-stopped previously at "
+                  f"{reps_already_done}/{tm.REPS} reps) -- collecting the remaining "
+                  f"{tm.REPS - reps_already_done}")
         if circuit in wall_n_by_circuit and n > wall_n_by_circuit[circuit]:
             print(f"n={n:2d}  SKIP (resume): {circuit} already hit its wall at "
                   f"n={wall_n_by_circuit[circuit]} in a previous session")
@@ -554,6 +645,12 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
         ts = datetime.now(timezone.utc).isoformat()
 
         if (circuit, n) in infeasible:
+            # 2026-09-22: `infeasible` is always empty for Phase 2 now (see
+            # timing_model.is_compute_infeasible -- ceiling removed, standing
+            # decision) -- this branch is unreachable in practice, kept only
+            # so print_budget_plan()'s return value never needs a caller-side
+            # special case and --force-infeasible stays a harmless no-op
+            # rather than an error for anyone still passing it.
             # ไม่ใช่ Memory Wall และไม่ใช่ hang — เป็นขีดจำกัดเชิงเวลาคำนวณล้วน ๆ
             # บันทึกค่าประมาณไว้ด้วย เพื่อให้แถวนี้อ่านเป็น "ผลการทดลอง" ได้จริง
             print(f"n={n:2d}  SKIP compute-infeasible: expected "
@@ -597,7 +694,8 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
         #     otherwise have matched.
         attempt = 0
         while True:
-            print(f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  "
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] "
+                  f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  "
                   f"budget={budget_s}s (expected {tm.human_duration(expected_s)})  "
                   f"attempt={attempt + 1}  ", end="", flush=True)
             if attempt > 0:
@@ -671,13 +769,38 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
             compile_succeeded = result.get("stage") == "upload"
             compile_ram_wall = (compile_succeeded and result["ram_pct"] is not None
                                  and result["ram_pct"] > 100.0)
-            if compile_ram_wall:
+            if compile_ram_wall and result["ok"]:
+                # 2026-09-24 operator decision (supersedes the "run once anyway"
+                # handling of decision 2): compile RAM > 100% is already positive
+                # evidence of a Memory Wall, and running the point only burns
+                # hours on a board that hangs/reset-loops (grover n=8: 0 reps in
+                # 30 min). Stop here: no execution, no retry, record the wall.
                 print(f"\ncompile_ram_pct={result['ram_pct']}% > 100% despite the linker "
-                      "exiting 0 (Uno L2 quirk) -- positive evidence of a Memory Wall. "
-                      "Recommended handling: still run this point once for the observed "
-                      "behaviour (upload+execute if upload succeeds), but NO retries and "
-                      "the final status is forced to build_overflow regardless of outcome "
-                      "-- time cost is exactly one normal attempt, same as any other point.")
+                      "exiting 0 (Uno L2 quirk) -- Memory Wall. Not executing this point; "
+                      "recorded as build_overflow.")
+                if armed is not None:
+                    lac.stop_capture(armed, "uno", circuit, n)
+                    lac.log_issue("uno", circuit, n, "compile RAM > 100% — not executed, capture discarded")
+                    armed = None
+                wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"],
+                                  result["ram_pct"], "build_overflow", ts, retry_used,
+                                  budget_s, round(expected_s, 1), retry_policy])
+                wall_f.flush()
+                tel.write_point_row({
+                    "session_id": session.session_id, "phase": 2, "board": "uno",
+                    "circuit": circuit, "n": n, "attempt_index": attempt,
+                    "start_utc": attempt_start, "end_utc": ts,
+                    "wall_s": round(reflash_s, 3),
+                    "build_compile_s": round(result["compile_s"], 3),
+                    "upload_s": round(result["upload_s"], 3),
+                    "retry_count": retry_used, "timeout_hit": False,
+                    "failure_type": "build",
+                    "failure_message": f"compile_ram_pct={result['ram_pct']}% > 100%, not executed",
+                    "status": "failed",
+                }, points_csv)
+                session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
+                wall_found = True
+                break
 
             if not result["ok"]:
                 # แยกสาเหตุก่อนตัดสิน: timeout ของ toolchain ไม่ใช่กำแพง และ retry ได้
@@ -756,8 +879,10 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                 break
 
             time.sleep(BOOT_WAIT_S)  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
+            remaining_needed = tm.REPS - reps_already_done
             exec_t0 = time.perf_counter()
-            done, rows, note = read_serial_trials(find_uno_port(args.port), circuit, n, budget_s)
+            done, rows, note = read_serial_trials(find_uno_port(args.port), circuit, n, budget_s,
+                                                   expected_s=expected_s, target_reps=tm.REPS)
             device_exec_s = time.perf_counter() - exec_t0
             point_device_s += device_exec_s
             if "hard_timeout=true" in note:
@@ -783,9 +908,16 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
             attempt_end = datetime.now(timezone.utc).isoformat()
 
             if done:
-                for line in rows:
-                    raw_w.writerow(line.split(",") + [budget_s])
+                # 2026-09-22: cap at remaining_needed and relabel `rep` to
+                # continue from reps_already_done -- see _write_raw_rows and
+                # resume.py's stopped_by_operator. For a fresh (non-resumed)
+                # point reps_already_done=0 and remaining_needed=tm.REPS, so
+                # this is a no-op change from the old "write every row"
+                # behavior.
+                n_written = _write_raw_rows(raw_w, rows, budget_s, reps_already_done,
+                                             cap_at=remaining_needed)
                 raw_f.flush()
+                total_reps_now = reps_already_done + n_written
                 if compile_ram_wall:
                     # decision 2: ran successfully once despite the RAM>100%
                     # evidence, per the recommended handling above -- the raw
@@ -795,7 +927,8 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                                       result["ram_pct"], "build_overflow", ts, retry_used,
                                       budget_s, round(expected_s, 1), retry_policy])
                     wall_f.flush()
-                    print(f"ran to completion (trials_captured={len(rows)}) but "
+                    print(f"ran to completion (trials_captured={n_written}, "
+                          f"total={total_reps_now}/{tm.REPS}) but "
                           f"compile_ram_pct={result['ram_pct']}% > 100% -- recorded as "
                           "build_overflow per decision 2, not ok")
                     tel.write_point_row({
@@ -817,7 +950,10 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                                   budget_s, round(expected_s, 1), retry_policy])
                 wall_f.flush()
                 suffix = f"  (succeeded after {retry_used} retry)" if retry_used else ""
-                print(f"OK  compile_ram={result['ram_pct']}%  trials_captured={len(rows)}{suffix}")
+                resumed_note = f"  (resumed, {reps_already_done} prior + {n_written} this attempt)" \
+                    if reps_already_done else ""
+                print(f"OK  compile_ram={result['ram_pct']}%  trials_captured={total_reps_now}"
+                      f"{suffix}{resumed_note}")
                 tel.write_point_row({
                     "session_id": session.session_id, "phase": 2, "board": "uno",
                     "circuit": circuit, "n": n, "attempt_index": attempt,
@@ -831,6 +967,47 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                 }, points_csv)
                 session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="ok")
                 break
+
+            if done is None:
+                # 2026-09-22 standing decision: operator manually stopped this
+                # point (Ctrl+C during read_serial_trials, see its docstring).
+                # Whatever reps it collected THIS attempt are appended (capped
+                # at what's actually still needed) and relabeled to continue
+                # the logical 0..REPS-1 sequence -- kept as real, resumable
+                # data, never discarded like a crash orphan (see resume.py's
+                # module comment for why this is a deliberate exception).
+                n_written = _write_raw_rows(raw_w, rows, budget_s, reps_already_done,
+                                             cap_at=remaining_needed)
+                raw_f.flush()
+                total_reps_now = reps_already_done + n_written
+                new_status = rs.format_operator_stopped_status(total_reps_now)
+                wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"], result["ram_pct"],
+                                  new_status, ts, retry_used,
+                                  budget_s, round(expected_s, 1), retry_policy])
+                wall_f.flush()
+                print(f"-- operator-stopped: {total_reps_now}/{tm.REPS} reps saved "
+                      f"({n_written} this attempt), resumable -- re-run the same "
+                      "command to collect the rest")
+                # points.csv's own status column is a closed enum
+                # (telemetry.STATUS_TYPES, has no "stopped_by_operator" value
+                # and this is supplementary per-attempt telemetry, not what
+                # resume.py reads back) -- "failed" is the closest fit ("this
+                # attempt did not reach ok"); the actual rich detail
+                # (resumable, reps_completed=N) lives in memory_wall.csv's
+                # free-text status column above, which resume.py DOES read.
+                tel.write_point_row({
+                    "session_id": session.session_id, "phase": 2, "board": "uno",
+                    "circuit": circuit, "n": n, "attempt_index": attempt,
+                    "start_utc": attempt_start, "end_utc": attempt_end,
+                    "wall_s": round(reflash_s + BOOT_WAIT_S + device_exec_s, 3),
+                    "build_compile_s": round(result["compile_s"], 3),
+                    "upload_s": round(result["upload_s"], 3),
+                    "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
+                    "retry_count": retry_used, "timeout_hit": False,
+                    "failure_type": "none", "status": "failed",
+                }, points_csv)
+                session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="failed")
+                raise rs.OperatorStoppedError("uno", circuit, n, total_reps_now, tm.REPS)
 
             if compile_ram_wall:
                 # decision 2: hung/reset instead of completing -- still no
