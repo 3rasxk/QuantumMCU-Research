@@ -33,56 +33,103 @@ def load_rows():
         return list(csv.DictReader(f))
 
 
-def plot_metric(rows, column, ylabel, title, filename, threshold=None):
-    fig, ax = plt.subplots(figsize=(7.5, 4.8), layout="constrained")
+# --- publication style (Phase 1 only: no boards here, so the board palette is not borrowed) ---
+# Okabe-Ito colour-blind-safe palette + a distinct marker per circuit, so the series stay
+# separable in greyscale print too. Serif (STIX) text, 300 dpi raster + vector PDF/SVG.
+PUB_COLOR = {
+    "h_all": "#0072B2", "bell_ghz": "#D55E00", "qft": "#009E73",
+    "grover": "#CC79A7", "qpe": "#E69F00", "steane_encode": "#000000",
+}
+PUB_LABEL = {
+    "h_all": "H-all", "bell_ghz": "Bell/GHZ", "qft": "QFT",
+    "grover": "Grover", "qpe": "QPE", "steane_encode": "Steane encode (n=7)",
+}
 
+
+def _pub_rc():
+    import matplotlib
+    matplotlib.rcParams.update({
+        "font.family": "serif", "font.serif": ["STIXGeneral", "DejaVu Serif"],
+        "mathtext.fontset": "stix", "font.size": 9, "axes.labelsize": 9.5,
+        "axes.titlesize": 10, "xtick.labelsize": 8.5, "ytick.labelsize": 8.5,
+        "legend.fontsize": 8.5, "axes.linewidth": 0.8, "xtick.direction": "in",
+        "ytick.direction": "in", "xtick.top": True, "ytick.right": True,
+        "xtick.minor.visible": True, "svg.fonttype": "path", "pdf.fonttype": 42,
+    })
+
+
+def _draw_panel(ax, rows, column, ylabel, threshold=None):
+    from matplotlib.ticker import LogLocator, NullFormatter
     omitted = 0
     for circuit in ps.CIRCUIT_ORDER:
         pts = sorted((int(r["depth"]), float(r[column])) for r in rows if r["circuit"] == circuit)
-        if not pts:
-            continue
-        # ค่าอาจออกมา <= 0 จากการปัดเศษ float64 ซึ่งแสดงบนแกน log ไม่ได้
-        # ตัดออกจากเส้นแต่บอกจำนวนบนกราฟ ไม่ปล่อยให้หายไปเงียบ ๆ
         shown = [(d, v) for d, v in pts if v > 0]
         omitted += len(pts) - len(shown)
-        ax.plot(
-            [p[0] for p in shown], [p[1] for p in shown],
-            color=ps.CIRCUIT_INK[circuit], linestyle=ps.CIRCUIT_LINESTYLE[circuit],
-            marker=ps.CIRCUIT_MARKER[circuit], markersize=6, markeredgecolor="white",
-            markeredgewidth=0.8, linewidth=1.8, label=ps.CIRCUIT_LABEL[circuit], zorder=3,
-        )
-
+        if not shown:
+            continue
+        single = len(shown) == 1
+        ax.plot([p[0] for p in shown], [p[1] for p in shown],
+                color=PUB_COLOR[circuit], marker=ps.CIRCUIT_MARKER[circuit], markersize=5.5,
+                markeredgecolor="black", markeredgewidth=0.5,
+                linewidth=0 if single else 1.2, alpha=0.95, label=PUB_LABEL[circuit], zorder=3)
     if threshold is not None:
-        ax.axhline(threshold, color=ps.REFERENCE_LINE, linestyle=(0, (6, 3)), linewidth=1.2,
-                   zorder=2, label=f"Pass threshold (infidelity = {threshold:.0e})")
-
-    ps.style_axes(ax, log_y=True)
-    from matplotlib.ticker import LogLocator, NullFormatter
-    ax.set_xscale("log")  # depth spans 1 .. ~7e5 (grover); linear x squashes every other circuit
+        ax.axhline(threshold, color="#444444", linestyle=(0, (5, 3)), linewidth=0.9, zorder=2)
+        ax.text(1.15, threshold * 1.25, r"pass threshold ($10^{-3}$)", fontsize=8,
+                color="#444444", va="bottom", ha="left")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
     ax.xaxis.set_major_locator(LogLocator(base=10))
     ax.xaxis.set_minor_formatter(NullFormatter())
+    ax.grid(True, which="major", color="#d0d0d0", linewidth=0.6)
+    ax.grid(True, which="minor", color="#ececec", linewidth=0.3)
+    ax.set_axisbelow(True)
+    ax.set_xlabel("Circuit depth (gate layers)")
     ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    fig.legend(loc="outside lower center", ncol=3)
+    return omitted
 
-    note = "Deterministic simulation: one run per (circuit, n), no repetitions."
+
+def _save_pub(fig, stem):
+    FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    for ext, kw in (("png", {"dpi": 300}), ("pdf", {}), ("svg", {})):
+        path = FIGURES_DIR / f"{stem}.{ext}"
+        fig.savefig(path, bbox_inches="tight", pad_inches=0.05, **kw)
+        print(f"figure -> {path}")
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+
+
+def plot_all(rows):
+    _pub_rc()
+    import matplotlib.pyplot as plt
+    specs = [
+        ("infidelity", r"Infidelity, $1-F$", THRESHOLD, "infidelity_vs_depth"),
+        ("tvd", "Total variation distance, TVD", None, "tvd_vs_depth"),
+    ]
+    # combined two-panel figure (a)(b), shared legend on top
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.1), layout="constrained")
+    omitted = 0
+    for ax, (col, ylab, thr, _), tag in zip(axes, specs, "ab"):
+        omitted += _draw_panel(ax, rows, col, ylab, thr)
+        ax.text(-0.02, 1.03, f"({tag})", transform=ax.transAxes, fontweight="bold",
+                fontsize=10, va="bottom", ha="right")
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="outside upper center", ncol=6, frameon=False,
+               handletextpad=0.3, columnspacing=1.0)
+    _save_pub(fig, "phase1_accuracy")
+    # single-panel versions (same style) for slides / report inserts
+    for col, ylab, thr, stem in specs:
+        fig, ax = plt.subplots(figsize=(3.5, 2.9), layout="constrained")
+        _draw_panel(ax, rows, col, ylab, thr)
+        ax.legend(loc="upper left", fontsize=7, handletextpad=0.3, labelspacing=0.25,
+                  frameon=False)
+        _save_pub(fig, stem)
     if omitted:
-        note += f" {omitted} point(s) with value ≤ 0 (float rounding) not shown on log axis."
-        print(f"warning: {omitted} point(s) <= 0 omitted from log-scale plot ({column})")
-    ax.set_xlabel("Circuit depth (gate layers, log scale)\n" + note, fontsize=10)
-
-    ps.save_figure(fig, FIGURES_DIR, filename)
+        print(f"warning: {omitted} point(s) <= 0 omitted from log-scale plots")
 
 
 def main():
-    ps.apply_style()
     rows = load_rows()
-    plot_metric(rows, "infidelity", "Infidelity, 1 − F (dimensionless, log scale)",
-                "Phase 1 — C++ simulator vs Qiskit Aer: infidelity by circuit depth",
-                "infidelity_vs_depth", threshold=THRESHOLD)
-    plot_metric(rows, "tvd", "Total variation distance, TVD (log scale)",
-                "Phase 1 — C++ simulator vs Qiskit Aer: TVD by circuit depth",
-                "tvd_vs_depth")
+    plot_all(rows)
 
 
 if __name__ == "__main__":
