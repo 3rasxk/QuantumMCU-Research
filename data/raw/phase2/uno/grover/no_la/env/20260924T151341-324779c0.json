@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "session_id": "20260924T151341-324779c0",
+  "pio_env": "uno",
+  "pio_packages": {
+    "atmelavr": "5.3.0",
+    "framework-arduino-avr": "5.4.0",
+    "tool-avrdude": "1.60300.200527",
+    "toolchain-atmelavr": "1.70300.191015"
+  },
+  "git_commit": "3691c9254b10d69a912b797f685cb962320d275d",
+  "git_dirty": true,
+  "firmware_source_hash": "7feb4a04e1208c6b",
+  "platformio_version": "PlatformIO Core, version 6.1.19",
+  "python_version": "3.11.7",
+  "board": "uno",
+  "serial_port": "/dev/cu.usbmodem1101",
+  "baud": 115200,
+  "f_cpu": 16000000,
+  "host_os": "macOS-26.3.1-arm64-arm-64bit",
+  "host_cpu": "arm",
+  "sleep_prevention": {
+    "checked": true,
+    "prevented": true,
+    "note": "checked via `pmset -g assertions`; run under `caffeinate -s` before a long session if this is False"
+  },
+  "la_used": false,
+  "la_dir_bucket": "no_la",
+  "la_dir_matches_flag": true,
+  "recorded_utc": "2026-09-24T15:13:43.462734+00:00"
+}
