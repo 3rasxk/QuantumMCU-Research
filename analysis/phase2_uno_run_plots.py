@@ -63,13 +63,14 @@ from shared.telemetry import is_warmup  # noqa: E402
 
 FIGURES_ROOT = REPO_ROOT / "data" / "figures"
 
-def SUBTITLE(la=False):
+def SUBTITLE(la=False, board="uno"):
     """2026-09-22: text now reflects which bucket the figure's data actually
     came from (pc/shared/paths.py's no_la/with_la split) instead of a
     hardcoded "no Logic Analyzer data" that was only ever true because --la
     had never been run for real when this line was first written."""
-    return ("Uno R3, Phase 2, micros() timing + Logic Analyzer cross-check"
-            if la else "Uno R3, Phase 2, micros() timing (no Logic Analyzer data)")
+    name = {"uno": "Uno R3", "esp8266": "ESP8266", "esp32": "ESP32"}.get(board, board)
+    return (f"{name}, Phase 2, micros() timing + Logic Analyzer cross-check"
+            if la else f"{name}, Phase 2, micros() timing (no Logic Analyzer data)")
 
 
 def _board_sram_bytes(board):
@@ -147,7 +148,7 @@ def _finish(fig, ax_or_axes, board, circuit, title_extra, commit_note, la=False)
     fig.suptitle(_title(board, circuit, title_extra, commit_note))
     axes = ax_or_axes if isinstance(ax_or_axes, (list, tuple, np.ndarray)) else [ax_or_axes]
     axes = list(np.ravel(axes))
-    axes[0].text(0.0, 1.10, SUBTITLE(la), transform=axes[0].transAxes,
+    axes[0].text(0.0, 1.10, SUBTITLE(la, board), transform=axes[0].transAxes,
                  fontsize=8.5, color=ps.INK_SECONDARY, ha="left")
 
 
@@ -363,7 +364,7 @@ def plot_cumulative(board, la=False):
 
     fig.suptitle(f"{ps.BOARD_LABEL[board]} -- all algorithms completed so far "
                  f"(REPS={tm.REPS}, generated at commit {current_head()})")
-    ax.text(0.0, 1.06, SUBTITLE(la), transform=ax.transAxes, fontsize=8.5,
+    ax.text(0.0, 1.06, SUBTITLE(la, board), transform=ax.transAxes, fontsize=8.5,
             color=ps.INK_SECONDARY, ha="left")
     ps.add_footnote(fig, "One colour per algorithm; wall n annotated where a positive-evidence "
                      "wall was hit; steane_encode is a single fixed-n point (n=7).")
