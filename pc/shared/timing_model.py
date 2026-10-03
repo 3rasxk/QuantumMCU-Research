@@ -256,6 +256,24 @@ def session_total_s(board, points, phase=2):
     return device, reflash, n_run, n_skipped
 
 
+# ---------------------------------------------------------------------------
+# Per-point overhead split for the run-time ETA tables (pc/shared/eta.py), added
+# 2026-10-03. REFLASH_COST_S above is one combined number; the ETA table shows
+# compile and upload separately. These are ESTIMATES for the two ESP boards (the
+# Uno uses medians measured in the retired dataset, pc/shared/measured_medians.json):
+#   compile  : docs/preflight_report.md P2-8 measured compile-only medians
+#              (ESP8266 40.0 s, ESP32 16.0 s; full rebuild every point)
+#   upload   : ESP32 = median of the retired ESP32 telemetry (53.4 s, the only
+#              upload measurement of any ESP board); ESP8266 = 15 s, UNMEASURED guess
+#   overhead : boot wait + serial transfer of 100 rows, fixed per point;
+#              ESP32 = retired-telemetry median (1.46 s); ESP8266 = 2.0 s, UNMEASURED
+#              (assumed like the Uno: same 115200-baud serial path)
+# These do not feed any timeout; they only feed the displayed estimates.
+COMPILE_S_ESTIMATE = {"uno": 7.5, "esp8266": 40.0, "esp32": 16.0}
+UPLOAD_S_ESTIMATE = {"uno": 3.65, "esp8266": 15.0, "esp32": 53.4}
+DEVICE_OVERHEAD_S_ESTIMATE = {"uno": 2.05, "esp8266": 2.0, "esp32": 1.46}
+
+
 TOTAL_RAM_BYTES = {"uno": 2048, "esp8266": 81920, "esp32": 327680}
 _LAST_HEAP = {}  # board -> (free_heap, largest_block) from the last point that reported it
 

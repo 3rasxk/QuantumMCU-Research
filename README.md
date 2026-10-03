@@ -209,6 +209,21 @@ Treat the VID:PID column as a sanity check only. **Always re-run
 `--port` whatever it shows right then** — never reuse a port string from an
 earlier session, from these docs, or from your shell history.
 
+### Run-time estimate and ETA (added 2026-10-03)
+
+Every `pc/run.py` invocation (also `--dry-run`) prints a per-`n` table before
+doing anything: device time for 100 reps, compile, upload, the 90 s hang budget
+at a predicted wall point, total, cumulative total and the clock time
+(Asia/Bangkok, date added past midnight) each `n` and the whole run should
+finish. Rows are labelled `MEASURED` (Uno medians from the retired dataset,
+frozen in `pc/shared/measured_medians.json`) or `ESTIMATE`
+(`pc/shared/timing_model.py`). During a real run, one `[ETA]` line is printed
+after each recorded point, rescaled from the times measured in that run.
+
+`python pc/run.py --plan [--brief] [--board B] [--algorithm A] [--phase P]`
+prints the same table for every board x circuit x phase of the current scope,
+with predicted wall `n`, per-board totals and a grand total. No hardware access.
+
 ### b. Full flag reference (from `pc/run.py --help`)
 
 | Flag | Required | Purpose | Default | Applies to |

@@ -46,6 +46,7 @@ from shared.circuit_ids import (CIRCUIT_IDS, EXPERIMENT_CIRCUITS, FIXED_N_CIRCUI
 from shared import paths as sp  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import run_history as rh  # noqa: E402
+from shared import eta  # noqa: E402
 from shared.telemetry import check_sleep_prevention  # noqa: E402
 
 BOARDS = ("uno", "esp8266", "esp32")
@@ -563,6 +564,46 @@ def confirm(auto_yes):
     return resp in ("y", "yes")
 
 
+def completed_ns(board, algorithm, phase, la=False):
+    """Read-only: n values already recorded in the terminal-record file (resume
+    skips them), for the run-time table."""
+    path = sp.memory_wall_csv_path(board, algorithm, phase, la) if phase == 2 \
+        else sp.session_log_csv_path(board, algorithm, phase, la)
+    if not path.exists():
+        return set()
+    with open(path, newline="", encoding="utf-8") as f:
+        out = set()
+        for r in csv.DictReader(f):
+            try:
+                out.add(int(r["n"]))
+            except (KeyError, ValueError):
+                pass
+    return out
+
+
+def plan_main(argv):
+    """`pc/run.py --plan`: run-time table for every board x circuit x phase of
+    the current scope, with per-board and grand totals. No hardware access."""
+    ap = argparse.ArgumentParser(prog="pc/run.py --plan")
+    ap.add_argument("--plan", action="store_true")
+    ap.add_argument("--board", choices=BOARDS, default=None)
+    ap.add_argument("--algorithm", default=None)
+    ap.add_argument("--phase", type=int, choices=PHASES, default=None)
+    ap.add_argument("--brief", action="store_true", help="summary matrix and totals only")
+    args = ap.parse_args(argv)
+    if args.algorithm in REMOVED_CIRCUITS:
+        print(f"error: {removed_message(args.algorithm)}", file=sys.stderr)
+        return 1
+    if args.algorithm is not None and args.algorithm not in ALGORITHMS:
+        print(f"error: unknown algorithm {args.algorithm!r} (choices: {', '.join(ALGORITHMS)})",
+              file=sys.stderr)
+        return 1
+    eta.plan_report(boards=[args.board] if args.board else None,
+                    circuits=[args.algorithm] if args.algorithm else None,
+                    phases=[args.phase] if args.phase else None, brief=args.brief)
+    return 0
+
+
 def generate_figures(python_exe, board, algorithm, la=False):
     """After a completed Phase 2 run, regenerate this algorithm's plots (plus the
     cumulative chart) into data/figures/<board>/<algorithm>/<bucket>/ via
@@ -588,6 +629,8 @@ def generate_figures(python_exe, board, algorithm, la=False):
 
 
 def main(argv=None):
+    if "--plan" in (argv if argv is not None else sys.argv[1:]):
+        return plan_main(argv if argv is not None else sys.argv[1:])
     ap = argparse.ArgumentParser(
         description="Run one algorithm on one board for one phase, by delegating to "
                     "the existing sweep script. See docs/run/<board>.md and "
@@ -682,6 +725,15 @@ def main(argv=None):
 
         print("command:", " ".join(argv_cmd))
 
+        # run-time table (pc/shared/eta.py): estimates only, no hardware, also in --dry-run
+        run_start_bkk = eta.now_bangkok()
+        eta_n_start = n_start_for_command if n_start_for_command is not None \
+            else LEGACY_UNIFORM_N_START_DEFAULT
+        eta_done = set() if args.fresh else completed_ns(args.board, args.algorithm, args.phase, args.la)
+        eta_points = eta.print_run_table(args.board, args.algorithm, args.phase,
+                                         n_start=eta_n_start, n_max=args.n_max,
+                                         completed=eta_done, start=run_start_bkk)
+
         archive_dest = None
         if args.fresh:
             planned_dest, planned_sources = plan_fresh_archive(
@@ -726,6 +778,13 @@ def main(argv=None):
         return 1
 
     interrupted = False
+    watcher = None
+    if eta_points:
+        record_csv = sp.memory_wall_csv_path(args.board, args.algorithm, args.phase, args.la) \
+            if args.phase == 2 else sp.session_log_csv_path(args.board, args.algorithm, args.phase, args.la)
+        watcher = eta.PointWatcher(record_csv, eta_points, run_start=eta.now_bangkok(),
+                                   skip_existing=True)
+        watcher.start()
     try:
         result = subprocess.run(argv_cmd, cwd=REPO_ROOT)
         returncode = result.returncode
@@ -737,6 +796,9 @@ def main(argv=None):
               "row will be re-run from its first rep, not resumed mid-point.")
         returncode = 130
         interrupted = True
+    finally:
+        if watcher is not None:
+            watcher.stop()
 
     if returncode == 0 and args.phase == 2:
         generate_figures(argv_cmd[0], args.board, args.algorithm, args.la)
