@@ -1,0 +1,14 @@
+board,circuit,n,theoretical_bytes,compile_ram_used_bytes,compile_ram_pct,status,timestamp_utc,retry_count,timeout_budget_s,expected_point_s,retry_policy
+esp32,qpe,2,32,,,ok,2026-09-24T18:29:41.630901+00:00,0,90,0.0,allowed
+esp32,qpe,3,64,,,ok,2026-09-24T18:30:51.317864+00:00,0,90,0.0,allowed
+esp32,qpe,4,128,,,ok,2026-09-24T18:32:10.324093+00:00,0,90,0.0,allowed
+esp32,qpe,5,256,,,ok,2026-09-24T18:33:20.802052+00:00,0,90,0.0,allowed
+esp32,qpe,6,512,,,ok,2026-09-24T18:34:32.091794+00:00,0,90,0.0,allowed
+esp32,qpe,7,1024,,,ok,2026-09-24T18:36:51.115055+00:00,0,90,0.0,allowed
+esp32,qpe,8,2048,,,ok,2026-09-24T18:38:20.951181+00:00,0,90,0.1,allowed
+esp32,qpe,9,4096,,,ok,2026-09-24T18:39:33.350460+00:00,0,90,0.2,allowed
+esp32,qpe,10,8192,,,ok,2026-09-24T18:40:49.589564+00:00,0,90,0.4,allowed
+esp32,qpe,11,16384,,,ok,2026-09-24T18:42:06.860658+00:00,0,90,0.9,allowed
+esp32,qpe,12,32768,,,ok,2026-09-24T18:43:20.893060+00:00,0,90,2.0,allowed
+esp32,qpe,13,65536,,,ok,2026-09-24T18:44:32.612477+00:00,0,90,4.7,allowed
+esp32,qpe,14,131072,,,malloc_failed,2026-09-24T18:45:47.610893+00:00,0,90,10.6,allowed

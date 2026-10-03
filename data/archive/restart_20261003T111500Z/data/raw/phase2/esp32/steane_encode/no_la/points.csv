@@ -1,0 +1,2 @@
+schema_version,session_id,phase,board,circuit,n,baud,attempt_index,start_utc,end_utc,wall_s,build_compile_s,upload_s,boot_wait_s,device_exec_s,pc_sim_s_total,pc_sim_s_median,serial_transfer_s_total,avg_round_trip_latency_s,crc_error_count,bytes_transferred,retry_count,timeout_hit,failure_type,failure_message,status
+2,20260924T185418-3074d767,2,esp32,steane_encode,7,,0,2026-09-24T18:54:20.142145+00:00,2026-09-24T18:55:31.221027+00:00,71.072,14.933,53.114,1.5,1.525,,,,,,,0,False,none,,ok

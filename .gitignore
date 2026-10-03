@@ -39,4 +39,7 @@ pc/phase1_validate/phase1_validate
 # --- pc/run.py --fresh archive (moved-aside old data, never committed by
 #     design -- see README.md "Fresh runs and the archive" and
 #     run_log.md's 2026-09-21 entry) ---
-data/archive/
+data/archive/*
+# full-restart archives (2026-10-03) are committed on purpose: they are the
+# retired dataset, kept for the record and verified by MANIFEST.json
+!data/archive/restart_*/

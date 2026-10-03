@@ -1,0 +1,69 @@
+schema_version,session_id,phase,board,circuit,n,baud,attempt_index,start_utc,end_utc,wall_s,build_compile_s,upload_s,boot_wait_s,device_exec_s,pc_sim_s_total,pc_sim_s_median,serial_transfer_s_total,avg_round_trip_latency_s,crc_error_count,bytes_transferred,retry_count,timeout_hit,failure_type,failure_message,status
+2,20260924T185616-17dd305c,2,esp32,grover,2,,0,2026-09-24T18:56:17.866510+00:00,2026-09-24T18:58:07.847311+00:00,109.973,49.611,60.362,,,,,,,,,0,False,build,"ng.html
+
+*** [upload] Error 1
+========================= [FAILED] Took 59.77 seconds =========================
+Environment    Status    Duration
+-------------  --------  ------------
+esp32dev       FAILED    00:00:59.767
+==================== 1 failed, 0 succeeded in 00:00:59.767 ====================
+",retrying
+2,20260924T185616-17dd305c,2,esp32,grover,2,,1,2026-09-24T18:58:09.885039+00:00,2026-09-24T18:58:15.133535+00:00,5.245,2.626,2.619,,,,,,,,,1,False,build,"[settled 2.0s after upload-stage failure (attempt 1); port_reenum=missing] ected
+
+
+*** [upload] Error 2
+========================== [FAILED] Took 2.17 seconds ==========================
+Environment    Status    Duration
+-------------  --------  ------------
+esp32dev       FAILED    00:00:02.169
+==================== 1 failed, 0 succeeded in 00:00:02.169 ====================
+",retrying
+2,20260924T185616-17dd305c,2,esp32,grover,2,,2,2026-09-24T18:58:17.145551+00:00,2026-09-24T18:58:24.217447+00:00,7.066,4.041,3.024,,,,,,,,,2,False,build,"[settled 2.0s after upload-stage failure (attempt 2); port_reenum=missing] ected
+
+
+*** [upload] Error 2
+========================== [FAILED] Took 2.53 seconds ==========================
+Environment    Status    Duration
+-------------  --------  ------------
+esp32dev       FAILED    00:00:02.532
+==================== 1 failed, 0 succeeded in 00:00:02.532 ====================
+",failed
+2,20260924T185616-17dd305c,2,esp32,grover,3,,0,2026-09-24T18:58:24.219276+00:00,2026-09-24T18:59:17.356519+00:00,53.134,46.047,7.088,,,,,,,,,0,False,build,"ected
+
+
+*** [upload] Error 2
+========================== [FAILED] Took 5.41 seconds ==========================
+Environment    Status    Duration
+-------------  --------  ------------
+esp32dev       FAILED    00:00:05.413
+==================== 1 failed, 0 succeeded in 00:00:05.413 ====================
+",retrying
+2,20260924T185616-17dd305c,2,esp32,grover,3,,1,2026-09-24T18:59:19.367881+00:00,2026-09-24T18:59:28.482546+00:00,9.113,3.189,5.924,,,,,,,,,1,False,build,"[settled 2.0s after upload-stage failure (attempt 1); port_reenum=missing] ected
+
+
+*** [upload] Error 2
+========================== [FAILED] Took 5.10 seconds ==========================
+Environment    Status    Duration
+-------------  --------  ------------
+esp32dev       FAILED    00:00:05.105
+==================== 1 failed, 0 succeeded in 00:00:05.105 ====================
+",retrying
+2,20260924T185616-17dd305c,2,esp32,grover,3,,2,2026-09-24T18:59:30.493009+00:00,2026-09-24T18:59:38.466647+00:00,7.97,3.595,4.375,,,,,,,,,2,False,build,"[settled 2.0s after upload-stage failure (attempt 2); port_reenum=missing] ected
+
+
+*** [upload] Error 2
+========================== [FAILED] Took 3.32 seconds ==========================
+Environment    Status    Duration
+-------------  --------  ------------
+esp32dev       FAILED    00:00:03.319
+==================== 1 failed, 0 succeeded in 00:00:03.319 ====================
+",failed
+2,20260924T194556-3954e0d7,2,esp32,grover,2,,0,2026-09-24T19:45:58.141872+00:00,2026-09-24T19:45:58.141872+00:00,0,,,,,,,,,,,0,False,none,,skipped_resume
+2,20260924T194556-3954e0d7,2,esp32,grover,3,,0,2026-09-24T19:45:58.142391+00:00,2026-09-24T19:45:58.142391+00:00,0,,,,,,,,,,,0,False,none,,skipped_resume
+2,20260924T194556-3954e0d7,2,esp32,grover,4,,0,2026-09-24T19:45:58.142634+00:00,2026-09-24T19:47:11.405544+00:00,73.259,16.319,53.957,1.5,1.483,,,,,,,0,False,none,,ok
+2,20260924T194556-3954e0d7,2,esp32,grover,5,,0,2026-09-24T19:47:11.409126+00:00,2026-09-24T19:48:21.765680+00:00,70.351,14.146,53.215,1.5,1.49,,,,,,,0,False,none,,ok
+2,20260924T194556-3954e0d7,2,esp32,grover,6,,0,2026-09-24T19:48:21.770111+00:00,2026-09-24T19:49:33.275445+00:00,71.498,13.72,53.574,1.5,2.704,,,,,,,0,False,none,,ok
+2,20260924T194556-3954e0d7,2,esp32,grover,7,,0,2026-09-24T19:49:33.282717+00:00,2026-09-24T19:51:00.231279+00:00,86.939,19.261,54.277,1.5,11.9,,,,,,,0,False,none,,ok
+2,20260924T194556-3954e0d7,2,esp32,grover,8,,0,2026-09-24T19:51:00.233618+00:00,2026-09-24T19:53:47.426904+00:00,167.181,20.761,54.177,1.5,90.743,,,,,,,0,False,none,,ok
+2,20260924T194556-3954e0d7,2,esp32,grover,9,,0,2026-09-24T19:53:47.437647+00:00,2026-09-24T20:07:15.590784+00:00,808.146,18.771,53.308,1.5,734.567,,,,,,,0,False,none,,ok
+2,20260924T194556-3954e0d7,2,esp32,grover,10,,0,2026-09-24T20:07:15.616328+00:00,2026-09-24T23:28:25.475692+00:00,10313.501,7.186,52.472,1.5,10252.343,,,,,,,0,True,watchdog_suspected,serial_error=read failed: [Errno 6] Device not configured,failed
