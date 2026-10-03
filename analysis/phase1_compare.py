@@ -243,6 +243,8 @@ def main():
                      help="ยอมให้ทับไฟล์ผลลัพธ์เดิม (ค่าเริ่มต้นคือปฏิเสธและออกด้วย exit 1)")
     ap.add_argument("--circuits", nargs="+", default=CIRCUITS)
     ap.add_argument("--grover-n-max", type=int, default=GROVER_N_MAX_DEFAULT)
+    ap.add_argument("--only-n", type=int, nargs="+", default=None,
+                    help="restrict to these n (resume a partial run into a new timestamped file)")
     args = ap.parse_args()
     reject_removed_circuits(args.circuits)
     circuits = args.circuits
@@ -276,6 +278,8 @@ def main():
 
         for circuit in circuits:
             for n in CIRCUIT_N_VALUES[circuit]:
+                if args.only_n is not None and n not in args.only_n:
+                    continue
                 if circuit == "grover" and n > args.grover_n_max:
                     print(f"[NOT RUN] circuit=grover n={n}: above --grover-n-max "
                           f"{args.grover_n_max} (O(3^n) oracle, hours-to-days in Qiskit)",
