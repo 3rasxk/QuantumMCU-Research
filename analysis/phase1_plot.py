@@ -22,7 +22,10 @@ from shared import plot_style as ps  # noqa: E402
 
 RAW_DIR = REPO_ROOT / "data" / "raw" / "phase1"
 FIGURES_DIR = REPO_ROOT / "data" / "figures" / "phase1"
-CSV_PATH = RAW_DIR / "infidelity_tvd.csv"
+# newest results file: infidelity_tvd.<UTC timestamp>.csv (restart re-validation, written by
+# phase1_compare.py --timestamped-out) sorts after the original infidelity_tvd.csv
+CSV_PATH = sorted(RAW_DIR.glob("infidelity_tvd*.csv"))[-1] if list(RAW_DIR.glob("infidelity_tvd*.csv")) \
+    else RAW_DIR / "infidelity_tvd.csv"
 THRESHOLD = 1e-3
 
 
@@ -38,11 +41,11 @@ def load_rows():
 # separable in greyscale print too. Serif (STIX) text, 300 dpi raster + vector PDF/SVG.
 PUB_COLOR = {
     "h_all": "#0072B2", "bell_ghz": "#D55E00", "qft": "#009E73",
-    "grover": "#CC79A7", "qpe": "#E69F00", "steane_encode": "#000000",
+    "grover": "#CC79A7",
 }
 PUB_LABEL = {
     "h_all": "H-all", "bell_ghz": "Bell/GHZ", "qft": "QFT",
-    "grover": "Grover", "qpe": "QPE", "steane_encode": "Steane encode (n=7)",
+    "grover": "Grover",
 }
 
 

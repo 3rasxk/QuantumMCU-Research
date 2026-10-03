@@ -1,5 +1,11 @@
 # Running the Arduino Uno R3 (Phase 2)
 
+> **Restart 2026-10-03:** scope is `h_all`, `bell_ghz`, `qft`, `grover` only
+> (`qpe`/`steane_encode` removed from the plan; `pc/run.py` refuses them) and all
+> earlier hardware data is retired to `data/archive/restart_20261003T111500Z/`.
+> Measured figures in this file come from that retired dataset; rows for removed
+> circuits were deleted. Current plan and predictions: `docs/experiment_plan.md`.
+
 The only board with real hardware data in this project, and the only one
 `--la` is implemented for. `GPIO_TIMING_PIN = D7` (`firmware/uno/src/main.cpp:27`),
 logic 5V, UART0 on D0/D1 (never connect a Logic Analyzer there).
@@ -33,8 +39,6 @@ minimum *meaningful* `n` instead of a uniform 2:
 |---|---|
 | `h_all`, `qft` | 1 |
 | `bell_ghz`, `grover` | 2 |
-| `qpe` | 3 |
-| `steane_encode` | 7 (unchanged, fixed) |
 
 An explicit `--n-start` below that minimum is clamped up with a notice on a
 `--fresh` run; non-fresh runs are unaffected (still default to 2 if
@@ -48,8 +52,6 @@ low a fresh sweep starts, not the ceiling.
 | `h_all` | 2–8 (wall), 9–14 never reached | 7 real + up to 6 skipped-by-wall | 20.8 min | **15.98s / 90.74s** (`data/raw/phase2/uno/h_all/no_la/points.csv`) | `build_overflow` at n=8, **109.9%** compile RAM |
 | `bell_ghz` | 2–8 (wall) | 7 real | 4.8 min | **13.03s / 100.02s** | `build_overflow` at n=8, **110.1%** compile RAM |
 | `qft` | 2–8 (wall) | 7 real | 1.3h | **21.84s / 91.94s** | `build_overflow` at n=8, **109.8%** compile RAM |
-| `qpe` | 2–8 (wall) | 7 real | 1.6h | **27.51s / 100.01s** | `build_overflow` at n=8, **109.8%** compile RAM |
-| `steane_encode` | fixed at 7 (ignores `--n-start`/`--n-max` except range membership) | 1 | 1.7s | **3.56s total** (2 upload attempts — 1 retry occurred; `data/raw/phase2/uno/steane_encode/no_la/points.csv`) | none — never reaches the RAM threshold |
 | `grover` | 2–8 (`n=8` auto-skipped, `expected 5.1h > 4h ceiling`) | 6 real + 1 skipped (`skipped_compute_infeasible`) | 41.3 min | collected once, **not currently committed** — see `README.md`'s status table | not observed under the default 4h budget ceiling; would need `--force-infeasible` |
 
 The "n=8 wall attempt" column is almost entirely the 90–100s serial-read
@@ -65,7 +67,7 @@ themselves.
 across every `n` in range **as if every point ran to completion** — it does
 not know about the wall in advance, so it overstates real elapsed time for
 every circuit except `grover` (whose own infeasibility check already
-excludes `n≥8`) and `steane_encode` (one point only). In practice a real
+excludes `n≥8`). In practice a real
 run stops at the wall, so actual elapsed time is close to the MEASURED
 column plus one reflash-and-timeout cycle at the wall itself
 (compile+upload+90s timeout, ≈2 minutes).

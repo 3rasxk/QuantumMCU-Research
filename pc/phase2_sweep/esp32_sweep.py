@@ -44,7 +44,7 @@
 # (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด — ดู pc/shared/resume.py สำหรับเหตุผลเต็ม ***
 # การใช้งาน:
 #   .venv/bin/python pc/phase2_sweep/esp32_sweep.py --port /dev/cu.usbserialXXXX \
-#       --circuits h_all bell_ghz qft grover qpe steane_encode --n-start 2 --n-max 18
+#       --circuits h_all bell_ghz qft grover --n-start 2 --n-max 18
 #
 # steane_encode คงที่ที่ n=7 เสมอ (pc/shared/circuit_ids.n_values_for_sweep จัดการให้
 # อัตโนมัติ) — ถ้า n=7 ไม่อยู่ใน [n-start, n-max] ที่ขอ จะข้ามวงจรนี้ไปเฉย ๆ
@@ -66,7 +66,7 @@ import serial
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
-from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep  # noqa: E402
+from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep, EXPERIMENT_CIRCUITS, reject_removed_circuits  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
@@ -321,7 +321,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", required=True)
     ap.add_argument("--circuits", nargs="+",
-                     default=["h_all", "bell_ghz", "qft", "grover", "qpe", "steane_encode"])
+                     default=list(EXPERIMENT_CIRCUITS))
     ap.add_argument("--n-start", type=int, default=2)
     ap.add_argument("--n-max", type=int, default=18)
     ap.add_argument("--force-infeasible", action="store_true",
@@ -344,6 +344,7 @@ def main():
                           f"ก่อน retry จริง — ค่าเริ่มต้น {UPLOAD_RETRY_SETTLE_S_DEFAULT}s "
                           "(standing decision 1, ported from uno_sweep.py 2026-09-22)")
     args = ap.parse_args()
+    reject_removed_circuits(args.circuits)
 
     try:
         for circuit in args.circuits:

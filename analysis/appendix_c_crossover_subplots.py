@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 # appendix_c_crossover_subplots.py — ภาคผนวก ค
 # กราฟเส้น 1 subplot ต่อวงจร (จำนวน subplot ตามจริงจาก pc/shared/plot_style.CIRCUIT_ORDER
-# ที่มีข้อมูล Phase 3 — ปัจจุบัน 6 วงจร: h_all, bell_ghz, qft, grover, qpe, steane_encode)
+# ที่มีข้อมูล Phase 3 — ปัจจุบัน 4 วงจร: h_all, bell_ghz, qft, grover)
 # แกน x = จำนวนคิวบิต (n), แกน y = เวลา (µs, log scale)
-# steane_encode คงที่ที่ n=7 จุดเดียว จึงขึ้นเป็นจุดโดด ๆ ไม่ใช่เส้น (ดู CIRCUIT_LINESTYLE)
 # แต่ละ subplot มี 6 เส้น = 3 บอร์ด (Uno/ESP8266/ESP32) × 2 เส้นทาง (local ทึบ,
 # offload ประ) พร้อมแถบ IQR — ครบทั้ง Local Execution Time (Phase 2) และ Offload E2E
 # Latency (Phase 3) อยู่ในกราฟเดียวกัน

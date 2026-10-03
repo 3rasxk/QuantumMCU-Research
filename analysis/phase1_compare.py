@@ -27,21 +27,20 @@ BINARY = REPO_ROOT / "pc" / "phase1_validate" / "phase1_validate"
 RESULTS_DIR = REPO_ROOT / "data" / "raw" / "phase1"
 CXXFLAGS = "-O2 -std=c++11 -Wall -Wextra"  # ต้องตรงกับ pc/phase1_validate/build.sh
 
-CIRCUITS = ["h_all", "bell_ghz", "qft", "grover", "qpe", "steane_encode"]
-N_VALUES_DEFAULT = [2, 3, 4, 6, 8, 10, 12]
-# grover: n >= 2 (needs >= 1 control qubit for the oracle's multi-controlled-Z)
-# qpe: n >= 3 (needs >= 2 counting qubits + 1 eigenstate qubit)
-# steane_encode: fixed at exactly n = 7 (Steane [[7,1,3]] code), never scales with n
-CIRCUIT_N_VALUES = {
-    "h_all": N_VALUES_DEFAULT,
-    "bell_ghz": N_VALUES_DEFAULT,
-    "qft": N_VALUES_DEFAULT,
-    "grover": N_VALUES_DEFAULT,
-    "qpe": [n for n in N_VALUES_DEFAULT if n >= 3],
-    "steane_encode": [7],
-}
+sys.path.insert(0, str(REPO_ROOT / "pc"))
+from shared.circuit_ids import EXPERIMENT_CIRCUITS, reject_removed_circuits  # noqa: E402
+from shared import experiment_plan as plan  # noqa: E402
+
+# Scope (2026-10-03 restart): h_all, bell_ghz, qft, grover. n values are every n
+# the experiment plan collects on ANY board/phase (pc/shared/experiment_plan.py),
+# including n=1 for h_all/qft and the odd n never validated before.
+# grover: n >= 2 (needs >= 1 control qubit for the oracle's multi-controlled-Z).
+# Grover validation is capped by --grover-n-max (default 12): the oracle costs
+# O(3^n) gates, so n=13/14 take hours-to-days in Qiskit and are reported as NOT RUN.
+CIRCUITS = list(EXPERIMENT_CIRCUITS)
+GROVER_N_MAX_DEFAULT = 12
+CIRCUIT_N_VALUES = {c: plan.phase1_n_values(c) for c in CIRCUITS}
 INFIDELITY_THRESHOLD = 1e-3
-QPE_TRUE_PHI = 0.25  # U = P(pi/2) บน eigenstate |1>, phi แท้จริงที่ทฤษฎีรู้ค่าแน่นอน
 
 
 def run_cpp_simulator(circuit: str, n: int) -> np.ndarray:
@@ -105,9 +104,6 @@ def build_qiskit_circuit(circuit: str, n: int):
     เพื่อให้การเทียบผลมีความหมาย (เทียบวงจรเดียวกัน ไม่ใช่แค่ผลลัพธ์ปลายทางบังเอิญตรงกัน)"""
     from qiskit import QuantumCircuit
 
-    if circuit == "steane_encode":
-        n = 7  # คงที่เสมอ ไม่สนใจค่า n ที่ส่งเข้ามา (ดู circuit_steane_encode)
-
     qc = QuantumCircuit(n)
     if circuit == "h_all":
         for q in range(n):
@@ -147,34 +143,6 @@ def build_qiskit_circuit(circuit: str, n: int):
                 qc.h(q)
             for q in range(n):
                 qc.h(q)
-    elif circuit == "qpe":
-        # ตรงกับ circuit_qpe ใน circuits.hpp ทุกประการ: U = P(pi/2), eigenstate = |1>
-        t = n - 1
-        eigen = n - 1
-        qc.h(eigen)
-        qc.p(np.pi, eigen)
-        qc.h(eigen)
-        u_theta = np.pi / 2
-        for q in range(t):
-            qc.h(q)
-        for q in range(t):
-            theta_q = (u_theta * (2 ** q)) % (2 * np.pi)
-            qc.cp(theta_q, q, eigen)
-        _qft_inverse_qiskit(qc, t)
-    elif circuit == "steane_encode":
-        # ตรงกับ circuit_steane_encode ใน circuits.hpp ทุกประการ
-        qc.h(0)
-        qc.cx(0, 2)
-        qc.cx(0, 4)
-        qc.cx(0, 6)
-        qc.h(1)
-        qc.cx(1, 2)
-        qc.cx(1, 5)
-        qc.cx(1, 6)
-        qc.h(3)
-        qc.cx(3, 4)
-        qc.cx(3, 5)
-        qc.cx(3, 6)
     else:
         raise ValueError(f"unknown circuit {circuit}")
     return qc
@@ -210,64 +178,6 @@ def grover_marked_probability(psi: np.ndarray) -> float:
     ถ้า infidelity ผ่านแต่ค่านี้ต่ำ แปลว่า iteration count หรือ oracle มีปัญหา
     ซึ่ง infidelity อย่างเดียวจับไม่ได้ (เทียบ Qiskit ตัวเดียวกันก็ผิดพลาดแบบเดียวกัน)"""
     return float(np.abs(psi[-1]) ** 2)
-
-
-def qpe_estimated_phase(psi: np.ndarray, n: int):
-    """หา basis state ที่มีความน่าจะเป็นสูงสุด แล้วถอดรหัสเป็น phi โดยอ่านบิตของ
-    counting register แบบกลับด้าน (bit-reversed) — ดูเหตุผลใน circuit_qpe (circuits.hpp):
-    QFT ที่นี่ตัด SWAP ท้ายวงจรออก ผลลัพธ์จึงกลับบิตเทียบกับข้อตกลง qubit0=LSB ปกติ
-    คืน (phi_estimate, dominant_index, dominant_probability)"""
-    t = n - 1
-    probs = np.abs(psi) ** 2
-    best = int(np.argmax(probs))
-    counting_val = 0
-    for i in range(t):
-        bit = (best >> i) & 1
-        counting_val |= bit << (t - 1 - i)
-    return counting_val / (2 ** t), best, float(probs[best])
-
-
-_STEANE_GENERATORS = [
-    ("S1_X", (0, 2, 4, 6), "X"),
-    ("S2_X", (1, 2, 5, 6), "X"),
-    ("S3_X", (3, 4, 5, 6), "X"),
-    ("S1_Z", (0, 2, 4, 6), "Z"),
-    ("S2_Z", (1, 2, 5, 6), "Z"),
-    ("S3_Z", (3, 4, 5, 6), "Z"),
-]
-
-
-def steane_stabilizer_check(psi: np.ndarray) -> dict:
-    """ตรวจว่า state ที่ C++ ผลิตจริง (float32, ไม่ใช่ทฤษฎี) เป็น +1-eigenstate ของ
-    stabilizer ทั้ง 6 ตัวของ Steane [[7,1,3]] code จริงหรือไม่ (Part 3 — ไม่ใช่แค่
-    เทียบ state vector กับ Qiskit เฉย ๆ แต่ตรวจสมบัติทางฟิสิกส์ของโค้ดโดยตรง)
-    คืน dict {generator_label: bool}"""
-    n = 7
-    n_states = 1 << n
-
-    def apply_x_set(state, qubits):
-        out = state.copy()
-        for q in qubits:
-            mask = 1 << q
-            nxt = np.empty_like(out)
-            for i in range(n_states):
-                nxt[i ^ mask] = out[i]
-            out = nxt
-        return out
-
-    def apply_z_set(state, qubits):
-        out = state.copy()
-        for q in qubits:
-            mask = 1 << q
-            signs = np.array([-1.0 if (i & mask) else 1.0 for i in range(n_states)])
-            out = out * signs
-        return out
-
-    results = {}
-    for label, qubits, kind in _STEANE_GENERATORS:
-        transformed = apply_x_set(psi, qubits) if kind == "X" else apply_z_set(psi, qubits)
-        results[label] = bool(np.allclose(transformed, psi, atol=1e-2))
-    return results
 
 
 def log_metadata(meta_path=None):
@@ -331,7 +241,11 @@ def main():
                      help="เขียนเป็น <ชื่อไฟล์>.<UTC timestamp>.csv แทนการทับไฟล์เดิม")
     ap.add_argument("--allow-overwrite", action="store_true",
                      help="ยอมให้ทับไฟล์ผลลัพธ์เดิม (ค่าเริ่มต้นคือปฏิเสธและออกด้วย exit 1)")
+    ap.add_argument("--circuits", nargs="+", default=CIRCUITS)
+    ap.add_argument("--grover-n-max", type=int, default=GROVER_N_MAX_DEFAULT)
     args = ap.parse_args()
+    reject_removed_circuits(args.circuits)
+    circuits = args.circuits
 
     if not BINARY.exists():
         print(f"error: {BINARY} not found. run pc/phase1_validate/build.sh first", file=sys.stderr)
@@ -353,15 +267,20 @@ def main():
     # ใช้เวลานานมาก (oracle ราคา O(3^n) เกท) ถ้ารันค้าง/ถูก interrupt กลางทาง ผลลัพธ์
     # ของ n ที่ทำเสร็จแล้วต้องไม่หายไปเปล่า ๆ
     fieldnames = ["circuit", "n", "depth", "infidelity", "tvd", "pass",
-                  "grover_marked_prob", "qpe_estimated_phi", "qpe_phi_error", "steane_stabilizers_ok"]
+                  "grover_marked_prob", "flag_above_1e-3"]
     all_pass = True
     with open(csv_path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         f.flush()
 
-        for circuit in CIRCUITS:
+        for circuit in circuits:
             for n in CIRCUIT_N_VALUES[circuit]:
+                if circuit == "grover" and n > args.grover_n_max:
+                    print(f"[NOT RUN] circuit=grover n={n}: above --grover-n-max "
+                          f"{args.grover_n_max} (O(3^n) oracle, hours-to-days in Qiskit)",
+                          flush=True)
+                    continue
                 t_start = time.monotonic()
                 psi_cpp = run_cpp_simulator(circuit, n)
                 psi_qiskit, depth = run_qiskit_aer(circuit, n)
@@ -371,20 +290,10 @@ def main():
                 passed = infid <= INFIDELITY_THRESHOLD
 
                 extra = ""
-                marked_prob = est_phi = est_phi_error = stabilizers_ok = ""
+                marked_prob = ""
                 if circuit == "grover":
                     marked_prob = grover_marked_probability(psi_cpp)
                     extra = f"  P(marked)={marked_prob:.4f}"
-                elif circuit == "qpe":
-                    est_phi, dom_idx, dom_prob = qpe_estimated_phase(psi_cpp, n)
-                    est_phi_error = abs(est_phi - QPE_TRUE_PHI)
-                    extra = f"  phi_est={est_phi:.6f} (true={QPE_TRUE_PHI}) P(peak)={dom_prob:.4f}"
-                elif circuit == "steane_encode":
-                    stab_results = steane_stabilizer_check(psi_cpp)
-                    stabilizers_ok = all(stab_results.values())
-                    extra = "  stabilizers=" + ",".join(
-                        f"{k}:{'OK' if v else 'FAIL'}" for k, v in stab_results.items()
-                    )
 
                 all_pass = all_pass and passed
                 w.writerow({
@@ -395,9 +304,7 @@ def main():
                     "tvd": tvd,
                     "pass": passed,
                     "grover_marked_prob": marked_prob,
-                    "qpe_estimated_phi": est_phi,
-                    "qpe_phi_error": est_phi_error,
-                    "steane_stabilizers_ok": stabilizers_ok,
+                    "flag_above_1e-3": infid > INFIDELITY_THRESHOLD,
                 })
                 f.flush()
                 elapsed = time.monotonic() - t_start

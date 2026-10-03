@@ -20,6 +20,7 @@
 # รันด้วย: .venv/bin/python pc/shared/paths_test.py
 
 import csv
+import json
 import hashlib
 import shutil
 import sys
@@ -133,36 +134,25 @@ def _sha256(path):
     return h.hexdigest()
 
 
-def test_real_migration_stayed_lossless():
-    """Regression guard on the real committed data: every point.csv line count
-    the 2026-09-20 telemetry migration and the 2026-09-22 no_la/with_la
-    migration both preserved must still match today -- catches anyone hand-
-    editing a migrated file later, not just the migration itself (which was
-    verified once, at migration time, against a pre-migration snapshot that
-    no longer exists to re-diff against here)."""
-    expected_rows = {
-        # csv.reader-based counts (correctly handles the quoted, embedded-
-        # newline failure_message fields some of these rows carry -- `wc -l`
-        # over-counts those, see the migration verification in run_log.md)
-        "h_all": 8, "bell_ghz": 7, "qft": 7, "qpe": 7, "steane_encode": 2,
-    }
-    for circuit, expected in expected_rows.items():
-        path = sp.points_csv_path("uno", circuit, phase=2, la=False)
-        if not path.exists():
-            check(f"real data: {circuit}/no_la/points.csv exists", False, str(path))
-            continue
-        with open(path, newline="") as f:
-            rows = sum(1 for _ in csv.reader(f)) - 1
-        check(f"real data: uno/{circuit}/no_la/points.csv has {expected} row(s)",
-              rows == expected, rows)
-
-    # every migrated file must live under no_la/ -- with_la/ should not exist
-    # yet anywhere in the real committed uno data (no --la run has ever
-    # completed against real hardware)
-    for circuit in expected_rows:
-        with_la_dir = sp.raw_dir("uno", circuit, phase=2, la=True)
-        check(f"real data: uno/{circuit}/with_la/ does not exist yet (no --la run ever completed)",
-              not with_la_dir.exists(), with_la_dir)
+def test_restart_archive_is_lossless():
+    """Regression guard (2026-10-03 restart): every file the full-restart
+    archive moved (data/archive/restart_*/MANIFEST.json) must still exist
+    there with the sha256 it had at move time, and nothing may have been left
+    behind at its old location while the old name is unoccupied by new data.
+    Replaces the earlier uno points.csv row-count guard, whose files were
+    moved into that archive."""
+    import hashlib
+    archives = sorted((sp.REPO_ROOT / "data" / "archive").glob("restart_*"))
+    check("restart archive exists", len(archives) >= 1, str(archives))
+    for arch in archives:
+        manifest = json.loads((arch / "MANIFEST.json").read_text())
+        check(f"{arch.name}: manifest has reason + git commit",
+              "LA replaced by ESP32 counter" in manifest["reason"] and len(manifest["git_commit"]) == 40)
+        bad = [e["path"] for e in manifest["files"]
+               if not (arch / e["path"]).exists()
+               or hashlib.sha256((arch / e["path"]).read_bytes()).hexdigest() != e["sha256"]]
+        check(f"{arch.name}: all {manifest['file_count']} files present with matching sha256",
+              not bad, bad[:3])
 
 
 def main():
@@ -174,7 +164,7 @@ def main():
         test_no_la_and_with_la_never_collide()
     finally:
         sp.REPO_ROOT = saved_root  # real-data test below needs the real REPO_ROOT
-    test_real_migration_stayed_lossless()
+    test_restart_archive_is_lossless()
 
     n_fail = sum(1 for _, s in RESULTS if s == "FAIL")
     print(f"\n{len(RESULTS)} checks, {n_fail} failed")

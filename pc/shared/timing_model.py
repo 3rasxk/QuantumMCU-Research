@@ -19,7 +19,7 @@
 #      ที่ commit 7a7c728~1) — ไม่ใช่ค่าที่เดาเอา
 #   3. timeout_budget_s() — expected × SAFETY_FACTOR หนีบด้วย FLOOR/CEILING
 #
-# ข้อจำกัดที่ต้องรู้: ค่าประมาณของ grover/qpe/steane_encode เป็นการ "ประมาณการ"
+# ข้อจำกัดที่ต้องรู้: ค่าประมาณของ grover เป็นการ "ประมาณการ"
 # (projected) จากสูตรจำนวนเกท ไม่ใช่ค่าที่วัดจากบอร์ดจริง เพราะยังไม่เคยรันวงจรทั้งสาม
 # บนฮาร์ดแวร์เลย ส่วน h_all/bell_ghz/qft เป็นค่าที่ fit จากการวัดจริง หลังรอบ REPS=100
 # เสร็จควรกลับมา re-fit ค่าคงที่ทั้งหมดจากข้อมูลจริงชุดใหม่
@@ -160,12 +160,8 @@ def gate_counts(circuit, n):
         return (n + it * (2 * mh + 6 * n),
                 it * (2 * mc),
                 it * (2 * mp + 2 * n))
-    if circuit == "qpe":
-        t = n - 1
-        # eigenstate prep (H,Z,H) + H counting + controlled-U + inverse QFT
-        return (2 + t + t, 0, 1 + t + t * (t - 1) // 2)
-    if circuit == "steane_encode":
-        return (3, 9, 0)  # คงที่ ไม่ขึ้นกับ n
+    if circuit in ("qpe", "steane_encode"):
+        raise ValueError(f"{circuit} removed from the experiment plan on 2026-10-03")
     raise ValueError(f"unknown circuit {circuit!r}")
 
 
@@ -598,7 +594,7 @@ if __name__ == "__main__":
                               ("esp8266", "grover", 8), ("esp8266", "grover", 10),
                               ("esp8266", "grover", 12), ("esp32", "grover", 10),
                               ("esp32", "grover", 12), ("uno", "grover", 6),
-                              ("uno", "steane_encode", 7), ("esp8266", "qpe", 12)]:
+                              ("esp8266", "qft", 8)]:
         exp_s = expected_point_time_s(board, circuit, n)
         b = timeout_budget_s(board, circuit, n)
         state = "INFEASIBLE" if is_compute_infeasible(board, circuit, n) else (

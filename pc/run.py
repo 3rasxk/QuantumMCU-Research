@@ -41,14 +41,15 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 
-from shared.circuit_ids import CIRCUIT_IDS, FIXED_N_CIRCUITS  # noqa: E402
+from shared.circuit_ids import (CIRCUIT_IDS, EXPERIMENT_CIRCUITS, FIXED_N_CIRCUITS,  # noqa: E402
+                                REMOVED_CIRCUITS, removed_message)
 from shared import paths as sp  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import run_history as rh  # noqa: E402
 from shared.telemetry import check_sleep_prevention  # noqa: E402
 
 BOARDS = ("uno", "esp8266", "esp32")
-ALGORITHMS = tuple(CIRCUIT_IDS.keys())  # h_all, bell_ghz, qft, grover, qpe, steane_encode
+ALGORITHMS = EXPERIMENT_CIRCUITS  # h_all, bell_ghz, qft, grover (qpe/steane_encode removed 2026-10-03)
 PHASES = (2, 3)
 
 # One script per board for Phase 2; one shared script (--board selects) for Phase 3.
@@ -93,29 +94,18 @@ LEGACY_UNIFORM_N_START_DEFAULT = 2
 #   grover:        2  -- circuits.hpp:150 AND analysis/phase1_compare.py:32,
 #                        both independently state n>=2 ("no control qubit left
 #                        for the oracle's multi-controlled-Z" / "-phase")
-#   qpe:           3  -- circuits.hpp:194 "ต้องการ n >= 3 (อย่างน้อย 2 counting
-#                        qubit + 1 eigenstate qubit)"; analysis/phase1_compare.py:33,40
-#                        independently filters its own default n-list to n>=3 for
-#                        qpe specifically. n=1 gives 0 counting qubits (pure
-#                        no-op past eigenstate prep); n=2 gives 1 counting qubit
-#                        (runs, produces a real but low-precision estimate) --
-#                        still below this stated minimum.
-#   steane_encode: 7  -- circuits.hpp:235-236, fixed n, "ห้ามเรียกที่ n อื่น"
-#                        ("forbidden to call at another n") -- pre-existing
-#                        FIXED_N_CIRCUITS, unchanged, just restated here
+#
+# (qpe and steane_encode were removed from the experiment plan on 2026-10-03.)
 #
 # No circuit has ever been Phase 1 (Qiskit) validated at n=1 --
 # analysis/phase1_compare.py:31's own N_VALUES_DEFAULT starts at 2 for every
-# circuit. This project's real committed Uno qpe data starts at n=2, which is
-# itself below qpe's own stated minimum of 3 and was never Phase-1-validated
-# either -- see docs/analysis/uno/qpe.md and run_log.md's 2026-09-21 entry.
+# circuit. The 2026-10-03 re-validation (data/raw/phase1/) covers every n the
+# new plan collects, including n=1 for h_all/qft.
 MIN_VALID_N = {
     "h_all": 1,
     "bell_ghz": 2,
     "qft": 1,
     "grover": 2,
-    "qpe": 3,
-    "steane_encode": 7,
 }
 
 # --la exists ONLY on uno_sweep.py (Phase 2). Confirmed absent from esp8266_sweep.py,
@@ -181,6 +171,8 @@ def validate_combination(board, algorithm, phase, la, upload_retry_settle_s):
     check here maps to a concrete fact read from the underlying scripts."""
     if board not in BOARDS:
         raise RunnerError(f"unknown board {board!r} (choices: {', '.join(BOARDS)})")
+    if algorithm in REMOVED_CIRCUITS:
+        raise RunnerError(removed_message(algorithm))
     if algorithm not in ALGORITHMS:
         raise RunnerError(f"unknown algorithm {algorithm!r} (choices: {', '.join(ALGORITHMS)})")
     if phase not in PHASES:
@@ -198,15 +190,16 @@ def validate_combination(board, algorithm, phase, la, upload_retry_settle_s):
 
 
 def n_range_note(algorithm, n_start, n_max_effective):
-    """Read-only informational note about steane_encode's fixed n (no collection
-    logic duplicated -- pc/shared/circuit_ids.n_values_for_sweep is still the
+    """Read-only informational note about a fixed-n circuit (none exist in the
+    current plan, FIXED_N_CIRCUITS is empty; kept generic -- no collection
+    logic duplicated, pc/shared/circuit_ids.n_values_for_sweep is still the
     single source of truth the delegated script itself uses)."""
     fixed = FIXED_N_CIRCUITS.get(algorithm)
     if fixed is None:
         return None
     if n_start <= fixed <= n_max_effective:
-        return f"steane_encode is fixed at n={fixed}; only that point will be attempted."
-    return (f"steane_encode is fixed at n={fixed}, which is OUTSIDE the requested "
+        return f"{algorithm} is fixed at n={fixed}; only that point will be attempted."
+    return (f"{algorithm} is fixed at n={fixed}, which is OUTSIDE the requested "
             f"range [{n_start}, {n_max_effective}] -- the delegated script will "
             f"print 'skip: ... is fixed-n and its n is outside [...]' and do nothing.")
 
@@ -600,7 +593,8 @@ def main(argv=None):
                     "the existing sweep script. See docs/run/<board>.md and "
                     "docs/manual_run_guide.md for details.")
     ap.add_argument("--board", required=True, choices=BOARDS)
-    ap.add_argument("--algorithm", required=True, choices=ALGORITHMS)
+    ap.add_argument("--algorithm", required=True,
+                     help="one of: " + ", ".join(ALGORITHMS) + " (validated in validate_combination)")
     ap.add_argument("--phase", required=True, type=int, choices=PHASES)
     ap.add_argument("--port", required=True,
                      help="e.g. /dev/cu.usbmodem1101 -- never auto-guessed")

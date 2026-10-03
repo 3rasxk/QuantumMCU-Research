@@ -1,5 +1,11 @@
 # Running the ESP32 DevKit V1 (Phase 2)
 
+> **Restart 2026-10-03:** scope is `h_all`, `bell_ghz`, `qft`, `grover` only
+> (`qpe`/`steane_encode` removed from the plan; `pc/run.py` refuses them) and all
+> earlier hardware data is retired to `data/archive/restart_20261003T111500Z/`.
+> Measured figures in this file come from that retired dataset; rows for removed
+> circuits were deleted. Current plan and predictions: `docs/experiment_plan.md`.
+
 **UNVERIFIED — this board has never been run against real hardware in this
 project.** Every number below is a prediction from `pc/shared/timing_model.py`
 or a compile-only build figure from `docs/preflight_report.md`. Do not
@@ -47,8 +53,6 @@ here).
 | `h_all` | 2–18 | 17 | 1.2 min | UNVERIFIED — old (REPS=30-era) measured-safe `n` was 13 (`timing_model.MEASURED_WALL_N["esp32"]`); compile-only build matrix shows RAM flat at 13.2–13.3% through n=14 (`docs/preflight_report.md` P2-8) — far below any threshold, no compile-time signal predicts a wall here at all. Expect a runtime `malloc` failure if one occurs, not a build-time one. |
 | `bell_ghz` | 2–18 | 17 | 1.5 min | same caveat |
 | `qft` | 2–18 | 17 | 6.7 min | same caveat |
-| `qpe` | 2–18 | 17 | 7.9 min | same caveat |
-| `steane_encode` | fixed at 7 | 1 | <0.1s | none expected |
 | `grover` | 2–18 (`n≥11` auto-skipped) | 9 real + skipped | 1.9h — heaviest point predicted ~1.7h at `n=10` alone | `run_checklist.md`: **do not interrupt mid-`n=10`** if avoidable — resume re-runs that whole point from scratch, not from where it stopped |
 
 ## What to check afterwards

@@ -1,5 +1,11 @@
 # REPS=100 Run Checklist
 
+> **Restart 2026-10-03:** scope is `h_all`, `bell_ghz`, `qft`, `grover` only
+> (`qpe`/`steane_encode` removed from the plan; `pc/run.py` refuses them) and all
+> earlier hardware data is retired to `data/archive/restart_20261003T111500Z/`.
+> Measured figures in this file come from that retired dataset; rows for removed
+> circuits were deleted. Current plan and predictions: `docs/experiment_plan.md`.
+
 Operator checklist for the actual hardware run. Read this, not `run_log.md`,
 while running — `run_log.md` is where you write down what happened *after*.
 
@@ -68,7 +74,7 @@ exists yet anywhere in this repo.
 
 ## Session order and why
 
-1. **Cheap circuits, all 3 boards** — `h_all bell_ghz qft qpe steane_encode`.
+1. **Cheap circuits, all 3 boards** — `h_all bell_ghz qft`.
    Fast (minutes), banks 5 of 6 circuits everywhere before touching the
    expensive one.
 2. **`grover`, one board per session** — kept separate because ESP8266's
@@ -162,7 +168,7 @@ Run these three back to back (or in any order — independent files):
 
 ```bash
 .venv/bin/python pc/phase2_sweep/uno_sweep.py --port /dev/cu.usbmodemXXXX \
-    --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 8
+    --circuits h_all bell_ghz qft --n-start 2 --n-max 8
 ```
 **MEASURED (2026-09-22, this exact command, real hardware — not a
 `timing_model` estimate): ~11.7 min** (29 points attempted, 25 `ok` +
@@ -180,13 +186,13 @@ ESTIMATE (no hardware data collected for either board yet).
 
 ```bash
 .venv/bin/python pc/phase2_sweep/esp8266_sweep.py --port /dev/cu.usbserialXXXX \
-    --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 13
+    --circuits h_all bell_ghz qft --n-start 2 --n-max 13
 ```
 **Expected: ~32 min** (49 points — device ~7.8 min + reflash ~24.5 min at 30s/point).
 
 ```bash
 .venv/bin/python pc/phase2_sweep/esp32_sweep.py --port /dev/cu.usbserialXXXX \
-    --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 14
+    --circuits h_all bell_ghz qft --n-start 2 --n-max 14
 ```
 **Expected: ~27 min** (53 points — device <1 min + reflash ~26.5 min at 30s/point.
 ESP32 is so fast per-trial that reflashing is essentially all of this session).
@@ -312,11 +318,11 @@ here — noted for later.
 
 ```bash
 .venv/bin/python pc/phase3_offload/sweep.py --board uno --port /dev/cu.usbmodemXXXX \
-    --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 8
+    --circuits h_all bell_ghz qft --n-start 2 --n-max 8
 .venv/bin/python pc/phase3_offload/sweep.py --board esp8266 --port /dev/cu.usbserialXXXX \
-    --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 13
+    --circuits h_all bell_ghz qft --n-start 2 --n-max 13
 .venv/bin/python pc/phase3_offload/sweep.py --board esp32 --port /dev/cu.usbserialXXXX \
-    --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 14
+    --circuits h_all bell_ghz qft --n-start 2 --n-max 14
 ```
 **Expected: ~12 min (Uno), ~29 min (ESP8266), ~31 min (ESP32)** — PC-side
 simulation cost is a few minutes each; reflash (29/49/53 points × 20–30s) is

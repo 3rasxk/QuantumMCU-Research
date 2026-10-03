@@ -192,8 +192,8 @@ def plot_exec_time_vs_n(board, circuit, la=False):
     ax.set_xlabel("Number of qubits, n (qubits)")
     ax.set_ylabel("Execution time per rep (µs, log scale)")
     # legend moved outside the plot area (as with outcomes_vs_n/time_per_point) --
-    # a fixed "upper left" collided with the data for steane_encode's single-point
-    # chart, where the narrow x/y range put the model marker directly under the
+    # a fixed "upper left" collided with the data for single-point
+    # charts, where the narrow x/y range put the model marker directly under the
     # legend box (found via the required visual self-check, not code review)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=2)
 
@@ -367,7 +367,7 @@ def plot_cumulative(board, la=False):
     ax.text(0.0, 1.06, SUBTITLE(la, board), transform=ax.transAxes, fontsize=8.5,
             color=ps.INK_SECONDARY, ha="left")
     ps.add_footnote(fig, "One colour per algorithm; wall n annotated where a positive-evidence "
-                     "wall was hit; steane_encode is a single fixed-n point (n=7).")
+                     "wall was hit.")
     return ps.save_figure_png_only(fig, sp.figures_dir(board, la=la), "all_algorithms_so_far")
 
 

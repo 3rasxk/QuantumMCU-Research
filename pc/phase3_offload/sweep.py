@@ -12,11 +12,10 @@
 #
 # การใช้งาน:
 #   .venv/bin/python pc/phase3_offload/sweep.py --board uno --port /dev/cu.usbmodemXXXX \
-#       --circuits h_all bell_ghz qft grover qpe steane_encode --n-start 2 --n-max 7 \
+#       --circuits h_all bell_ghz qft grover --n-start 2 --n-max 7 \
 #       --bauds 115200 250000
 #
-# steane_encode คงที่ที่ n=7 เสมอ (pc/shared/circuit_ids.n_values_for_sweep จัดการให้
-# อัตโนมัติ) — ถ้า n=7 ไม่อยู่ใน [n-start, n-max] ที่ขอ จะข้ามวงจรนี้ไปเฉย ๆ
+# qpe/steane_encode ถูกถอดออกจากแผนการทดลองแล้ว (2026-10-03) — สคริปต์จะปฏิเสธทันที
 #
 # *** ต้นทุนการจำลองฝั่ง PC (สำคัญมากสำหรับ grover) ***
 # simulate_and_sample() จำลองวงจรใหม่หมดทุกคำขอ ไม่ cache — เป็นการตัดสินใจเชิงระเบียบวิธี
@@ -69,7 +68,7 @@ sys.path.insert(0, str(REPO_ROOT / "pc"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from protocol import FRAME_REQ_START, parse_request, pack_response  # noqa: E402
 from phase1_compare import build_qiskit_circuit  # noqa: E402
-from shared.circuit_ids import CIRCUIT_IDS, CIRCUIT_NAMES, n_values_for_sweep  # noqa: E402
+from shared.circuit_ids import CIRCUIT_IDS, CIRCUIT_NAMES, n_values_for_sweep, EXPERIMENT_CIRCUITS, reject_removed_circuits  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
@@ -275,7 +274,7 @@ def main():
     ap.add_argument("--board", required=True, choices=list(BOARDS.keys()))
     ap.add_argument("--port", required=True)
     ap.add_argument("--circuits", nargs="+",
-                     default=["h_all", "bell_ghz", "qft", "grover", "qpe", "steane_encode"])
+                     default=list(EXPERIMENT_CIRCUITS))
     ap.add_argument("--n-start", type=int, default=2)
     ap.add_argument("--n-max", type=int, default=None,
                      help="ถ้าไม่ระบุ จะไล่ n ขึ้นเรื่อย ๆ จนกว่าจะพบ error จริง "
@@ -294,6 +293,7 @@ def main():
                      help="ไม่ resume จากผลลัพธ์เดิม — ย้ายไฟล์ raw/session_log เดิมไปเป็น "
                           "*.pre-fresh-<timestamp>.csv (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด")
     args = ap.parse_args()
+    reject_removed_circuits(args.circuits)
     n_max = args.n_max if args.n_max is not None else N_SAFETY_CAP
 
     from qiskit_aer import AerSimulator

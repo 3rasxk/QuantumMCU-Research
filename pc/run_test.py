@@ -111,8 +111,8 @@ def test_build_command_matches_every_board_algorithm_phase_combination():
     for board, algorithm, phase, ok, cmd in table_rows:
         print(f"  [{'OK' if ok else 'WRONG'}] board={board:8s} algorithm={algorithm:14s} "
               f"phase={phase}  ->  {cmd}")
-    check("build_command resolves correctly for all 3*6*2=36 combinations",
-          all_ok and len(table_rows) == 36, f"{len(table_rows)} combinations checked")
+    check("build_command resolves correctly for all 3*4*2=24 combinations",
+          all_ok and len(table_rows) == 24, f"{len(table_rows)} combinations checked")
 
 
 def test_dry_run_cli_all_combinations_no_hardware_subprocess():
@@ -260,15 +260,41 @@ def test_reps_flag_validates_against_the_real_compile_time_constant():
     check("--reps matching the real REPS constant (100) is accepted", ret_ok == 0, f"ret={ret_ok}")
 
 
-def test_n_range_note_for_steane_encode():
-    inside = run_mod.n_range_note("steane_encode", 2, 14)
-    outside = run_mod.n_range_note("steane_encode", 2, 5)
+def test_n_range_note_for_fixed_n_circuits():
+    saved = dict(run_mod.FIXED_N_CIRCUITS)
+    run_mod.FIXED_N_CIRCUITS["fixed_demo"] = 7  # no fixed-n circuit exists in the plan any more
+    try:
+        inside = run_mod.n_range_note("fixed_demo", 2, 14)
+        outside = run_mod.n_range_note("fixed_demo", 2, 5)
+    finally:
+        run_mod.FIXED_N_CIRCUITS.clear()
+        run_mod.FIXED_N_CIRCUITS.update(saved)
     not_fixed = run_mod.n_range_note("h_all", 2, 14)
-    check("steane_encode inside range: informational note, not an error",
+    check("fixed-n circuit inside range: informational note, not an error",
           inside is not None and "OUTSIDE" not in inside)
-    check("steane_encode outside range: note says so explicitly",
+    check("fixed-n circuit outside range: note says so explicitly",
           outside is not None and "OUTSIDE" in outside)
+    check("no circuit in the plan is fixed-n", run_mod.FIXED_N_CIRCUITS == {})
     check("non-fixed-n circuit: no note", not_fixed is None)
+
+
+def test_removed_circuits_are_rejected_with_a_clear_message():
+    import io
+    for algorithm in ("qpe", "steane_encode"):
+        err = io.StringIO()
+        saved_err = sys.stderr
+        sys.stderr = err
+        try:
+            with captured_stdout():
+                code = run_mod.main(["--board", "uno", "--algorithm", algorithm, "--phase", "2",
+                                      "--port", "/dev/cu.FAKE", "--dry-run"])
+        finally:
+            sys.stderr = saved_err
+        check(f"{algorithm}: runner refuses (exit 1) with the removal message",
+              code == 1 and f"{algorithm} removed from the experiment plan on 2026-10-03" in err.getvalue(),
+              err.getvalue().strip())
+    check("plan scope is exactly the four circuits",
+          run_mod.ALGORITHMS == ("h_all", "bell_ghz", "qft", "grover"))
 
 
 # ---------------------------------------------------------------------------
@@ -276,8 +302,7 @@ def test_n_range_note_for_steane_encode():
 # ---------------------------------------------------------------------------
 
 def test_fresh_default_n_start_is_the_circuit_minimum_and_clamping_works():
-    expected = {"h_all": 1, "bell_ghz": 2, "qft": 1, "grover": 2,
-                "qpe": 3, "steane_encode": 7}
+    expected = {"h_all": 1, "bell_ghz": 2, "qft": 1, "grover": 2}
     all_default_ok = True
     for algorithm, minimum in expected.items():
         n, notice = run_mod.effective_n_start_for_fresh(algorithm, None)
@@ -285,9 +310,9 @@ def test_fresh_default_n_start_is_the_circuit_minimum_and_clamping_works():
     check("fresh run, --n-start omitted, defaults to each circuit's own minimum "
           "(not the legacy uniform 2)", all_default_ok, str(expected))
 
-    n, notice = run_mod.effective_n_start_for_fresh("qpe", 1)
+    n, notice = run_mod.effective_n_start_for_fresh("grover", 1)
     check("fresh run, explicit --n-start below the circuit minimum: clamped up",
-          n == 3 and notice is not None and "clamped" in notice.lower())
+          n == 2 and notice is not None and "clamped" in notice.lower())
     check("clamp notice says never a failure/wall",
           "never" in notice.lower() and ("failure" in notice.lower() or "wall" in notice.lower()))
 
@@ -298,19 +323,20 @@ def test_fresh_default_n_start_is_the_circuit_minimum_and_clamping_works():
 
 def test_fresh_dry_run_cli_shows_clamp_and_archive_destination():
     with captured_stdout() as out:
-        code = run_mod.main(["--board", "uno", "--algorithm", "qpe", "--phase", "2",
+        code = run_mod.main(["--board", "uno", "--algorithm", "grover", "--phase", "2",
                               "--port", "/dev/cu.FAKE", "--fresh", "--n-start", "1", "--dry-run"])
     text = out.getvalue()
     check("fresh dry-run with a too-low --n-start: exits 0, shows the clamp notice, "
-          "shows the resulting --n-start 3 in the command",
-          code == 0 and "clamped" in text.lower() and "--n-start 3" in text)
+          "shows the resulting --n-start 2 in the command",
+          code == 0 and "clamped" in text.lower() and "--n-start 2" in text)
 
     with captured_stdout() as out2:
         code2 = run_mod.main(["--board", "uno", "--algorithm", "h_all", "--phase", "2",
                                "--port", "/dev/cu.FAKE", "--fresh", "--dry-run"])
     text2 = out2.getvalue()
-    check("fresh dry-run against real existing h_all data shows the planned archive "
-          "destination under data/archive/", code2 == 0 and "data/archive/" in text2)
+    check("fresh dry-run: exits 0 and either names the planned archive destination "
+          "under data/archive/ (data exists) or says nothing exists yet (post-restart tree)",
+          code2 == 0 and ("data/archive/" in text2 or "nothing exists yet" in text2))
     h_all_archive_dir = run_mod.REPO_ROOT / "data" / "archive" / "phase2" / "uno" / "h_all"
     check("fresh dry-run never actually creates an archive for (uno, h_all, phase2) "
           "-- no file moved despite naming the destination in its preview",
@@ -475,6 +501,30 @@ def sp_module():
     return sp
 
 
+def _make_scratch_uno_h_all(root):
+    """Realistic enough scratch Uno h_all dataset for phase2_uno_run_plots.py
+    (the real one was archived in the 2026-10-03 restart): raw.csv + memory_wall.csv."""
+    raw_dir = root / "data" / "raw" / "phase2" / "uno" / "h_all" / "no_la"
+    (raw_dir / "env").mkdir(parents=True)
+    with open(raw_dir / "raw.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["board", "circuit", "n", "rep", "exec_time_us", "free_heap_before",
+                    "free_heap_after", "timeout_budget_s"])
+        for n in range(2, 8):
+            for rep in range(100):
+                w.writerow(["uno", "h_all", n, rep, 280 * 2 ** (n - 2) + rep % 3, 1780, 1780, 90])
+    with open(raw_dir / "memory_wall.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["board", "circuit", "n", "theoretical_bytes", "compile_ram_used_bytes",
+                    "compile_ram_pct", "status", "timestamp_utc", "retry_count",
+                    "timeout_budget_s", "expected_point_s", "retry_policy"])
+        for n in range(2, 8):
+            w.writerow(["uno", "h_all", n, 8 * 2 ** n, 200 + 8 * 2 ** n, 11.0, "ok",
+                        "2026-10-03T00:00:00+00:00", 0, 90, 0.1, "allowed"])
+        w.writerow(["uno", "h_all", 8, 2048, 2250, 109.9, "build_overflow",
+                    "2026-10-03T00:00:00+00:00", 0, 90, 6.0, "allowed"])
+
+
 def test_archive_independence():
     """(3) Independence proof: nothing outside pc/run.py / pc/run_test.py
     references the new data/archive/ concept anywhere in the codebase, and
@@ -486,7 +536,10 @@ def test_archive_independence():
          str(run_mod.REPO_ROOT / "pc"), str(run_mod.REPO_ROOT / "analysis")],
         capture_output=True, text=True)
     hits = [ln for ln in grep.stdout.splitlines()
-            if "/pc/run.py:" not in ln and "/pc/run_test.py:" not in ln]
+            if "/pc/run.py:" not in ln and "/pc/run_test.py:" not in ln
+            # paths_test.py verifies the 2026-10-03 restart archive's MANIFEST
+            # hashes -- a test reading the archive, not pipeline code
+            and "/pc/shared/paths_test.py:" not in ln]
     new_concept_markers = ("data/archive", "archive_dest_dir", "perform_fresh_archive",
                            "plan_fresh_archive", "_archive_sources", "MANIFEST.json")
     check("grep for 'archive' across pc/ and analysis/: every hit outside this runner "
@@ -501,8 +554,7 @@ def test_archive_independence():
         copy_root = Path(tmp) / "repo"
         shutil.copytree(run_mod.REPO_ROOT / "pc" / "shared", copy_root / "pc" / "shared")
         shutil.copytree(run_mod.REPO_ROOT / "analysis", copy_root / "analysis")
-        shutil.copytree(run_mod.REPO_ROOT / "data" / "raw" / "phase2" / "uno" / "h_all",
-                         copy_root / "data" / "raw" / "phase2" / "uno" / "h_all")
+        _make_scratch_uno_h_all(copy_root)
         (copy_root / "data" / "figures").mkdir(parents=True)
         (copy_root / "docs" / "analysis" / "uno").mkdir(parents=True)
 
@@ -553,7 +605,8 @@ def main():
     test_dirty_tree_warns_but_does_not_block_a_real_run()
     test_busy_port_is_refused()
     test_reps_flag_validates_against_the_real_compile_time_constant()
-    test_n_range_note_for_steane_encode()
+    test_n_range_note_for_fixed_n_circuits()
+    test_removed_circuits_are_rejected_with_a_clear_message()
     test_fresh_default_n_start_is_the_circuit_minimum_and_clamping_works()
     test_fresh_dry_run_cli_shows_clamp_and_archive_destination()
     test_archive_move_and_manifest_correctness()

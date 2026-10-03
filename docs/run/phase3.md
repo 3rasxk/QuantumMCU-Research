@@ -1,5 +1,11 @@
 # Running Phase 3 — Offload Benchmark (all boards)
 
+> **Restart 2026-10-03:** scope is `h_all`, `bell_ghz`, `qft`, `grover` only
+> (`qpe`/`steane_encode` removed from the plan; `pc/run.py` refuses them) and all
+> earlier hardware data is retired to `data/archive/restart_20261003T111500Z/`.
+> Measured figures in this file come from that retired dataset; rows for removed
+> circuits were deleted. Current plan and predictions: `docs/experiment_plan.md`.
+
 **UNVERIFIED — Phase 3 has never been run against real hardware, on any
 board, in this project.** Every number below is a `pc/shared/timing_model.py`
 prediction. Unlike Phase 2, Phase 3's bottleneck is **PC-side Qiskit Aer
@@ -32,13 +38,13 @@ explicit `--n-max` — see the ranges below, matched to
 **`--fresh` changed 2026-09-21** — see `docs/run/uno.md`'s own note and
 `README.md`'s "Fresh runs and the archive". The per-circuit minimum-`n`
 defaults are the same ones used for Phase 2 (`h_all`/`qft`=1,
-`bell_ghz`/`grover`=2, `qpe`=3, `steane_encode`=7 fixed) — Phase 3's own
+`bell_ghz`/`grover`=2) — Phase 3's own
 per-request cost model doesn't change what n=1 *means* for a circuit, only
 how expensive simulating it is.
 
 | Circuit set | `n` range | Points (per board) | ESTIMATE: PC-side sim time only |
 |---|---|---|---|
-| Cheap (`h_all`, `bell_ghz`, `qft`, `qpe`, `steane_encode`), `--n-max 8` | Uno | 29 | 2.4 min |
+| Cheap (`h_all`, `bell_ghz`, `qft`), `--n-max 8` | Uno | 29 | 2.4 min |
 | Cheap, `--n-max 13` | ESP8266 | 49 | 4.2 min |
 | Cheap, `--n-max 14` | ESP32 | 53 | 4.5 min |
 | `grover`, `--n-max 10` | any board | 9 | **1.5h — identical across all three boards**, because Phase 3's cost is PC-side simulation, not the board |

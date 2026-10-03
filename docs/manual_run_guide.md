@@ -1,5 +1,11 @@
 # คู่มือรันมือ (Manual Run Guide)
 
+> **Restart 2026-10-03:** scope is `h_all`, `bell_ghz`, `qft`, `grover` only
+> (`qpe`/`steane_encode` removed from the plan; `pc/run.py` refuses them) and all
+> earlier hardware data is retired to `data/archive/restart_20261003T111500Z/`.
+> Measured figures in this file come from that retired dataset; rows for removed
+> circuits were deleted. Current plan and predictions: `docs/experiment_plan.md`.
+
 เอกสารนี้เขียนจากการอ่านโค้ดจริง ณ commit `pre-run-uno-v1` (tag) โดยตรง — ไฟล์ที่อ่าน:
 `pc/phase2_sweep/uno_sweep.py`, `pc/phase2_sweep/esp8266_sweep.py`,
 `pc/phase2_sweep/esp32_sweep.py`, `pc/phase3_offload/sweep.py`,
@@ -81,9 +87,8 @@ Phase 3 (offload — MCU รับผลจาก PC-side Qiskit Aer ผ่า�
 (ไฟล์คนละไฟล์ต่อบอร์ดสำหรับ Phase 2; Phase 3 เป็นสคริปต์เดียวรับ `--board` เลือกเอง)
 
 **ชื่อวงจร (`--circuits`, ตรง `pc/shared/circuit_ids.py`):**
-`h_all`, `bell_ghz`, `qft`, `grover`, `qpe`, `steane_encode`
-(`steane_encode` คงที่ที่ n=7 เสมอ ไม่สนใจ `--n-start`/`--n-max` นอกจากเช็คว่า 7 อยู่ในช่วง
-ที่ขอหรือไม่ — ถ้าไม่อยู่ วงจรนี้จะถูกข้ามไปเฉย ๆ ไม่ error)
+`h_all`, `bell_ghz`, `qft`, `grover`
+(`qpe`/`steane_encode` ถูกถอดออกจากแผนแล้ว 2026-10-03 — สคริปต์ปฏิเสธทันที)
 
 **ทุก flag ที่มีจริง (Phase 2, ทั้งสามบอร์ด):**
 
@@ -120,7 +125,7 @@ Phase 3 (offload — MCU รับผลจาก PC-side Qiskit Aer ผ่า�
 ~9.7 นาที ที่สมมติฐาน 20s/จุด — ยังไม่ใช่ค่าที่วัดจริงทุกจุด)
 ```bash
 .venv/bin/python pc/phase2_sweep/uno_sweep.py --port /dev/cu.usbmodem1101 \
-    --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 8
+    --circuits h_all bell_ghz qft --n-start 2 --n-max 8
 ```
 
 **Session B (grover) — ประมาณ 43.3 นาที** (6 จุดรัน, n=8 ถูกข้ามเพราะ
@@ -142,7 +147,7 @@ n=8 ที่จะถูกข้ามอัตโนมัติเพรา�
 เพราะ grover ยาวกว่าวงจรอื่นมาก):
 ```bash
 .venv/bin/python pc/phase2_sweep/uno_sweep.py --port /dev/cu.usbmodem1101 \
-    --circuits h_all bell_ghz qft grover qpe steane_encode --n-start 2 --n-max 8
+    --circuits h_all bell_ghz qft grover --n-start 2 --n-max 8
 ```
 
 **Output:** `data/raw/phase2/uno/<circuit>/no_la/raw.csv` (ทุก rep ดิบ, ต่อวงจร),
@@ -160,7 +165,7 @@ n=8 ที่จะถูกข้ามอัตโนมัติเพรา�
 
 ```bash
 .venv/bin/python pc/phase3_offload/sweep.py --board uno --port /dev/cu.usbmodem1101 \
-    --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 8
+    --circuits h_all bell_ghz qft --n-start 2 --n-max 8
 ```
 **ประมาณ 12 นาที** (cheap circuits) หรือ
 ```bash
@@ -190,7 +195,7 @@ implement เฉพาะ Uno เท่านั้นในตอนนี้)
 **Session A (cheap circuits) — ประมาณ 32.3 นาที**
 ```bash
 .venv/bin/python pc/phase2_sweep/esp8266_sweep.py --port /dev/cu.usbserialXXXX \
-    --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 13
+    --circuits h_all bell_ghz qft --n-start 2 --n-max 13
 ```
 
 **Session B (grover) — ประมาณ 4.2 ชั่วโมง — session เดี่ยวยาวสุดในทั้งโครงการ**
@@ -223,7 +228,7 @@ rep เพราะ per-rep คาดไว้ 15.6s (n=8) / 130.5s (n=9) — �
 
 ```bash
 .venv/bin/python pc/phase3_offload/sweep.py --board esp8266 --port /dev/cu.usbserialXXXX \
-    --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 13
+    --circuits h_all bell_ghz qft --n-start 2 --n-max 13
 ```
 **ประมาณ 29 นาที** (cheap) หรือ
 ```bash
@@ -245,7 +250,7 @@ GPIO1/GPIO3 — **ไม่รองรับ `--la`** เช่นกัน
 ทั้งหมดคือเวลา reflash)
 ```bash
 .venv/bin/python pc/phase2_sweep/esp32_sweep.py --port /dev/cu.usbserialXXXX \
-    --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 14
+    --circuits h_all bell_ghz qft --n-start 2 --n-max 14
 ```
 
 **Session B (grover) — ประมาณ 2.0 ชั่วโมง** (9 จุดรัน, 4 ข้ามเพราะ infeasible — จุดหนัก
@@ -260,7 +265,7 @@ GPIO1/GPIO3 — **ไม่รองรับ `--la`** เช่นกัน
 
 ```bash
 .venv/bin/python pc/phase3_offload/sweep.py --board esp32 --port /dev/cu.usbserialXXXX \
-    --circuits h_all bell_ghz qft qpe steane_encode --n-start 2 --n-max 14
+    --circuits h_all bell_ghz qft --n-start 2 --n-max 14
 ```
 **ประมาณ 31 นาที** (cheap) หรือ
 ```bash

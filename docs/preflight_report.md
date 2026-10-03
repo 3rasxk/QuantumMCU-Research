@@ -1,5 +1,7 @@
 # Pre-Hardware Preflight Report
 
+> **Superseded in scope (2026-10-03):** this report is a historical record of the pre-run preflight over six circuits. The experiment now covers `h_all`, `bell_ghz`, `qft`, `grover` only; `qpe`/`steane_encode` rows below no longer apply. Its build matrix is reused by `docs/experiment_plan.md` for the memory-wall predictions.
+
 **Date:** 2026-09-20
 **Commit:** `08d1a9d` — `git describe --tags` → `pre-run-schema-v1`, working tree clean
 **Scope:** full verification of the collection pipeline before the first board is

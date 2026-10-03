@@ -1,5 +1,16 @@
 # QuantumMCU Research — Quantum Lab
 
+> **RESTART 2026-10-03 — scope cut and full re-collection.** The experiment now
+> covers four circuits only (`h_all`, `bell_ghz`, `qft`, `grover`); `qpe` and
+> `steane_encode` were removed from the plan (their code stays in
+> `firmware/common/circuits.hpp`; `pc/run.py` refuses them). All hardware data
+> collected so far is retired to `data/archive/restart_20261003T111500Z/`
+> (MANIFEST.json, sha256-verified) and will be re-collected from scratch.
+> The Logic Analyzer timing reference is being replaced by a second ESP32
+> pulse counter (`docs/counter_design.md`). Numbers below that cite measured
+> data refer to the retired dataset. Plan and predictions:
+> `docs/experiment_plan.md`; `python pc/run.py --plan` prints the time table.
+
 Comparative performance benchmarking of quantum micro-simulators across
 diverse microcontroller architectures for edge computing.
 
@@ -44,10 +55,10 @@ compile-only build matrix**, not a measurement. Phase 3 (offload) has not
 been run on any board. Treat every ESP8266/ESP32/Phase-3 claim as
 UNVERIFIED until real data exists under `data/raw/phase{2,3}/{esp8266,esp32}/`.
 
-Six test circuits, built from three gates only (H, CNOT, Controlled-Phase):
-`h_all`, `bell_ghz`, `qft`, `grover`, `qpe`, `steane_encode` (Steane
-`[[7,1,3]]` code, fixed at exactly 7 physical qubits — the only circuit that
-does not scale with `n`). See `pc/shared/circuit_ids.py` and
+Four test circuits, built from three gates only (H, CNOT, Controlled-Phase):
+`h_all`, `bell_ghz`, `qft`, `grover`. (`qpe` and `steane_encode` were removed
+from the experiment plan on 2026-10-03; their code remains in the firmware
+source only.) See `pc/shared/circuit_ids.py` and
 `pc/shared/timing_model.gate_counts()` for exact definitions.
 
 ---
@@ -203,7 +214,7 @@ earlier session, from these docs, or from your shell history.
 | Flag | Required | Purpose | Default | Applies to |
 |---|---|---|---|---|
 | `--board {uno,esp8266,esp32}` | **yes** | which board | — | all |
-| `--algorithm {h_all,bell_ghz,qft,grover,qpe,steane_encode}` | **yes** | which circuit (one value, not a list) | — | all |
+| `--algorithm {h_all,bell_ghz,qft,grover}` | **yes** | which circuit (one value, not a list) | — | all |
 | `--phase {2,3}` | **yes** | Phase 2 (on-device) or Phase 3 (PC-offload) | — | all |
 | `--port PORT` | **yes** | serial device path, e.g. `/dev/cu.usbmodem1101` — **never auto-guessed** | — | all |
 | `--n-start N_START` | no | sweep starting `n`, passed through unchanged | non-fresh: the delegated script's own default (`2`); `--fresh`: the circuit's own minimum meaningful `n` (see "Fresh runs" below) | all |
@@ -355,7 +366,7 @@ also prints this exact command at the end of every fresh run.
 always 2** — investigated read-only against `firmware/common/circuits.hpp`,
 `analysis/phase1_compare.py`, and `pc/shared/timing_model.py` (full
 citations in `run_log.md`'s 2026-09-21 entry). No circuit crashes the
-firmware at n=1, but four of the six produce a degenerate, not-what-the-
+firmware at n=1, but two of the four produce a degenerate, not-what-the-
 name-implies circuit below a stated minimum:
 
 | Circuit | Min `n` for `--fresh` | Why |
@@ -364,8 +375,6 @@ name-implies circuit below a stated minimum:
 | `qft` | 1 | 1-qubit QFT literally IS a single H gate |
 | `bell_ghz` | 2 | n=1 runs (just H(0)) but produces no entanglement — not a Bell/GHZ state |
 | `grover` | 2 | no control qubit left for the oracle's multi-controlled-Z (stated in both the firmware source and `phase1_compare.py`, independently) |
-| `qpe` | 3 | n=1 has 0 counting qubits (pure no-op); n=2 has 1 (runs, but below the circuit's own stated 2-counting-qubit minimum) |
-| `steane_encode` | 7 | fixed, unchanged (Steane `[[7,1,3]]` code is defined on exactly 7 physical qubits) |
 
 An explicit `--n-start` below this minimum is clamped up with a printed
 notice on a `--fresh` run — never silently sent to the board, never logged
@@ -608,28 +617,15 @@ which is the append-only source of truth these one-liners summarize.
 
 ## Current status
 
-Read directly from `data/raw/phase2/uno/*/no_la/memory_wall.csv` and
-`docs/analysis/uno/*.md` at the time of writing (all of it `no_la` — no
-`--la` run has completed against real hardware yet):
-
-| Board | Phase | Algorithm | `n` collected | Result |
-|---|---|---|---|---|
-| Uno | 2 | `h_all` | 2–7 ok, 8 wall | `build_overflow` at n=8, 109.9% compile RAM |
-| Uno | 2 | `bell_ghz` | 2–7 ok, 8 wall | `build_overflow` at n=8, 110.1% compile RAM |
-| Uno | 2 | `qft` | 2–7 ok, 8 wall | `build_overflow` at n=8, 109.8% compile RAM |
-| Uno | 2 | `qpe` | 2–7 ok, 8 wall | `build_overflow` at n=8, 109.8% compile RAM |
-| Uno | 2 | `steane_encode` | 7 (fixed) ok | no wall — fixed-n circuit never reaches the RAM threshold |
-| Uno | 2 | `grover` | none currently committed | collected once cleanly (n=2–7 ok, n=8 compute-infeasible skip per the 4h ceiling), then an operator-directed forced-n=8 re-run hit a real port collision between two concurrent processes; those leftover files (zero real trial rows survived — only failure records) were archived, not committed, to `data/archive/phase2/uno/grover/20260921T135125Z/` — `grover` needs a clean re-run via `pc/run.py` |
-| Uno | 3 | any | none | not yet run |
-| ESP8266 | 2/3 | any | none | not yet run — UNVERIFIED |
-| ESP32 | 2/3 | any | none | not yet run — UNVERIFIED |
-
-REPS=100 for every Uno point above. Every Uno wall so far has landed at
-`n=8` with RAM evidence in the 109.8–110.1% range regardless of algorithm
-— consistent with the wall being a state-vector memory limit
-(`theoretical_bytes = 2^n * 8`), not a circuit-specific one. Full per-circuit
-analysis, including measured/model timing ratios and open questions, is in
-`docs/analysis/uno/`.
+**Restart 2026-10-03: no hardware data is currently committed under
+`data/raw/phase2/` or `data/raw/phase3/`.** Everything collected before this
+date (Uno h_all/bell_ghz/qft/qpe/steane_encode, partial Uno grover, partial
+ESP32 runs) was moved, not deleted, to
+`data/archive/restart_20261003T111500Z/` with a `MANIFEST.json`. Resume sees
+an empty state for every board / circuit / phase. Phase 1 (PC-only) was
+re-validated for every `n` of the new plan
+(`data/raw/phase1/infidelity_tvd.<timestamp>.csv`). See `docs/experiment_plan.md`
+for the predicted walls and `python pc/run.py --plan` for the time table.
 
 ---
 

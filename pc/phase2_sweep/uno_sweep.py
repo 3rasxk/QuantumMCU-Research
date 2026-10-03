@@ -51,10 +51,9 @@
 #
 # การใช้งาน:
 #   .venv/bin/python pc/phase2_sweep/uno_sweep.py --port /dev/cu.usbmodemXXXX \
-#       --circuits h_all bell_ghz qft grover qpe steane_encode --n-start 2 --n-max 12
+#       --circuits h_all bell_ghz qft grover --n-start 2 --n-max 12
 #
-# steane_encode คงที่ที่ n=7 เสมอ (pc/shared/circuit_ids.n_values_for_sweep จัดการ
-# ให้อัตโนมัติ) — ถ้า n=7 ไม่อยู่ใน [n-start, n-max] ที่ขอ จะข้ามวงจรนี้ไปเฉย ๆ
+# qpe/steane_encode ถูกถอดออกจากแผนการทดลองแล้ว (2026-10-03) — สคริปต์จะปฏิเสธทันที
 #
 # แต่ละ circuit ใน --circuits ตอนนี้เป็น session ของตัวเอง (ไดเรกทอรี/sessions.csv/
 # points.csv/env json แยกกันคนละชุด — ดู pc/shared/paths.py) ไม่ใช่ session เดียวที่
@@ -81,7 +80,7 @@ import serial
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
-from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep  # noqa: E402
+from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep, EXPERIMENT_CIRCUITS, reject_removed_circuits  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
@@ -379,7 +378,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", required=True, help="เช่น /dev/cu.usbmodem1101")
     ap.add_argument("--circuits", nargs="+",
-                     default=["h_all", "bell_ghz", "qft", "grover", "qpe", "steane_encode"])
+                     default=list(EXPERIMENT_CIRCUITS))
     ap.add_argument("--n-start", type=int, default=2)
     ap.add_argument("--n-max", type=int, default=14)
     ap.add_argument("--force-infeasible", action="store_true",
@@ -414,6 +413,7 @@ def main():
                           "sigrok-cli บน PATH พร้อมอุปกรณ์ที่ตรวจเจอ ไม่งั้นจะรันต่อโดยไม่ "
                           "capture (ไม่ใช่ error)")
     args = ap.parse_args()
+    reject_removed_circuits(args.circuits)
 
     # --la ปิด (ค่าเริ่มต้น): la_active คงเป็น False เสมอ ไม่มีการเรียก lac.* แม้แต่ครั้ง
     # เดียวตลอดทั้งการรัน — พฤติกรรมจึงเหมือนก่อนมี flag นี้ทุกประการ (ดู
