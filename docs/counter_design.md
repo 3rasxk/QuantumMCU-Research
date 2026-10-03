@@ -119,7 +119,7 @@ Framing reuses `firmware/common/protocol.hpp`: fixed start marker, fixed layouts
 multi-byte fields big-endian (as the `outcome` field, `protocol.hpp:8`), and
 **CRC-8/SMBUS, poly 0x07, init 0x00** over every preceding byte (`crc8`,
 `protocol.hpp:23-36`, mirrored by `pc/phase3_offload/protocol.py:13`). Frame:
-`[marker][type][len][payload...][crc8]`. 115200 baud is enough (pulse rate is at most
+`[marker][type][len][payload...][crc8]`, marker `0xC7` PC->counter, `0xD7` counter->PC (implemented in `pc/shared/counter_proto.py`, stage S0). 115200 baud is enough (pulse rate is at most
 thousands per second); 921600 if the dashboard-forwarding load grows (UNVERIFIED need).
 
 | Dir | Marker/type | Payload |

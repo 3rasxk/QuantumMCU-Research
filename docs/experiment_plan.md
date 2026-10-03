@@ -121,7 +121,9 @@ n=9 702 s vs 735 s, i.e. within about 5 %). Per-point = 100 reps + overhead.
 `pc/run.py` flags a point **TIME-LIMITED** when its device time exceeds 1 h. That is a
 display threshold only. Nothing is skipped, nothing is capped.
 
-### Time ceiling: OWNER DECISION (not set)
+### Time ceiling: DECIDED 2026-10-03 — no ceiling, run to the memory wall
+
+Owner answer: "hit memory wall". No per-point ceiling is set; every point up to the predicted wall is attempted (Ctrl+C by the operator remains the only stop). The options below are kept for reference only.
 
 The old 4 h ceiling (`timing_model.CEILING_S`) is no longer enforced for Phase 2
 (2026-09-22 decision) and is not changed here. Options for a per-point ceiling:
@@ -136,7 +138,7 @@ Proposal: **4 h**. It keeps one long point per board family, matches the retired
 ceiling, and the n=11+ points (14 h to 95 days) are not realistic over USB (the
 retired ESP32 n=10 run died at 2.9 h). With a ceiling, grover on ESP8266 and ESP32
 ends with `skipped` points, not a memory wall, and the report must say so.
-Decide before collection; `pc/run.py --plan` shows totals with and without the
+`pc/run.py --plan` shows totals with and without the
 flagged points.
 
 ## 5. Run-time plan (generated)
