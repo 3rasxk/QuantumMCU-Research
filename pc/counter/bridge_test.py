@@ -49,8 +49,19 @@ def main():
     except Exception:
         ok = True
     check("unknown URL -> 404", ok)
+    html = urllib.request.urlopen(f"http://127.0.0.1:{hp}/", timeout=2).read().decode()
+    check("GET / serves the dashboard page (read-only: no control endpoints)", "<canvas" in html and "Counter live" in html and "POST" not in html)
+    st = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{hp}/state", timeout=2).read())
+    check("/state carries the live pulse widths list", st["widths_us"] == [] and st["demo"] is False)
     c.close()
     th.join(timeout=8)
+    tp2, hp2 = free_port(), free_port()
+    r2 = {}
+    th2 = threading.Thread(target=lambda: r2.update(bridge.run(tp2, hp2, seconds=2.5, out=lambda *_: None, demo=True)), daemon=True)
+    th2.start(); time.sleep(1.8)
+    st2 = json.loads(urllib.request.urlopen(f"http://127.0.0.1:{hp2}/state", timeout=2).read())
+    check("--demo fills widths_us and flags the data as DEMO", st2["demo"] is True and len(st2["widths_us"]) >= 3)
+    th2.join(timeout=6)
     check("bridge.run returns a final snapshot", result.get("heartbeats") == 3)
     n_fail = R.count(False)
     print(f"\n{len(R)} checks, {n_fail} failed")

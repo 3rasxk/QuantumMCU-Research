@@ -6,10 +6,12 @@
 #   .venv/bin/python pc/counter/bridge.py --tcp-port 5055 --http-port 8080
 import argparse
 import json
+import random
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import statistics
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -17,11 +19,16 @@ from counter import proto as cp  # noqa: E402
 from counter.client import CounterClient, TcpServerTransport  # noqa: E402
 
 
+HTML = Path(__file__).with_name("dashboard.html")
+KEEP_WIDTHS = 200
+
+
 class State:
     def __init__(self):
         self.lock = threading.Lock()
         self.d = {"connected": False, "peer": None, "heartbeats": 0, "last_heartbeat": None, "frames": 0,
-                  "bad_frames": 0, "pulses": 0, "anomalies": [], "started_utc": time.time()}
+                  "bad_frames": 0, "pulses": 0, "anomalies": [], "started_utc": time.time(),
+                  "widths_us": [], "demo": False}
 
     def snapshot(self):
         with self.lock:
@@ -30,27 +37,35 @@ class State:
 
 def make_handler(state):
     class H(BaseHTTPRequestHandler):
+        def _send(self, code, ctype, body):
+            self.send_response(code); self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(body)
+
         def do_GET(self):
-            if self.path.split("?")[0] not in ("/", "/status"):
-                self.send_error(404); return
-            body = json.dumps(state.snapshot(), indent=1).encode()
-            self.send_response(200); self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+            path = self.path.split("?")[0]
+            if path in ("/", "/index.html"):
+                self._send(200, "text/html; charset=utf-8", HTML.read_bytes())
+            elif path in ("/state", "/status"):
+                self._send(200, "application/json", json.dumps(state.snapshot()).encode())
+            else:
+                self.send_error(404)
 
         def log_message(self, *a):
             pass
     return H
 
 
-def run(tcp_port, http_port, seconds=None, out=print):
+def run(tcp_port, http_port, seconds=None, out=print, demo=False):
     state = State()
     tr = TcpServerTransport(tcp_port)
     client = CounterClient(tr)
-    httpd = HTTPServer(("127.0.0.1", http_port), make_handler(state))
+    httpd = ThreadingHTTPServer(("127.0.0.1", http_port), make_handler(state))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
-    out(f"listening for the counter on TCP :{tcp_port}; status JSON at http://localhost:{http_port}/status")
+    out(f"listening for the counter on TCP :{tcp_port}; dashboard at http://localhost:{http_port}/ (JSON at /state)")
     t0 = time.monotonic()
     last_poll = 0
+    last_demo = 0
     try:
         while seconds is None or time.monotonic() - t0 < seconds:
             for ftype, f in client.drain():
@@ -64,8 +79,15 @@ def run(tcp_port, http_port, seconds=None, out=print):
                         out(f"heartbeat #{state.d['heartbeats']}: counter clock {f[1] / 1e6:.3f} s, state {f[2]}, heap {f[6]}")
                     elif ftype == cp.T_PULSE:
                         state.d["pulses"] += 1
+                        state.d["widths_us"] = (state.d["widths_us"] + [f[3] / 1000.0])[-KEEP_WIDTHS:]
                     elif ftype == cp.T_ANOMALY:
                         state.d["anomalies"].append({"seq": f[0], "code": f[1]})
+            if demo and time.monotonic() - last_demo > 0.25:        # synthetic pulses, clearly flagged in the page
+                last_demo = time.monotonic()
+                with state.lock:
+                    state.d["demo"] = True
+                    state.d["pulses"] += 1
+                    state.d["widths_us"] = (state.d["widths_us"] + [1000.0 + 25 * random.gauss(0, 1) + (400 if state.d["pulses"] % 40 == 0 else 0)])[-KEEP_WIDTHS:]
             with state.lock:
                 state.d["connected"] = tr.connected
                 state.d["peer"] = None if tr.peer is None else f"{tr.peer[0]}:{tr.peer[1]}"
@@ -88,7 +110,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--tcp-port", type=int, default=5055)
     ap.add_argument("--http-port", type=int, default=8080)
+    ap.add_argument("--demo", action="store_true", help="add synthetic pulses so the page shows a live chart without wiring (flagged DEMO)")
     ap.add_argument("--seconds", type=float, default=None, help="stop after this long (default: until Ctrl+C)")
     a = ap.parse_args()
-    snap = run(a.tcp_port, a.http_port, a.seconds)
+    snap = run(a.tcp_port, a.http_port, a.seconds, demo=a.demo)
     print(json.dumps({k: snap[k] for k in ("connected", "heartbeats", "frames", "bad_frames", "pulses")}))

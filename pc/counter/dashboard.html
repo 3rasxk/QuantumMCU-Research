@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Counter live</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1b1f24;--mut:#667085;--ok:#12805c;--bad:#c0392b;--warn:#b7791f;--line:#2563eb;--bd:#e4e7ec}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1318;--card:#171c23;--ink:#e8ecf1;--mut:#98a2b3;--ok:#34d399;--bad:#f87171;--warn:#fbbf24;--line:#60a5fa;--bd:#2a313b}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,"Segoe UI",Thonburi,sans-serif}
+header{display:flex;gap:12px;align-items:center;padding:14px 16px;flex-wrap:wrap}
+h1{font-size:18px;margin:0;font-weight:650}.pill{padding:3px 10px;border-radius:99px;font-size:13px;border:1px solid var(--bd);background:var(--card)}
+.pill.ok{color:var(--ok)}.pill.bad{color:var(--bad)}.pill.warn{color:var(--warn)}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;padding:0 16px 16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px 14px}
+.card h2{margin:0 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);font-weight:600}
+.big{font-size:26px;font-weight:650}.sub{color:var(--mut);font-size:13px}
+.wide{grid-column:1/-1}canvas{width:100%;height:220px;display:block}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:3px 6px;text-align:left;border-bottom:1px solid var(--bd)}
+.demo{background:#fff3cd;color:#664d03;padding:6px 16px;font-size:13px}
+</style></head><body>
+<div id="demo" class="demo" hidden>DEMO: พัลส์ที่เห็นเป็นข้อมูลจำลองจาก bridge.py --demo ไม่ใช่ค่าจาก counter จริง</div>
+<header><h1>Counter live</h1><span id="link" class="pill">…</span><span id="state" class="pill">…</span><span id="hb" class="pill">…</span>
+<span class="sub">อ่านอย่างเดียว: หน้านี้สั่ง counter ไม่ได้</span></header>
+<main>
+<div class="card"><h2>นาฬิกา counter</h2><div class="big" id="clock">–</div><div class="sub" id="clock2">–</div></div>
+<div class="card"><h2>พัลส์ล่าสุด</h2><div class="big" id="last">–</div><div class="sub" id="lastsub">–</div></div>
+<div class="card"><h2>สถิติ (200 พัลส์ล่าสุด)</h2><div class="big" id="med">–</div><div class="sub" id="iqr">–</div></div>
+<div class="card"><h2>สุขภาพ</h2><div id="health" class="sub">–</div></div>
+<div class="card wide"><h2>ความกว้างพัลส์ (µs) แบบ real-time</h2><canvas id="cv" width="900" height="220"></canvas></div>
+<div class="card wide"><h2>Anomaly ล่าสุด</h2><table id="an"><tr><td class="sub">ยังไม่มี</td></tr></table></div>
+</main>
+<script>
+const NAMES={1:"missing pulse",2:"extra pulse",3:"glitch",4:"still high at end",5:"count mismatch",6:"sequence gap",7:"never started / start timeout",8:"clock fault",9:"ring overflow"};
+const STATE=["idle","armed","self-test"];
+const $=id=>document.getElementById(id);
+function pill(el,t,c){el.textContent=t;el.className="pill "+(c||"")}
+function fmt(us){return us>=1e6?(us/1e6).toFixed(3)+" s":us>=1e3?(us/1e3).toFixed(3)+" ms":us.toFixed(1)+" µs"}
+function draw(w){const c=$("cv"),g=c.getContext("2d"),W=c.width,H=c.height;g.clearRect(0,0,W,H);
+ const css=getComputedStyle(document.documentElement);g.strokeStyle=css.getPropertyValue("--bd");g.fillStyle=css.getPropertyValue("--mut");g.font="12px sans-serif";
+ for(let i=0;i<=4;i++){const y=10+(H-30)*i/4;g.beginPath();g.moveTo(50,y);g.lineTo(W-6,y);g.stroke()}
+ if(!w.length){g.fillText("ยังไม่มีพัลส์",60,H/2);return}
+ let lo=Math.min(...w),hi=Math.max(...w);if(hi==lo){hi=lo+1}const pad=(hi-lo)*0.1;lo-=pad;hi+=pad;
+ for(let i=0;i<=4;i++){const v=hi-(hi-lo)*i/4;g.fillText(v.toPrecision(5),2,14+(H-30)*i/4)}
+ g.strokeStyle=css.getPropertyValue("--line");g.lineWidth=1.6;g.beginPath();
+ w.forEach((v,i)=>{const x=50+(W-56)*i/Math.max(1,w.length-1),y=10+(H-30)*(1-(v-lo)/(hi-lo));i?g.lineTo(x,y):g.moveTo(x,y)});g.stroke()}
+async function tick(){
+ try{const r=await fetch("/state",{cache:"no-store"});const s=await r.json();
+  pill($("link"),s.connected?"WiFi เชื่อมอยู่ ("+(s.peer||"")+")":"counter ไม่ได้เชื่อม",s.connected?"ok":"bad");
+  const h=s.last_heartbeat;$("demo").hidden=!s.demo;
+  if(h){pill($("state"),"สถานะ: "+(STATE[h.state]||h.state),h.state?"warn":"");
+   const age=(Date.now()/1000-h.pc_time_utc);pill($("hb"),"heartbeat "+age.toFixed(1)+" s ก่อน",age<3?"ok":"bad");
+   $("clock").textContent=(h.counter_us/1e6).toFixed(1)+" s";$("clock2").textContent="heartbeat #"+s.heartbeats+" · heap "+h.free_heap+" B";
+   $("health").innerHTML="ring "+h.ring_depth+" · dropped "+h.dropped+" · เฟรมเสีย "+s.bad_frames+"<br>เฟรมทั้งหมด "+s.frames+" · พัลส์ "+s.pulses+"<br>proto v"+h.proto}
+  else{pill($("state"),"ยังไม่มี heartbeat","warn");pill($("hb"),"–","")}
+  const w=s.widths_us||[];draw(w);
+  if(w.length){const a=[...w].sort((x,y)=>x-y),q=p=>a[Math.min(a.length-1,Math.floor(p*(a.length-1)))];
+   $("last").textContent=fmt(w[w.length-1]);$("lastsub").textContent="พัลส์ที่ "+s.pulses;
+   $("med").textContent=fmt(q(.5));$("iqr").textContent="IQR "+fmt(q(.25))+" – "+fmt(q(.75))+" · min "+fmt(a[0])+" · max "+fmt(a[a.length-1])}
+  const an=s.anomalies.slice(-8).reverse();$("an").innerHTML=an.length?an.map(x=>"<tr><td>seq "+x.seq+"</td><td>code "+x.code+"</td><td>"+(NAMES[x.code]||"?")+"</td></tr>").join(""):'<tr><td class="sub">ยังไม่มี</td></tr>';
+ }catch(e){pill($("link"),"อ่านเซิร์ฟเวอร์ไม่ได้","bad")}
+}
+tick();setInterval(tick,500);
+</script></body></html>
