@@ -1,8 +1,0 @@
-schema_version,session_id,phase,board,circuit,n,baud,attempt_index,start_utc,end_utc,wall_s,build_compile_s,upload_s,boot_wait_s,device_exec_s,pc_sim_s_total,pc_sim_s_median,serial_transfer_s_total,avg_round_trip_latency_s,crc_error_count,bytes_transferred,retry_count,timeout_hit,failure_type,failure_message,status
-2,20260924T151341-324779c0,2,uno,grover,2,,0,2026-09-24T15:13:43.463292+00:00,2026-09-24T15:13:54.420620+00:00,10.951,3.791,3.873,1.0,2.287,,,,,,,0,False,none,,ok
-2,20260924T151341-324779c0,2,uno,grover,3,,0,2026-09-24T15:13:54.421556+00:00,2026-09-24T15:14:06.782478+00:00,12.355,3.414,3.804,1.0,4.137,,,,,,,0,False,none,,ok
-2,20260924T151341-324779c0,2,uno,grover,4,,0,2026-09-24T15:14:06.784321+00:00,2026-09-24T15:14:28.503657+00:00,21.718,3.074,3.575,1.0,14.068,,,,,,,0,False,none,,ok
-2,20260924T151341-324779c0,2,uno,grover,5,,0,2026-09-24T15:14:28.507872+00:00,2026-09-24T15:15:42.209224+00:00,73.694,3.541,3.859,1.0,65.293,,,,,,,0,False,none,,ok
-2,20260924T151341-324779c0,2,uno,grover,6,,0,2026-09-24T15:15:42.226335+00:00,2026-09-24T15:23:09.381400+00:00,447.138,5.761,4.11,1.0,436.266,,,,,,,0,False,none,,ok
-2,20260924T151341-324779c0,2,uno,grover,7,,0,2026-09-24T15:23:09.398699+00:00,2026-09-24T16:13:18.400648+00:00,3009.006,4.75,4.02,1.0,2999.237,,,,,,,0,False,none,,ok
-2,20260924T151341-324779c0,2,uno,grover,8,,0,2026-09-24T16:13:18.424119+00:00,2026-09-24T16:13:26.649149+00:00,8.22,4.378,3.843,,,,,,,,,0,False,build,"compile_ram_pct=110.0% > 100%, not executed",failed
