@@ -14,9 +14,7 @@ main{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1
 .big{font-size:26px;font-weight:650}.sub{color:var(--mut);font-size:13px}
 .wide{grid-column:1/-1}canvas{width:100%;height:220px;display:block}
 table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:3px 6px;text-align:left;border-bottom:1px solid var(--bd)}
-.demo{background:#fff3cd;color:#664d03;padding:6px 16px;font-size:13px}
 </style></head><body>
-<div id="demo" class="demo" hidden>DEMO: พัลส์ที่เห็นเป็นข้อมูลจำลองจาก bridge.py --demo ไม่ใช่ค่าจาก counter จริง</div>
 <header><h1>Counter live</h1><span id="link" class="pill">…</span><span id="state" class="pill">…</span><span id="hb" class="pill">…</span>
 <span class="sub">อ่านอย่างเดียว: หน้านี้สั่ง counter ไม่ได้</span></header>
 <main>
@@ -44,7 +42,7 @@ function draw(w){const c=$("cv"),g=c.getContext("2d"),W=c.width,H=c.height;g.cle
 async function tick(){
  try{const r=await fetch("/state",{cache:"no-store"});const s=await r.json();
   pill($("link"),s.connected?"WiFi เชื่อมอยู่ ("+(s.peer||"")+")":"counter ไม่ได้เชื่อม",s.connected?"ok":"bad");
-  const h=s.last_heartbeat;$("demo").hidden=!s.demo;
+  const h=s.last_heartbeat;
   if(h){pill($("state"),"สถานะ: "+(STATE[h.state]||h.state),h.state?"warn":"");
    const age=(Date.now()/1000-h.pc_time_utc);pill($("hb"),"heartbeat "+age.toFixed(1)+" s ก่อน",age<3?"ok":"bad");
    $("clock").textContent=(h.counter_us/1e6).toFixed(1)+" s";$("clock2").textContent="heartbeat #"+s.heartbeats+" · heap "+h.free_heap+" B";

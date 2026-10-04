@@ -6,7 +6,6 @@
 #   .venv/bin/python pc/counter/bridge.py --tcp-port 5055 --http-port 8080
 import argparse
 import json
-import random
 import sys
 import threading
 import time
@@ -28,7 +27,7 @@ class State:
         self.lock = threading.Lock()
         self.d = {"connected": False, "peer": None, "heartbeats": 0, "last_heartbeat": None, "frames": 0,
                   "bad_frames": 0, "pulses": 0, "anomalies": [], "started_utc": time.time(),
-                  "widths_us": [], "demo": False}
+                  "widths_us": []}
 
     def snapshot(self):
         with self.lock:
@@ -56,7 +55,7 @@ def make_handler(state):
     return H
 
 
-def run(tcp_port, http_port, seconds=None, out=print, demo=False):
+def run(tcp_port, http_port, seconds=None, out=print):
     state = State()
     tr = TcpServerTransport(tcp_port)
     client = CounterClient(tr)
@@ -65,7 +64,6 @@ def run(tcp_port, http_port, seconds=None, out=print, demo=False):
     out(f"listening for the counter on TCP :{tcp_port}; dashboard at http://localhost:{http_port}/ (JSON at /state)")
     t0 = time.monotonic()
     last_poll = 0
-    last_demo = 0
     try:
         while seconds is None or time.monotonic() - t0 < seconds:
             for ftype, f in client.drain():
@@ -82,12 +80,6 @@ def run(tcp_port, http_port, seconds=None, out=print, demo=False):
                         state.d["widths_us"] = (state.d["widths_us"] + [f[3] / 1000.0])[-KEEP_WIDTHS:]
                     elif ftype == cp.T_ANOMALY:
                         state.d["anomalies"].append({"seq": f[0], "code": f[1]})
-            if demo and time.monotonic() - last_demo > 0.25:        # synthetic pulses, clearly flagged in the page
-                last_demo = time.monotonic()
-                with state.lock:
-                    state.d["demo"] = True
-                    state.d["pulses"] += 1
-                    state.d["widths_us"] = (state.d["widths_us"] + [1000.0 + 25 * random.gauss(0, 1) + (400 if state.d["pulses"] % 40 == 0 else 0)])[-KEEP_WIDTHS:]
             with state.lock:
                 state.d["connected"] = tr.connected
                 state.d["peer"] = None if tr.peer is None else f"{tr.peer[0]}:{tr.peer[1]}"
@@ -110,8 +102,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--tcp-port", type=int, default=5055)
     ap.add_argument("--http-port", type=int, default=8080)
-    ap.add_argument("--demo", action="store_true", help="add synthetic pulses so the page shows a live chart without wiring (flagged DEMO)")
     ap.add_argument("--seconds", type=float, default=None, help="stop after this long (default: until Ctrl+C)")
     a = ap.parse_args()
-    snap = run(a.tcp_port, a.http_port, a.seconds, demo=a.demo)
+    snap = run(a.tcp_port, a.http_port, a.seconds)
     print(json.dumps({k: snap[k] for k in ("connected", "heartbeats", "frames", "bad_frames", "pulses")}))
