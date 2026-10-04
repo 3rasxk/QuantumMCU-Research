@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared import counter_proto as cp  # noqa: E402
-from shared.counter_sim import CounterSim  # noqa: E402
+from shared.counter_sim import CounterSim, SeqTracker  # noqa: E402
 
 R = []
 
@@ -96,10 +96,53 @@ def main():
     for _ in range(4):
         sim.pulse(90_000)
     rp = sim.handle(cp.encode(cp.T_REPLAY, 7, 2))
-    check("REPLAY resends from seq 2", [cp.decode(x)[1][0] for x in rp] == [2, 3])
+    check("REPLAY resends from seq 2", [cp.decode(x)[1][0] for x in rp if cp.decode(x)[0] == cp.T_PULSE] == [2, 3])
     sim.handle(cp.encode(cp.T_ACK, 7, 2))
     check("ACK frees the ring up to seq 2", [cp.decode(x)[1][0] for x in sim.ring] == [3])
     check("heartbeat decodes", cp.decode(sim.heartbeat())[0] == cp.T_HEARTBEAT)
+
+    # code 4: still high at end / stuck high
+    sim = CounterSim(); arm(sim, reps=2)
+    sim.pulse(90_000); sim.pulse(90_000); sim.rising_edge()
+    out = sim.handle(cp.encode(cp.T_END, 7))
+    check("line still high at END -> code 4", cp.A_STUCK_HIGH in codes(out))
+    sim = CounterSim(); arm(sim, reps=2)
+    sim.pulse(90_000); sim.rising_edge()
+    check("not stuck before max_width", sim.tick(100 * 1_000_000) == [])
+    fr = sim.tick(131 * 1_000_000)
+    check("high longer than max_width_s (130 s) -> code 4 from the watchdog", codes(fr) == [cp.A_STUCK_HIGH])
+    sim = CounterSim(); arm(sim, reps=1); sim.rising_edge(); sim.pulse(90_000)
+    check("a falling edge clears the level: no code 4", cp.A_STUCK_HIGH not in codes(sim.handle(cp.encode(cp.T_END, 7))))
+
+    # code 6: sequence gap seen by the PC, REPLAY, counter records the code
+    sim = CounterSim(); arm(sim, reps=4)
+    frames = [sim.pulse(90_000)[0] for _ in range(4)]
+    trk = SeqTracker(7)
+    reqs = []
+    for fr in (frames[0], frames[1], frames[3]):   # seq 2 lost on the link
+        reqs += trk.feed(fr)
+    check("PC detects the jump and asks for a replay from seq 2",
+          len(reqs) == 1 and cp.decode(reqs[0]) == (cp.T_REPLAY, (7, 2)) and trk.gaps == 1)
+    out = sim.handle(reqs[0])
+    check("counter raises code 6 and resends seq 2 and 3",
+          cp.A_SEQ_GAP in codes(out) and [cp.decode(x)[1][0] for x in out if cp.decode(x)[0] == cp.T_PULSE] == [2, 3])
+    clean = SeqTracker(7)
+    check("clean stream: no gap", not any(clean.feed(x) for x in frames))
+    t = SeqTracker(7); t.expected = 65535
+    check("sequence wraps at 16 bits without a false gap",
+          t.feed(cp.encode(cp.T_PULSE, 65535, 0, 1000, 0)) == [] and t.feed(cp.encode(cp.T_PULSE, 0, 0, 1000, 0)) == [])
+
+    # code 8: clock fault
+    sim = CounterSim(); arm(sim)
+    out = sim.handle(cp.encode(cp.T_SELFTEST, 2))
+    check("self-test with a good clock: result frame, no code 8",
+          cp.decode(out[0])[1] == (2, 10**9, 10**9) and codes(out) == [])
+    sim.clock_ppm_error = 20.0
+    check("20 ppm is inside the 50 ppm tolerance", cp.A_CLOCK_FAULT not in codes(sim.handle(cp.encode(cp.T_SELFTEST, 2))))
+    sim.clock_ppm_error = 200.0
+    out = sim.handle(cp.encode(cp.T_SELFTEST, 2))
+    check("200 ppm error -> code 8 with measured != expected",
+          cp.A_CLOCK_FAULT in codes(out) and cp.decode(out[0])[1][2] == 10**9 + 200_000)
 
     n_fail = R.count(False)
     print(f"\n{len(R)} checks, {n_fail} failed")

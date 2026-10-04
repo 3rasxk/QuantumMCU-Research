@@ -20,6 +20,10 @@ class CounterSim:
         self.dropped = 0
         self.t_us = 0
         self.pcnt = 0
+        self.high = False        # input level; True between a rising edge and its falling edge
+        self.rise_t_us = 0
+        self.clock_ppm_error = 0.0   # simulated counter oscillator error
+        self.clock_tol_ppm = 50.0
 
     # --- PC -> counter ---
     def handle(self, frame):
@@ -29,11 +33,16 @@ class CounterSim:
             self.session, _board, _circ, _n, self.reps, self.min_width_ns, self.max_width_s = f
             self.armed, self.seq, self.ring, self.widths = True, 0, [], []
             self.mask = self.dropped = self.pcnt = self.t_us = 0
+            self.high = False
             out.append(cp.encode(cp.T_ARM_ACK, self.session, 1))
         elif ftype == cp.T_ACK:
             self.ring = [fr for fr in self.ring if cp.decode(fr)[1][0] > f[1]]
         elif ftype == cp.T_REPLAY:
+            # the PC saw a sequence jump (code 6): record it and resend what is still in the ring
+            out.append(self._flag(cp.A_SEQ_GAP, f[1]))
             out += [fr for fr in self.ring if cp.decode(fr)[1][0] >= f[1]]
+        elif ftype == cp.T_SELFTEST:
+            out += self.selftest(f[0])
         elif ftype == cp.T_END:
             out += self._end()
         return out
@@ -51,6 +60,7 @@ class CounterSim:
         seq = self.seq
         self.seq += 1
         self.pcnt += 1
+        self.high = False
         self.t_us += gap_us
         flags = 0
         if width_ns < self.min_width_ns:
@@ -66,8 +76,35 @@ class CounterSim:
         self.t_us += width_ns // 1000
         return [frame] + out
 
+    def rising_edge(self):
+        """Line goes high without (yet) a falling edge."""
+        self.high = True
+        self.rise_t_us = self.t_us
+
+    def tick(self, now_us):
+        """Watchdog: line still high longer than max_width_s -> code 4."""
+        if self.armed and self.high and self.max_width_s and now_us - self.rise_t_us > self.max_width_s * 1_000_000:
+            self.high = False
+            return [self._flag(cp.A_STUCK_HIGH, len(self.widths), 1)]
+        return []
+
+    SELFTEST_EXPECTED_NS = {1: 1_000_000, 2: 1_000_000_000}
+
+    def selftest(self, pattern):
+        """Self-loopback: the same oscillator generates and measures, so only a
+        modelled `clock_ppm_error` (e.g. a fault injected for the test) can show up."""
+        exp = self.SELFTEST_EXPECTED_NS.get(pattern, 1_000_000)
+        meas = int(round(exp * (1 + self.clock_ppm_error * 1e-6)))
+        out = [cp.encode(cp.T_SELFTEST_RESULT, pattern, exp, meas)]
+        if abs(meas - exp) > exp * self.clock_tol_ppm * 1e-6:
+            out.append(self._flag(cp.A_CLOCK_FAULT, 0, abs(meas - exp)))
+        return out
+
     def _end(self):
         out = []
+        if self.high:
+            out.append(self._flag(cp.A_STUCK_HIGH, len(self.widths), 0))
+            self.high = False
         n = len(self.widths)
         if n == 0:
             out.append(self._flag(cp.A_NEVER_STARTED, 0))
@@ -86,3 +123,26 @@ class CounterSim:
     def heartbeat(self, uptime_s=1):
         return cp.encode(cp.T_HEARTBEAT, uptime_s, 1 if self.armed else 0, len(self.ring),
                          self.dropped, 0, 200000, (self.seq - 1) & 0xFFFF)
+
+
+class SeqTracker:
+    """PC-side check: detects a jump in PULSE sequence numbers and builds the REPLAY
+    request (design code 6). Wraps at 16 bits like the wire field."""
+
+    def __init__(self, session):
+        self.session = session
+        self.expected = 0
+        self.gaps = 0
+
+    def feed(self, frame):
+        ftype, f = cp.decode(frame)
+        if ftype != cp.T_PULSE:
+            return []
+        seq = f[0]
+        if seq != self.expected & 0xFFFF:
+            self.gaps += 1
+            req = cp.encode(cp.T_REPLAY, self.session, self.expected & 0xFFFF)
+            self.expected = (seq + 1)
+            return [req]
+        self.expected += 1
+        return []

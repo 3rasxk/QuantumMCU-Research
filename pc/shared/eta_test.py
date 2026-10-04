@@ -303,7 +303,27 @@ def test_real_run_prints_live_eta_with_mocked_subprocess():
               etas[-1] if etas else "")
 
 
+def test_tiers_and_watchdog():
+    check("duration tiers", [eta.duration_tier(x) for x in (3600, 7 * 3600, 25 * 3600, 73 * 3600)] == ["", ">6h", ">24h", ">72h"])
+    p = eta.estimate_point("esp8266", "grover", 8, 2)
+    check("esp8266 grover n=8: per rep 15.6 s > 6.0 s -> watchdog risk", p.wdt_risk and p.per_rep_s > 6.0, f"{p.per_rep_s:.1f}")
+    check("esp32 grover n=9: 7.0 s > 5.0 s -> watchdog risk", eta.estimate_point("esp32", "grover", 9, 2).wdt_risk)
+    check("esp32 grover n=8: 0.83 s -> no watchdog risk", not eta.estimate_point("esp32", "grover", 8, 2).wdt_risk)
+    check("uno has no WDT threshold", not eta.estimate_point("uno", "grover", 7, 2).wdt_risk)
+    check("phase 3 and wall points are never watchdog risk",
+          not eta.estimate_point("esp8266", "grover", 9, 3).wdt_risk and not eta.estimate_point("esp8266", "grover", 13, 2).wdt_risk)
+    text = eta.format_table("esp8266", "grover", 2, eta.plan_points("esp8266", "grover", 2),
+                            datetime(2026, 10, 3, 9, 0, tzinfo=BKK))
+    check("table shows >72h and WATCHDOG RISK notes and a per-rep column", ">72h" in text and "WATCHDOG RISK" in text and "per-rep" in text)
+    buf = []
+    eta.plan_report(brief=True, out=buf.append)
+    t = "\n".join(buf)
+    check("plan report lists tier counts and grover time to wall",
+          ">72h 2" in t and "grover, time to complete up to the predicted wall" in t and "n=2..13" in t)
+
+
 def main():
+    test_tiers_and_watchdog()
     test_plan_scope_and_ranges()
     test_estimates_and_labels()
     test_plan_points_filters()

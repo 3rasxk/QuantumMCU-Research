@@ -54,6 +54,8 @@ class PointEst:
     label: str  # MEASURED | ESTIMATE
     wall: bool = False
     time_limited: bool = False
+    per_rep_s: float = 0.0
+    wdt_risk: bool = False
 
     @property
     def overhead_s(self):
@@ -95,9 +97,15 @@ def estimate_point(board, circuit, n, phase, medians=None):
                         else tm.DEVICE_OVERHEAD_S_ESTIMATE[board])
             device_s = tm.expected_point_time_s(board, circuit, n) + overhead
 
+    per_rep = 0.0
+    wdt = False
+    if phase == 2 and not wall:
+        per_rep = tm.expected_exec_time_us(board, circuit, n) / 1e6
+        thr = tm.WDT_PER_REP_THRESHOLD_S.get(board)
+        wdt = thr is not None and per_rep > thr
     return PointEst(board, circuit, phase, n, device_s, compile_s, upload_s,
                     HANG_BUDGET_S if wall else 0.0, label, wall,
-                    time_limited=device_s > plan.TIME_FLAG_S)
+                    time_limited=device_s > plan.TIME_FLAG_S, per_rep_s=per_rep, wdt_risk=wdt)
 
 
 def plan_points(board, circuit, phase, n_start=None, n_max=None, completed=(), medians=None):
@@ -155,6 +163,16 @@ def totals(points):
 
 # --------------------------- formatting ---------------------------
 
+DURATION_TIERS_S = ((72 * 3600, ">72h"), (24 * 3600, ">24h"), (6 * 3600, ">6h"))
+
+
+def duration_tier(device_s):
+    for limit, tag in DURATION_TIERS_S:
+        if device_s > limit:
+            return tag
+    return ""
+
+
 def _d(s):
     return tm.human_duration(s)
 
@@ -173,7 +191,7 @@ def format_table(board, circuit, phase, points, start, title_extra=""):
         lines.append("Phase 3: device time = PC-side Aer simulation of 100 requests; "
                      "no board memory wall (state lives on the PC)")
     lines.append(f"start {start.astimezone(BANGKOK).strftime('%a %d %b %H:%M')} (Asia/Bangkok)")
-    lines.append(f"{'n':>3s} {'device':>9s} {'compile':>9s} {'upload':>9s} {'hang':>7s} "
+    lines.append(f"{'n':>3s} {'per-rep':>9s} {'device':>9s} {'compile':>9s} {'upload':>9s} {'hang':>7s} "
                  f"{'total':>9s} {'cumul':>9s} {'finish':>14s}  {'src':8s} note")
     for r in table_rows(points, start):
         p = r["p"]
@@ -182,7 +200,12 @@ def format_table(board, circuit, phase, points, start, title_extra=""):
             note.append("WALL (predicted)")
         if p.time_limited:
             note.append(f"TIME-LIMITED (device > {_d(plan.TIME_FLAG_S)})")
-        lines.append(f"{p.n:3d} {_d(p.device_s):>9s} {_d(p.compile_s):>9s} {_d(p.upload_s):>9s} "
+        tier = duration_tier(p.device_s)
+        if tier:
+            note.append(tier)
+        if p.wdt_risk:
+            note.append(f"WATCHDOG RISK (per rep > {tm.WDT_PER_REP_THRESHOLD_S[p.board]:.1f}s, UNVERIFIED threshold)")
+        lines.append(f"{p.n:3d} {(_d(p.per_rep_s) if p.per_rep_s else '-'):>9s} {_d(p.device_s):>9s} {_d(p.compile_s):>9s} {_d(p.upload_s):>9s} "
                      f"{_d(p.hang_s) if p.hang_s else '-':>7s} {_d(p.total_s):>9s} "
                      f"{_d(r['cum_s']):>9s} {r['finish']:>14s}  {p.label:8s} {'; '.join(note)}")
     t = totals(points)
@@ -239,6 +262,24 @@ def plan_report(boards=None, circuits=None, phases=None, start=None, brief=False
             d["excl_s"] += t["excl_limited_s"]
             d["points"] += t["points"]
             d["n_limited"] += t["n_limited"]
+    out("")
+    out("points above 6 h / 24 h / 72 h device time, and watchdog-risk points (per rep above the board's WDT threshold):")
+    for b in plan.BOARDS:
+        for ph in (2, 3):
+            pts = [p for (bb, c, pp, ps_, t) in summary if bb == b and pp == ph for p in ps_]
+            n6 = sum(1 for p in pts if p.device_s > 6 * 3600)
+            n24 = sum(1 for p in pts if p.device_s > 24 * 3600)
+            n72 = sum(1 for p in pts if p.device_s > 72 * 3600)
+            nw = sum(1 for p in pts if p.wdt_risk)
+            out(f"  {b:8s} phase {ph}: >6h {n6}, >24h {n24}, >72h {n72}, watchdog-risk {nw}")
+    out("")
+    out("grover, time to complete up to the predicted wall (sum of all its points):")
+    for b in plan.BOARDS:
+        for ph in (2, 3):
+            for bb, c, pp, ps_, t in summary:
+                if bb == b and pp == ph and c == "grover":
+                    last = ps_[-1].n if ps_ else 0
+                    out(f"  {b:8s} phase {ph}: n=2..{last}: {_d(t['total_s'])}")
     out("")
     out("per-board totals (all points | excluding TIME-LIMITED points):")
     for b, d in per_board.items():
