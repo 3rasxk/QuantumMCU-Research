@@ -2,19 +2,19 @@
 
 > **Restart 2026-10-03:** scope is `h_all`, `bell_ghz`, `qft`, `grover` only
 > (`qpe`/`steane_encode` removed from the plan; `pc/run.py` refuses them) and all
-> earlier hardware data is retired to `data/archive/restart_20261003T111500Z/`.
-> Measured figures in this file come from that retired dataset; rows for removed
-> circuits were deleted. Current plan and predictions: `docs/experiment_plan.md`.
+> earlier hardware data was deleted on 2026-10-04 (recoverable from git history, commit
+> `af40643`); this file keeps no measured values from it, only estimates and method.
+> Current plan and predictions: `docs/experiment_plan.md`.
 
-The only board with real hardware data in this project, and the only one
-`--la` is implemented for. `GPIO_TIMING_PIN = D7` (`firmware/uno/src/main.cpp:27`),
+The only board `--la` is implemented for today (to be replaced by the counter, see
+`docs/system_design.md`). `GPIO_TIMING_PIN = D7` (`firmware/uno/src/main.cpp:27`),
 logic 5V, UART0 on D0/D1 (never connect a Logic Analyzer there).
 
 **no_la vs with_la (2026-09-22):** every path below has an implicit `no_la/`
 or `with_la/` bucket (`pc/shared/paths.py`) — `no_la/` unless you pass `--la`
 *and* sigrok-cli actually finds a device (a `--la` run with no device found
 still lands in `no_la/`, since no capture was attempted). The two buckets are
-never mixed in analysis. All real data collected so far is `no_la/`; see
+never mixed in analysis. No data exists yet; see
 `run_checklist.md`'s "Logic Analyzer procedure" for `--la` itself.
 
 ```bash
@@ -23,9 +23,8 @@ never mixed in analysis. All real data collected so far is `no_la/`; see
 ```
 
 `pc/run.py`'s own default `--n-max` for this board/phase is **14**
-(`pc/phase2_sweep/uno_sweep.py`'s own argparse default, line 326). Every
-circuit's real wall so far has landed at `n=8`, so a run with the default
-`--n-max` climbs past the wall harmlessly (the wall stops the circuit
+(`pc/phase2_sweep/uno_sweep.py`'s own argparse default, line 326). The wall is predicted at `n=8` for every circuit, so a run with the default
+`--n-max` should climb past it harmlessly (the wall stops the circuit
 before `n=14` is ever reached) — pass `--n-max 8` yourself if you want a
 tighter, faster command for a circuit you already expect to wall at 8.
 
@@ -47,35 +46,19 @@ omitted, exactly as before). The Uno's own wall is structural
 no difference to whether or where the wall lands — this only changes how
 low a fresh sweep starts, not the ceiling.
 
-| Algorithm | `n` range (`--n-start 2`, default `--n-max`) | Expected points | ESTIMATE (device time only, `timing_model.py`, naive) | MEASURED device time: n=2..7 ok points / the n=8 wall attempt itself | Wall |
+| Algorithm | `n` range planned | Points | ESTIMATE device time | ESTIMATE total (incl. compile/upload/hang) | Wall (prediction, UNVERIFIED) |
 |---|---|---|---|---|---|
-| `h_all` | 2–8 (wall), 9–14 never reached | 7 real + up to 6 skipped-by-wall | 20.8 min | **15.98s / 90.74s** (`data/raw/phase2/uno/h_all/no_la/points.csv`) | `build_overflow` at n=8, **109.9%** compile RAM |
-| `bell_ghz` | 2–8 (wall) | 7 real | 4.8 min | **13.03s / 100.02s** | `build_overflow` at n=8, **110.1%** compile RAM |
-| `qft` | 2–8 (wall) | 7 real | 1.3h | **21.84s / 91.94s** | `build_overflow` at n=8, **109.8%** compile RAM |
-| `grover` | 2–8 (`n=8` auto-skipped, `expected 5.1h > 4h ceiling`) | 6 real + 1 skipped (`skipped_compute_infeasible`) | 41.3 min | collected once, **not currently committed** — see `README.md`'s status table | not observed under the default 4h budget ceiling; would need `--force-infeasible` |
+| `h_all` | 1–8 | 8 | 18.5s | 3.3min | build_overflow at n=8 (predicted) |
+| `bell_ghz` | 2–8 | 7 | 13.4s | 3.1min | build_overflow at n=8 (predicted) |
+| `qft` | 1–8 | 8 | 23.9s | 3.4min | build_overflow at n=8 (predicted) |
+| `grover` | 2–8 | 7 | 41.5min | 44.3min | build_overflow at n=8 (predicted) |
 
-The "n=8 wall attempt" column is almost entirely the 90–100s serial-read
-timeout wait (the board never prints `DONE`), not real computation — it's
-the single biggest chunk of wall-clock time in every one of these runs
-except `grover`'s (whose own infeasibility check keeps it away from `n=8`
-under the default budget). A full run's real elapsed time is dominated by
-reflash overhead (compile+upload per point, a few seconds each) plus this
-one ~90–100s wait at the end, not by the tiny device execution times
-themselves.
-
-"ESTIMATE (naive)" above is `timing_model.expected_point_time_s()` summed
-across every `n` in range **as if every point ran to completion** — it does
-not know about the wall in advance, so it overstates real elapsed time for
-every circuit except `grover` (whose own infeasibility check already
-excludes `n≥8`). In practice a real
-run stops at the wall, so actual elapsed time is close to the MEASURED
-column plus one reflash-and-timeout cycle at the wall itself
-(compile+upload+90s timeout, ≈2 minutes).
-
-**All four non-fixed, non-`grover` circuits wall at exactly `n=8` with RAM
-evidence in a tight 109.8–110.1% band** — confirms the wall is a
-state-vector memory limit (`theoretical_bytes = 2^n * 8`), independent of
-which circuit is running. See `docs/analysis/uno/comparison.md`.
+All values are ESTIMATE from `pc/shared/timing_model.py` (`python pc/run.py --plan --board uno --phase 2`
+prints the per-n table; rows turn MEASURED automatically once the new run has ok points).
+The wall point costs compile + upload + the 90 s hang budget, because the board may never
+print `DONE` when the static array overflows RAM. The wall is structural
+(`theoretical_bytes = 2^n * 8` against 2048 B SRAM, `firmware/uno/src/main.cpp:30`) and
+predicted at n=8 for every circuit; derivation in `docs/experiment_plan.md`.
 
 ## What to check afterwards
 

@@ -22,6 +22,7 @@ sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared import timing_model as tm  # noqa: E402
 from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep  # noqa: E402
 from shared import paths as sp  # noqa: E402
+from shared import experiment_plan  # noqa: E402
 
 # *** ยังไม่ยืนยันกับ LA จริง (ยังไม่มีเครื่องยืม) — รายการนี้เป็น "ตัวอย่างค่าที่น่าจะมี"
 # (การหาร SI ตรง ๆ) ไม่ใช่รายการ sample rate ที่ LA รุ่นที่จะยืมมารองรับจริง เช่น LA
@@ -115,7 +116,7 @@ def build_plan(rate_list, resolution_fraction, min_samples_per_pulse,
                reps_threshold_us, full_reps, reduced_reps, max_size_bytes):
     rows = []
     for board in ("uno", "esp8266", "esp32"):
-        wall = tm.MEASURED_WALL_N[board]
+        wall = experiment_plan.wall_n(board) - 1  # last predicted-ok n
         for circuit in CIRCUITS:
             for n in n_values_for_sweep(circuit, 2, BOARD_NMAX[board]):
                 if n > wall + 1:

@@ -65,28 +65,60 @@ def test_plan_scope_and_ranges():
 
 # ---------------------------------------------------------------- estimates
 
+def _fake_dataset(root, board="uno", phase=2):
+    """A tiny NEW-run dataset in a scratch root: points.csv for h_all n=2,3 (ok) -- synthetic
+    numbers chosen only to be distinguishable from the model, not measurements of anything."""
+    path = sp.points_csv_path(board, "h_all", phase, False)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["circuit", "n", "status", "build_compile_s", "upload_s", "device_exec_s"])
+        w.writerow(["h_all", 2, "ok", 11.0, 5.0, 2.5])
+        w.writerow(["h_all", 3, "ok", 13.0, 7.0, 3.5])
+        w.writerow(["h_all", 4, "failed", 99.0, 99.0, 99.0])
+
+
 def test_estimates_and_labels():
-    med = eta.load_medians()
-    check("measured medians file loads with the Uno entry", "uno" in med["boards"])
-    p = eta.estimate_point("uno", "h_all", 5, 2, med)
-    check("Uno h_all n=5: MEASURED, device is the frozen measured median",
-          p.label == "MEASURED" and approx(p.device_s, med["boards"]["uno"]["device_s"]["h_all"]["5"]))
-    p1 = eta.estimate_point("uno", "h_all", 1, 2, med)
-    check("Uno h_all n=1 (never measured): ESTIMATE", p1.label == "ESTIMATE", p1.label)
-    pw = eta.estimate_point("uno", "qft", 8, 2, med)
-    check("Uno wall point: no device time, 90 s hang budget, compile+upload measured",
-          pw.wall and pw.device_s == 0 and pw.hang_s == 90.0 and pw.label == "MEASURED"
-          and approx(pw.total_s, pw.compile_s + pw.upload_s + 90.0))
-    pe = eta.estimate_point("esp8266", "h_all", 6, 2, med)
+    with tempfile.TemporaryDirectory() as tmp:
+        saved = sp.REPO_ROOT
+        sp.REPO_ROOT = Path(tmp)
+        try:
+            check("empty tree: nothing measured", eta.load_measured("uno", 2) == {})
+            p0 = eta.estimate_point("uno", "h_all", 3, 2)
+            check("no data yet: ESTIMATE from timing_model constants only",
+                  p0.label == "ESTIMATE" and p0.compile_s == tm.COMPILE_S_ESTIMATE["uno"]
+                  and p0.upload_s == tm.UPLOAD_S_ESTIMATE["uno"])
+            _fake_dataset(Path(tmp))
+            m = eta.load_measured("uno", 2)
+            check("new-run medians loaded, failed rows ignored",
+                  m["n_ok_points"] == 2 and approx(m["compile_s"], 12.0) and approx(m["upload_s"], 6.0))
+            p = eta.estimate_point("uno", "h_all", 3, 2)
+            check("(circuit, n) with a measured device time: MEASURED, device = that value",
+                  p.label == "MEASURED" and approx(p.device_s, 3.5) and approx(p.compile_s, 12.0))
+            p1 = eta.estimate_point("uno", "h_all", 5, 2)
+            check("unmeasured n on the same board: ESTIMATE device, but measured compile/upload used",
+                  p1.label == "ESTIMATE" and approx(p1.compile_s, 12.0))
+            pw = eta.estimate_point("uno", "qft", 8, 2)
+            check("wall point: no device time, 90 s hang budget, MEASURED compile+upload",
+                  pw.wall and pw.device_s == 0 and pw.hang_s == 90.0 and pw.label == "MEASURED"
+                  and approx(pw.total_s, 12.0 + 6.0 + 90.0))
+            check("another board stays ESTIMATE (per-board data)",
+                  eta.estimate_point("esp32", "h_all", 3, 2).label == "ESTIMATE")
+            text = eta.format_table("uno", "h_all", 2, eta.plan_points("uno", "h_all", 2),
+                                    datetime(2026, 10, 3, 9, 0, tzinfo=BKK))
+            check("table labels both sources", "MEASURED" in text and "ESTIMATE" in text)
+        finally:
+            sp.REPO_ROOT = saved
+    pe = eta.estimate_point("esp8266", "h_all", 6, 2, {})
     check("ESP8266 point is ESTIMATE and uses timing_model constants",
           pe.label == "ESTIMATE" and pe.compile_s == tm.COMPILE_S_ESTIMATE["esp8266"]
           and approx(pe.device_s, tm.expected_point_time_s("esp8266", "h_all", 6)
                      + tm.DEVICE_OVERHEAD_S_ESTIMATE["esp8266"]))
-    pg = eta.estimate_point("esp8266", "grover", 9, 2, med)
+    pg = eta.estimate_point("esp8266", "grover", 9, 2, {})
     check("esp8266 grover n=9 flagged TIME-LIMITED (> 1 h device)", pg.time_limited and pg.device_s > 3600,
           f"{pg.device_s:.0f}s")
-    check("esp32 grover n=9 NOT flagged (about 12 min)", not eta.estimate_point("esp32", "grover", 9, 2, med).time_limited)
-    p3 = eta.estimate_point("esp32", "qft", 6, 3, med)
+    check("esp32 grover n=9 NOT flagged (about 12 min)", not eta.estimate_point("esp32", "grover", 9, 2, {}).time_limited)
+    p3 = eta.estimate_point("esp32", "qft", 6, 3, {})
     check("phase 3 point: ESTIMATE, device = PC-sim x reps",
           p3.label == "ESTIMATE" and approx(p3.device_s, tm.pc_sim_time_s("qft", 6) * tm.REPS) and not p3.wall)
 

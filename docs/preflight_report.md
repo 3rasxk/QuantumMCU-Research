@@ -1,6 +1,6 @@
 # Pre-Hardware Preflight Report
 
-> **Superseded in scope (2026-10-03):** this report is a historical record of the pre-run preflight over six circuits. The experiment now covers `h_all`, `bell_ghz`, `qft`, `grover` only; `qpe`/`steane_encode` rows below no longer apply. Its build matrix is reused by `docs/experiment_plan.md` for the memory-wall predictions.
+> **PRIOR OBSERVATIONS (retired, pre-timer; not part of the new dataset).** This whole file records the pre-run preflight (compile-only build matrix, tool timings, PC-side checks) over six circuits. It is kept for its method and as the basis of the design predictions in `docs/experiment_plan.md`. The experiment now covers `h_all`, `bell_ghz`, `qft`, `grover` only; `qpe`/`steane_encode` rows no longer apply. RAM percentages and wall statements here come from compile outputs and retired runs and are **not results of the new dataset**.
 
 **Date:** 2026-09-20
 **Commit:** `08d1a9d` — `git describe --tags` → `pre-run-schema-v1`, working tree clean
@@ -267,7 +267,7 @@ linker sees the whole cost: RAM usage doubles per `n`, and at `n=8` it is
 **2254 / 2048 bytes = 110 %** — over the physical SRAM, yet `pio run` still exits
 0. That is precisely the failure mode the firmware header documents (link
 succeeds, `.bss` overlaps the stack, the board hangs at run time) and it agrees
-with `timing_model.MEASURED_WALL_N["uno"] = 7`: n=8 is the first point that
+with the retired-run observation that n=7 was the last n that ran: n=8 is the first point that
 cannot work. The ESP boards allocate with `malloc()` at run time, so their static
 RAM does not move with `n` and the wall is invisible at build time by design — it
 is reported over the protocol instead (P2-12).

@@ -1,11 +1,10 @@
 # QuantumMCU Research — Quantum Lab (ภาษาไทย)
 
-> **รีสตาร์ท 2026-10-03 — ลดขอบเขตและเก็บข้อมูลใหม่ทั้งหมด** การทดลองเหลือ 4 วงจร
-> (`h_all`, `bell_ghz`, `qft`, `grover`); `qpe` และ `steane_encode` ถูกถอดออกจากแผน
-> (โค้ดยังอยู่ใน `firmware/common/circuits.hpp`; `pc/run.py` ปฏิเสธทั้งสองตัว)
-> ข้อมูลฮาร์ดแวร์ทั้งหมดที่เก็บมาถูกย้ายไป `data/archive/restart_20261003T111500Z/`
-> และจะเก็บใหม่ทั้งหมด ตัวเลขด้านล่างที่อ้างข้อมูลที่วัดจริงคือข้อมูลชุดที่เลิกใช้แล้ว
-> ดู `docs/experiment_plan.md` และ `docs/counter_design.md`
+> **รีสตาร์ท 2026-10-03 / ล้างข้อมูล 2026-10-04** การทดลองเหลือ 4 วงจร (`h_all`, `bell_ghz`,
+> `qft`, `grover`) ผลที่วัดก่อนมีตัวจับเวลา ESP32 ถูก **ลบ** แล้ว (กู้ได้จาก git history ที่ commit
+> `af40643`) วิธีวัดคงเดิม (`micros()` ต่อ rep, คอลัมน์ `exec_time_us`) และชุดข้อมูลใหม่จะบันทึกคู่กับ
+> ตัวนับ ESP32 ตัวเลขในไฟล์นี้เป็นค่าประมาณ/คาดการณ์ ดู `docs/experiment_plan.md`,
+> `docs/system_design.md`, `docs/counter_design.md`
 
 เวอร์ชันย่อของ [`README.md`](README.md) — คำสั่ง, ชื่อไฟล์/โฟลเดอร์, flag, และ
 ชื่อ tag คงเป็นภาษาอังกฤษทั้งหมดตามต้นฉบับ อ่าน `README.md` ฉบับเต็มสำหรับ
@@ -293,8 +292,7 @@ data/figures/<board>/all_algorithms_so_far.png   กราฟรวม สร้
 ## สถานะปัจจุบัน
 
 **รีสตาร์ท 2026-10-03: ยังไม่มีข้อมูลฮาร์ดแวร์ใน `data/raw/phase2/` หรือ `data/raw/phase3/`**
-ข้อมูลทั้งหมดที่เก็บก่อนหน้านี้ถูกย้าย (ไม่ลบ) ไป `data/archive/restart_20261003T111500Z/`
-พร้อม `MANIFEST.json` resume เห็นสถานะว่างทุกบอร์ด/วงจร/phase ดู `docs/experiment_plan.md`
+ข้อมูลที่เก็บก่อนมีตัวจับเวลาถูกลบเมื่อ 2026-10-04 (กู้ได้จาก git ที่ `af40643`) resume เห็นสถานะว่างทุกบอร์ด/วงจร/phase ดู `docs/experiment_plan.md`
 
 ## ข้อจำกัดสำคัญ
 

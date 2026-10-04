@@ -1,15 +1,14 @@
 # QuantumMCU Research — Quantum Lab
 
-> **RESTART 2026-10-03 — scope cut and full re-collection.** The experiment now
-> covers four circuits only (`h_all`, `bell_ghz`, `qft`, `grover`); `qpe` and
-> `steane_encode` were removed from the plan (their code stays in
-> `firmware/common/circuits.hpp`; `pc/run.py` refuses them). All hardware data
-> collected so far is retired to `data/archive/restart_20261003T111500Z/`
-> (MANIFEST.json, sha256-verified) and will be re-collected from scratch.
-> The Logic Analyzer timing reference is being replaced by a second ESP32
-> pulse counter (`docs/counter_design.md`). Numbers below that cite measured
-> data refer to the retired dataset. Plan and predictions:
-> `docs/experiment_plan.md`; `python pc/run.py --plan` prints the time table.
+> **RESTART 2026-10-03 / purge 2026-10-04.** The experiment covers four circuits only
+> (`h_all`, `bell_ghz`, `qft`, `grover`); `qpe` and `steane_encode` were removed from the
+> plan (their code stays in `firmware/common/circuits.hpp`; `pc/run.py` refuses them).
+> All results measured before the ESP32 timer existed were **deleted** (recoverable from
+> git history at commit `af40643`); the measurement METHOD is unchanged (`micros()` per rep,
+> column `exec_time_us`) and the new dataset records it together with the ESP32 counter.
+> Every number in this README is an estimate or a prediction unless it says otherwise.
+> Plan: `docs/experiment_plan.md`; design: `docs/system_design.md`, `docs/counter_design.md`;
+> `python pc/run.py --plan` prints the time table.
 
 Comparative performance benchmarking of quantum micro-simulators across
 diverse microcontroller architectures for edge computing.
@@ -25,7 +24,7 @@ PC running Qiskit Aer?
   itself, for `n = 2` upward until the board fails. Compile-time RAM usage
   (`avr-size` / equivalent) is recorded for every point, not just failures.
   A Logic Analyzer cross-check of the `micros()` timing exists in code
-  (`--la`, Uno only) but has **never been run against real hardware or even
+  (`--la`, Uno only, to be replaced by the counter) but has **never been run against real hardware or even
   a `sigrok-cli` demo driver** — see Limitations.
 - **Measured (Phase 3, offload):** round-trip latency and frame integrity
   (CRC-8) of a fixed 4-byte request / 6-byte response protocol between MCU
@@ -47,8 +46,8 @@ PC running Qiskit Aer?
 | NodeMCU ESP8266 (ESP-12E) | 32-bit | no | 80 MHz | 80 KB | dynamic (`malloc`) |
 | ESP32 DevKit V1 | 32-bit | **yes** | 240 MHz | 320 KB | dynamic (`malloc`) |
 
-**Only the Uno has ever been run against real hardware in this repository.**
-ESP8266 and ESP32 are fully implemented (firmware, sweep scripts, timing
+**No hardware data exists in the restarted dataset yet.**
+All three boards are fully implemented (firmware, sweep scripts, timing
 model) but every number for them anywhere in this repo — timing estimates,
 expected walls — is a **prediction from `pc/shared/timing_model.py` and a
 compile-only build matrix**, not a measurement. Phase 3 (offload) has not
@@ -215,8 +214,8 @@ Every `pc/run.py` invocation (also `--dry-run`) prints a per-`n` table before
 doing anything: device time for 100 reps, compile, upload, the 90 s hang budget
 at a predicted wall point, total, cumulative total and the clock time
 (Asia/Bangkok, date added past midnight) each `n` and the whole run should
-finish. Rows are labelled `MEASURED` (Uno medians from the retired dataset,
-frozen in `pc/shared/measured_medians.json`) or `ESTIMATE`
+finish. Rows are labelled `MEASURED` (values measured in the new run: this board's and
+phase's own `points.csv`, used as soon as it has ok points) or `ESTIMATE`
 (`pc/shared/timing_model.py`). During a real run, one `[ETA]` line is printed
 after each recorded point, rescaled from the times measured in that run.
 
@@ -253,7 +252,7 @@ real command. **Replace `/dev/cu.usbmodem1101` / `/dev/cu.usbserial-0001` /
 `/dev/cu.SLAB_USBtoUART` below with whatever `pio device list` showed you in
 step (a.4) — these are illustrative examples, not values to copy blindly.**
 
-**Uno, Phase 2** (the only board/phase with real hardware data so far):
+**Uno, Phase 2:**
 ```bash
 .venv/bin/python pc/run.py --board uno --algorithm h_all --phase 2 \
     --port /dev/cu.usbmodem1101 --dry-run
@@ -283,8 +282,7 @@ for every Phase 3 run, on every board — not Uno-specific).
     --port /dev/cu.usbmodem1101
 ```
 
-**ESP8266, Phase 2** — **UNVERIFIED: no ESP8266 session has completed on
-real hardware yet** (see Limitations):
+**ESP8266, Phase 2** — **UNVERIFIED: no data collected yet** (see Limitations):
 ```bash
 .venv/bin/python pc/run.py --board esp8266 --algorithm h_all --phase 2 \
     --port /dev/cu.usbserial-0001 --dry-run
@@ -632,12 +630,10 @@ which is the append-only source of truth these one-liners summarize.
 
 ## Current status
 
-**Restart 2026-10-03: no hardware data is currently committed under
-`data/raw/phase2/` or `data/raw/phase3/`.** Everything collected before this
-date (Uno h_all/bell_ghz/qft/qpe/steane_encode, partial Uno grover, partial
-ESP32 runs) was moved, not deleted, to
-`data/archive/restart_20261003T111500Z/` with a `MANIFEST.json`. Resume sees
-an empty state for every board / circuit / phase. Phase 1 (PC-only) was
+**Restart 2026-10-03: no hardware data is committed under
+`data/raw/phase2/` or `data/raw/phase3/`.** Everything collected before the ESP32
+timer existed was deleted on 2026-10-04 (recoverable from git history at `af40643`).
+Resume sees an empty state for every board / circuit / phase. Phase 1 (PC-only) was
 re-validated for every `n` of the new plan
 (`data/raw/phase1/infidelity_tvd.<timestamp>.csv`). See `docs/experiment_plan.md`
 for the predicted walls and `python pc/run.py --plan` for the time table.

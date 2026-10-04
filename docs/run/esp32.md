@@ -2,14 +2,13 @@
 
 > **Restart 2026-10-03:** scope is `h_all`, `bell_ghz`, `qft`, `grover` only
 > (`qpe`/`steane_encode` removed from the plan; `pc/run.py` refuses them) and all
-> earlier hardware data is retired to `data/archive/restart_20261003T111500Z/`.
-> Measured figures in this file come from that retired dataset; rows for removed
-> circuits were deleted. Current plan and predictions: `docs/experiment_plan.md`.
+> earlier hardware data was deleted on 2026-10-04 (recoverable from git history, commit
+> `af40643`); this file keeps no measured values from it, only estimates and method.
+> Current plan and predictions: `docs/experiment_plan.md`.
 
-**UNVERIFIED — this board has never been run against real hardware in this
-project.** Every number below is a prediction from `pc/shared/timing_model.py`
+**UNVERIFIED — no data has been collected for this board in the restarted dataset.** Every number below is a prediction from `pc/shared/timing_model.py`
 or a compile-only build figure from `docs/preflight_report.md`. Do not
-assume the Uno's measured behavior transfers here — ESP32 is the only board
+assume another board's behavior transfers here — ESP32 is the only board
 in this project with a hardware FPU, which changes the relative cost of H
 vs CNOT vs CPhase in ways the Uno's own data cannot predict.
 
@@ -31,13 +30,10 @@ defaults are board-independent, so they apply here identically.
 
 ## The same BOARD_GATE_COST caveat as ESP8266
 
-`timing_model.BOARD_GATE_COST["esp32"]` traces to the same deleted,
-REPS=30-era `docs/report/chapter4_results_th.md` reference as ESP8266's
-(`pc/shared/timing_model.py:169-170`) — not verified against this project's
-real hardware or pinned toolchain (`espressif32@7.0.1`,
-`firmware/esp32/platformio.ini`). Every ESTIMATE below is doubly
-unverified. See `docs/run/esp8266.md` for the full explanation and
-`README.md`'s Limitations section.
+`timing_model.BOARD_GATE_COST["esp32"]` is a prior fit (see the comment in
+`pc/shared/timing_model.py`), not a measurement of the restarted dataset and not checked
+against the pinned toolchain (`espressif32@7.0.1`, `firmware/esp32/platformio.ini`).
+Every ESTIMATE below is to be refitted from the new data.
 
 **One ESP32-specific build note that predates this repo's Phase 2
 re-collection** (`firmware/esp32/platformio.ini`'s own comment): every
@@ -48,12 +44,14 @@ Phase 1 per the same comment; not re-verified in this repository's current
 state as part of this documentation task (no source file changes were made
 here).
 
-| Algorithm | `n` range (`--n-start 2`, default `--n-max 18`) | Expected points | ESTIMATE total device time | Expected wall |
-|---|---|---|---|---|
-| `h_all` | 2–18 | 17 | 1.2 min | UNVERIFIED — old (REPS=30-era) measured-safe `n` was 13 (`timing_model.MEASURED_WALL_N["esp32"]`); compile-only build matrix shows RAM flat at 13.2–13.3% through n=14 (`docs/preflight_report.md` P2-8) — far below any threshold, no compile-time signal predicts a wall here at all. Expect a runtime `malloc` failure if one occurs, not a build-time one. |
-| `bell_ghz` | 2–18 | 17 | 1.5 min | same caveat |
-| `qft` | 2–18 | 17 | 6.7 min | same caveat |
-| `grover` | 2–18 (`n≥11` auto-skipped) | 9 real + skipped | 1.9h — heaviest point predicted ~1.7h at `n=10` alone | `run_checklist.md`: **do not interrupt mid-`n=10`** if avoidable — resume re-runs that whole point from scratch, not from where it stopped |
+| Algorithm | `n` range planned | Points | ESTIMATE device time | ESTIMATE total | Wall prediction (UNVERIFIED) |
+|---|---|---|---|---|---|
+| `h_all` | 1–14 | 14 | 27.5s | 12.7min | malloc_failed at n=14 |
+| `bell_ghz` | 2–14 | 13 | 26.0s | 11.9min | malloc_failed at n=14 |
+| `qft` | 1–14 | 14 | 32.6s | 12.8min | malloc_failed at n=14 |
+| `grover` | 2–14 | 13 | 49.5days | 49.5days | malloc_failed at n=14; **TIME-LIMITED from n=10** (device > 1 h per point); watchdog risk n=[9, 10, 11, 12, 13] |
+
+All values ESTIMATE (`python pc/run.py --plan --board esp32 --phase 2` for the per-n table); derivation of the wall in `docs/experiment_plan.md`.
 
 ## What to check afterwards
 

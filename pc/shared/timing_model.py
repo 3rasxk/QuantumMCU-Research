@@ -14,9 +14,9 @@
 # โครงสร้าง:
 #   1. GATE_COUNTS — จำนวนเกทแยกตามชนิด (H / CNOT / CPhase) ของแต่ละวงจร
 #      ต้องตรงกับ firmware/common/circuits.hpp เสมอ (มี self-test ท้ายไฟล์)
-#   2. BOARD_GATE_COST — ค่าคงที่เวลาต่อเกทต่อ amplitude ของแต่ละบอร์ด fit จากข้อมูล
-#      ที่ "วัดจริง" ในรอบ REPS=30 (กู้จาก git history: docs/report/chapter4_results_th.md
-#      ที่ commit 7a7c728~1) — ไม่ใช่ค่าที่เดาเอา
+#   2. BOARD_GATE_COST — ค่าคงที่เวลาต่อเกทต่อ amplitude ของแต่ละบอร์ด เป็น ESTIMATE
+#      (ค่าตั้งต้นของตัวแบบ ไม่ใช่ผลของชุดข้อมูลใหม่) — ดูหมายเหตุ "Prior observations" ด้านล่าง
+#      จะ fit ใหม่จากชุดข้อมูลใหม่ (micros() + ตัวนับ ESP32) หลังเก็บข้อมูลแล้ว
 #   3. timeout_budget_s() — expected × SAFETY_FACTOR หนีบด้วย FLOOR/CEILING
 #
 # ข้อจำกัดที่ต้องรู้: ค่าประมาณของ grover เป็นการ "ประมาณการ"
@@ -31,7 +31,7 @@ REPS = 100  # ต้องตรงกับ #define REPS ใน firmware/*/src/
 
 # --- นโยบาย timeout (ค่าตัดสินใจเชิงระเบียบวิธี ไม่ใช่ค่าที่ได้จากข้อมูล) ---
 
-# 2.5× เผื่อความแปรปรวน: IQR ที่วัดจริงในรอบ REPS=30 แคบมาก (< 0.3% ของ median ทุกจุด
+# 2.5× เผื่อความแปรปรวน: IQR ในข้อสังเกตก่อนหน้า (ชุดเก่าที่เลิกใช้แล้ว) แคบมาก (< 0.3% ของ median ทุกจุด
 # เพราะเป็น bare-metal ไม่มี OS คั่น) ตัวที่ต้องเผื่อจริง ๆ คือความคลาดเคลื่อนของ "ตัวแบบ"
 # เอง (ดู validate_model() — residual สูงสุดอยู่ราว ±40%) บวกเวลา build/upload/boot
 # ที่ไม่ได้อยู่ในสูตร ไม่ใช่ความแปรปรวนของตัวเลขเวลาเอง
@@ -44,7 +44,7 @@ FLOOR_S = 90
 
 # เพดาน: 4 ชั่วโมงต่อจุดข้อมูล — เลือกจาก 2 ข้อจำกัดที่ชนกัน
 #
-# (1) ความเสี่ยงของลิงก์ USB: เคยเจอจริงในรอบ REPS=30 ว่าพอร์ต USB-CDC ของ Uno ค้าง
+# (1) ความเสี่ยงของลิงก์ USB: เคยมีข้อสังเกตในชุดเก่า (เลิกใช้แล้ว) ว่าพอร์ต USB-CDC ของ Uno ค้าง
 #     เกิน 16 นาทีโดยที่ pyserial ไม่ timeout ตามที่ตั้งไว้ (ดู run_log.md) ยิ่งรอนาน
 #     ต่อจุด โอกาสที่สายหลุด/พอร์ต re-enumerate กลางคันจนเสียการรอทั้งหมดยิ่งสูง
 # (2) ต้องครอบ "จุดที่แพงที่สุดเท่าที่ยังทำได้จริง" ซึ่งคือ ESP32 grover n=10
@@ -169,17 +169,16 @@ def gate_counts(circuit, n):
 # 2. ค่าคงที่เวลาต่อเกทต่อ amplitude ของแต่ละบอร์ด
 #    แบบจำลอง: exec_time_us = sum_type(count_type * k_type) * n_states
 #
-#    fit จากค่า median ที่วัดจริงในรอบ REPS=30 (h_all, bell_ghz, qft) ที่ n สูงสุดของ
-#    แต่ละบอร์ด — เลือก n สูงสุดเพราะจุดที่ต้องใช้ตัวแบบนี้จริง ๆ คือ n สูง (ที่ timeout
-#    สำคัญ) และที่ n ต่ำ overhead คงที่ของ micros()/ลูปจะครอบงำจนบิดค่า fit
-#
-#    ที่มาของตัวเลข: docs/report/chapter4_results_th.md ตารางที่ 4.3 / 4.5 / 4.7
-#    (ไฟล์ถูกลบไปแล้ว อ่านจาก git history: `git show 7a7c728~1:docs/report/...`)
+#    *** ESTIMATE — Prior observations (retired data, NOT part of the new dataset) ***
+#    ค่าด้านล่างเป็นค่าตั้งต้นของตัวแบบ ที่มาจากการ fit สมการ 3 ตัวแปรกับข้อสังเกตเก่า
+#    (ชุด REPS=30 ที่เลิกใช้แล้ว) ที่ n สูงสุดของแต่ละบอร์ด ไม่มีค่าที่วัดได้จากชุดใหม่
+#    อยู่ในไฟล์นี้ ผลที่แสดงออกมาจากตัวแบบนี้ต้องติดป้าย ESTIMATE เสมอ
+#    (pc/shared/eta.py) และต้อง fit ใหม่จากชุดข้อมูลใหม่หลังเก็บเสร็จ
 # ---------------------------------------------------------------------------
 
 BOARD_GATE_COST = {
     # (k_h, k_cnot, k_cphase) หน่วย: ไมโครวินาที ต่อ 1 เกท ต่อ 1 amplitude
-    # fit ที่ n = 7 (uno), 12 (esp8266), 13 (esp32) ตามลำดับ ด้วยสมการ 3 ตัวแปร:
+    # prior fit (ESTIMATE) ด้วยสมการ 3 ตัวแปร:
     #   h_all    : exec = n * k_h * n_states
     #   bell_ghz : exec = (1 * k_h + (n-1) * k_cnot) * n_states
     #   qft      : exec = (n * k_h + n(n-1)/2 * k_cphase) * n_states
@@ -192,8 +191,8 @@ BOARD_GATE_COST = {
 # ที่มี FPU ความต่างนี้หายไป (k_cnot โผล่สูงกว่า k_h ด้วยซ้ำ ซึ่งมาจาก quantization
 # ของ micros() ที่ค่าระดับหลักหน่วยไมโครวินาที ไม่ใช่ความจริงเชิงสถาปัตยกรรม)
 
-# n สูงสุดที่วัดจริงว่ารันสำเร็จในรอบ REPS=30 (Memory Wall ที่วัดได้ ไม่ใช่ทฤษฎี)
-MEASURED_WALL_N = {"uno": 7, "esp8266": 12, "esp32": 13}
+# (MEASURED_WALL_N removed 2026-10-04: it held walls observed in retired data. The predicted
+# walls are in pc/shared/experiment_plan.py as predictions; the new run records its own.)
 
 # ---------------------------------------------------------------------------
 # ต้นทุน reflash ต่อจุดข้อมูล — ทั้ง Phase 2 (uno/esp32/esp8266_sweep.py) และ Phase 3
@@ -257,21 +256,21 @@ def session_total_s(board, points, phase=2):
 
 
 # ---------------------------------------------------------------------------
-# Per-point overhead split for the run-time ETA tables (pc/shared/eta.py), added
-# 2026-10-03. REFLASH_COST_S above is one combined number; the ETA table shows
-# compile and upload separately. These are ESTIMATES for the two ESP boards (the
-# Uno uses medians measured in the retired dataset, pc/shared/measured_medians.json):
-#   compile  : docs/preflight_report.md P2-8 measured compile-only medians
-#              (ESP8266 40.0 s, ESP32 16.0 s; full rebuild every point)
-#   upload   : ESP32 = median of the retired ESP32 telemetry (53.4 s, the only
-#              upload measurement of any ESP board); ESP8266 = 15 s, UNMEASURED guess
-#   overhead : boot wait + serial transfer of 100 rows, fixed per point;
-#              ESP32 = retired-telemetry median (1.46 s); ESP8266 = 2.0 s, UNMEASURED
-#              (assumed like the Uno: same 115200-baud serial path)
+# Per-point overhead split for the run-time ETA tables (pc/shared/eta.py), 2026-10-04.
+# REFLASH_COST_S above is one combined number; the ETA table shows compile and upload
+# separately. ALL VALUES BELOW ARE ESTIMATES with a stated basis; none comes from a
+# measurement of this experiment. pc/shared/eta.py replaces them with values measured
+# in the NEW run (points.csv) as soon as they exist, labelled MEASURED.
+#   compile  : docs/preflight_report.md P2-8 compile-only medians (tool timing, no board
+#              involved): Uno 7.5 s, ESP8266 40.0 s, ESP32 16.0 s (full rebuild each point)
+#   upload   : image size x 10 bit / upload baud (platformio.ini upload_speed = 115200)
+#              + handshake: Uno ~4 KB image -> 4 s; ESP8266 ~274 KB -> 25 s; ESP32 ~284 KB -> 30 s
+#   overhead : fixed per point = sweep BOOT_WAIT_S (1.0-1.5 s, pc/phase2_sweep/*_sweep.py)
+#              + serial transfer of 100 rows (~4.5 KB at 115200 baud, 0.4 s) -> 2.0 s
 # These do not feed any timeout; they only feed the displayed estimates.
 COMPILE_S_ESTIMATE = {"uno": 7.5, "esp8266": 40.0, "esp32": 16.0}
-UPLOAD_S_ESTIMATE = {"uno": 3.65, "esp8266": 15.0, "esp32": 53.4}
-DEVICE_OVERHEAD_S_ESTIMATE = {"uno": 2.05, "esp8266": 2.0, "esp32": 1.46}
+UPLOAD_S_ESTIMATE = {"uno": 4.0, "esp8266": 25.0, "esp32": 30.0}
+DEVICE_OVERHEAD_S_ESTIMATE = {"uno": 2.0, "esp8266": 2.0, "esp32": 2.0}
 
 
 TOTAL_RAM_BYTES = {"uno": 2048, "esp8266": 81920, "esp32": 327680}
@@ -553,59 +552,9 @@ def _check_gate_count_recursion():
     return [G(k) for k in range(1, 12)]
 
 
-def validate_model():
-    """เทียบค่าที่ตัวแบบทำนาย กับค่า median ที่วัดจริงในรอบ REPS=30 ทุกจุดที่มีข้อมูล
-    (ตัวแบบ fit จาก n เดียวต่อบอร์ด จึงต้องตรวจว่ามันยัง extrapolate ไปจุดอื่นได้)"""
-    measured = {
-        "uno": {
-            "h_all": {2: 284, 3: 812, 4: 2088, 5: 4906, 6: 11468, 7: 26308},
-            "bell_ghz": {2: 150, 3: 348, 4: 772, 5: 1704, 6: 3556, 7: 7552},
-            "qft": {2: 292, 3: 1932, 4: 4692, 5: 11012, 6: 25920, 7: 61424},
-        },
-        "esp8266": {
-            "h_all": {2: 24, 3: 72, 4: 187, 5: 456, 6: 1082, 7: 2499, 8: 5663,
-                      9: 12697, 10: 28057, 11: 61760, 12: 134233},
-            "bell_ghz": {2: 13, 3: 26, 4: 51, 5: 104, 6: 215, 7: 444, 8: 919,
-                         9: 1961, 10: 4067, 11: 8707, 12: 18054},
-            "qft": {2: 28, 3: 248, 4: 578, 5: 1262, 6: 2781, 7: 6290, 8: 14524,
-                    9: 34132, 10: 79774, 11: 187237, 12: 432274},
-        },
-        "esp32": {
-            "h_all": {2: 2, 3: 4, 4: 7, 5: 15, 6: 32, 7: 71, 8: 163, 9: 364,
-                      10: 812, 11: 1779, 12: 3872, 13: 8374},
-            "bell_ghz": {2: 2, 3: 3, 4: 7, 5: 15, 6: 34, 7: 78, 8: 177, 9: 417,
-                         10: 931, 11: 2282, 12: 4988, 13: 10818},
-            "qft": {2: 3, 3: 11, 4: 23, 5: 48, 6: 103, 7: 230, 8: 523, 9: 1275,
-                    10: 3010, 11: 7066, 12: 15609, 13: 38003},
-        },
-    }
-    worst = 0.0
-    worst_at = None
-    rows = []
-    for board, circuits in measured.items():
-        for circuit, table in circuits.items():
-            for n, actual_us in table.items():
-                pred = expected_exec_time_us(board, circuit, n)
-                rel = (pred - actual_us) / actual_us
-                rows.append((board, circuit, n, actual_us, pred, rel))
-                # จุดที่ n <= 4 มี overhead คงที่ของ micros()/ลูปครอบงำ ไม่นับเป็น
-                # ตัววัดคุณภาพของตัวแบบ (timeout ที่ n ต่ำถูกกำหนดโดย FLOOR_S อยู่แล้ว)
-                if n > 4 and abs(rel) > abs(worst):
-                    worst, worst_at = rel, (board, circuit, n)
-    return rows, worst, worst_at
-
-
 if __name__ == "__main__":
     g = _check_gate_count_recursion()
     print("mc_phase gate-count recursion G(1..11):", g)
-
-    rows, worst, worst_at = validate_model()
-    print(f"\n{'board':8s} {'circuit':9s} {'n':>3s} {'measured_us':>12s} {'model_us':>12s} {'rel_err':>9s}")
-    for board, circuit, n, actual, pred, rel in rows:
-        flag = "  <-- worst" if (board, circuit, n) == worst_at else ""
-        print(f"{board:8s} {circuit:9s} {n:3d} {actual:12d} {pred:12.1f} {rel:8.1%}{flag}")
-    print(f"\nworst relative error at n>4: {worst:.1%} at {worst_at}")
-    print(f"SAFETY_FACTOR={SAFETY_FACTOR} must exceed that margin to avoid false timeouts")
 
     print("\n--- phase 2 timeout budgets, extreme cases ---")
     for board, circuit, n in [("esp8266", "h_all", 2), ("esp8266", "qft", 12),

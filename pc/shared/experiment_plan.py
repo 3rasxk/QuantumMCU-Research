@@ -21,11 +21,12 @@ MIN_N = {"h_all": 1, "bell_ghz": 2, "qft": 1, "grover": 2}
 # Predicted memory wall per board: the first n that is expected to FAIL (and
 # is still attempted, because the failure itself is the evidence).
 #   uno:     state is a static array, 8 * 2^n B vs 2048 B RAM -> the linker
-#            overflows at n=8 (firmware/uno/src/main.cpp:29). Measured.
-#   esp8266: malloc'ed state (firmware/esp8266/src/main.cpp:65), 64 KiB at n=13
-#            vs ~45 KB usable heap. Measured in the superseded REPS=30 dataset.
-#   esp32:   malloc'ed (firmware/esp32/src/main.cpp:65), 128 KiB at n=14 vs a
-#            110 580 B largest free block. Measured in the retired dataset.
+#            overflows at n=8 (firmware/uno/src/main.cpp:30).
+#   esp8266: malloc'ed state (firmware/esp8266/src/main.cpp:67), 64 KiB at n=13
+#            cannot fit in 81 920 - 29 200 B static = 52 720 B (arithmetic, no measurement).
+#   esp32:   malloc'ed (firmware/esp32/src/main.cpp:65), 128 KiB at n=14; prediction rests on a
+#            ~110 KB largest free block seen in retired data (docs/experiment_plan.md,
+#            'Prior observations'); the new run records its own.
 # All three are re-verified only when the restarted run reaches them.
 # docs/experiment_plan.md has the full derivation (UNVERIFIED values marked).
 WALL_PREDICTION = {

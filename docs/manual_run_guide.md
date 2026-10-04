@@ -2,9 +2,9 @@
 
 > **Restart 2026-10-03:** scope is `h_all`, `bell_ghz`, `qft`, `grover` only
 > (`qpe`/`steane_encode` removed from the plan; `pc/run.py` refuses them) and all
-> earlier hardware data is retired to `data/archive/restart_20261003T111500Z/`.
-> Measured figures in this file come from that retired dataset; rows for removed
-> circuits were deleted. Current plan and predictions: `docs/experiment_plan.md`.
+> earlier hardware data was deleted on 2026-10-04 (recoverable from git history, commit
+> `af40643`); this file keeps no measured values from it, only estimates and method.
+> Current plan and predictions: `docs/experiment_plan.md`.
 
 เอกสารนี้เขียนจากการอ่านโค้ดจริง ณ commit `pre-run-uno-v1` (tag) โดยตรง — ไฟล์ที่อ่าน:
 `pc/phase2_sweep/uno_sweep.py`, `pc/phase2_sweep/esp8266_sweep.py`,

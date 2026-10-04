@@ -2,9 +2,9 @@
 
 > **Restart 2026-10-03:** scope is `h_all`, `bell_ghz`, `qft`, `grover` only
 > (`qpe`/`steane_encode` removed from the plan; `pc/run.py` refuses them) and all
-> earlier hardware data is retired to `data/archive/restart_20261003T111500Z/`.
-> Measured figures in this file come from that retired dataset; rows for removed
-> circuits were deleted. Current plan and predictions: `docs/experiment_plan.md`.
+> earlier hardware data was deleted on 2026-10-04 (recoverable from git history, commit
+> `af40643`); this file keeps no measured values from it, only estimates and method.
+> Current plan and predictions: `docs/experiment_plan.md`.
 
 **UNVERIFIED — Phase 3 has never been run against real hardware, on any
 board, in this project.** Every number below is a `pc/shared/timing_model.py`
@@ -56,12 +56,8 @@ budget — PC-side Aer cost, not a board limit.
 Phase 3**: since the PC does all the computing regardless of which board
 asked, the *board's own speed becomes almost irrelevant to Phase 3's own
 cost* — the number that does vary by board is round-trip *latency*, not
-simulation time, and this project's earlier (superseded, REPS=30) dataset
-found that latency itself is small and roughly flat (1.6–14ms) across
-boards and baud rates for a payload this small, dominated by fixed
-PC/OS/driver overhead rather than anything board-specific — see
-`README.md`'s "Headline results" note. This has **not** been re-confirmed
-with the current REPS=100 / current toolchain data.
+simulation time. No latency value is stated here: it is not yet collected in the
+restarted dataset (`docs/system_design.md` discusses what the counter would add).
 
 ## Wire protocol (for reference, not something `pc/run.py` changes)
 

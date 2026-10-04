@@ -47,79 +47,74 @@ on the Uno (below).
 
 ## 3. Per-board prediction
 
-**Uno (ATmega328P, 2 048 B SRAM).** Static baseline about 200 B (n=2 compiles to
-232-238 B including a 32 B state). Compile RAM = baseline + 8 x 2^n:
-n=7 -> 1 226-1 228 B (60 %), n=8 -> 2 248-2 254 B (109.8-110.1 %, build matrix
-P2-8). The linker overflows at n=8: **build_overflow**, no run needed.
-Free stack gap measured at n=7: 788-804 B (`free_heap_before` column of the retired
-raw data); grover recursion needs a few hundred bytes of it (UNVERIFIED frame size),
-and grover n=7 completed 100 reps in the retired data, so the stack is not the wall.
-**Last ok n=7, wall n=8, evidence build_overflow.** Measured in the retired dataset
-for h_all, bell_ghz, qft, grover (and qpe).
+All predictions below are derived from the code and arithmetic. The few facts taken from
+retired observations are in section 8 ("Prior observations") and are named where used.
 
-**ESP8266 (81 920 B DRAM).** Static 28 224-29 200 B (build matrix, 34.5-35.6 %).
+**Uno (ATmega328P, 2 048 B SRAM).** The state is a static array of 8 x 2^n bytes
+(`firmware/uno/src/main.cpp:30`). n=8 needs 2 048 B, the whole SRAM, before counting the
+core's own static data (baseline about 200 B, ESTIMATE, section 8). Linker overflow
+(`build_overflow`) at n=8 is therefore certain by arithmetic; n=7 needs 1 024 B + baseline,
+about 60 % of SRAM, leaving a stack gap of roughly 800 B (ESTIMATE). Grover's recursion needs
+a few hundred bytes of it (frame size UNVERIFIED), so a runtime stack collision at grover
+n=7 is a risk to watch, not a prediction.
+**Last ok n=7, wall n=8, evidence build_overflow.**
+
+**ESP8266 (81 920 B DRAM).** Static about 29 kB (compile-only build matrix, section 8).
 Upper bound for any single allocation: 81 920 - 29 200 = **52 720 B < 65 536 B (n=13)**,
-so n=13 cannot succeed whatever the exact heap value. n=12 needs 32 768 B; it fits
-if usable heap >= 32.8 KB (expected about 45-50 KB with WiFi off, **UNVERIFIED**:
-`largest_block` was never logged on the ESP8266). The superseded REPS=30 run saw
-n=12 ok, n=13 `malloc` NULL for h_all, bell_ghz, qft.
+so n=13 cannot succeed whatever the exact heap value. n=12 needs 32 768 B; it fits if usable
+heap is at least 32.8 KB (expected about 45-50 KB with WiFi off, **UNVERIFIED**:
+`largest_block` is not logged by the ESP8266 firmware).
 **Last ok n=12, wall n=13, evidence malloc_failed** (clean OOM, no hang).
 
-**ESP32 (327 680 B DRAM).** Static 43 416 B (13.2 %). Largest single block is the
-limit, not total free heap: the retired telemetry shows `free_heap_before` 256 440 B
-but `largest_block` **110 580 B** constant for every n and circuit
-(**UNVERIFIED for the restart** until re-observed; core/toolchain versions are pinned
-in `firmware/esp32/platformio.ini`, but nothing here proves the same block size).
-n=13 needs 65 536 B (fits); n=14 needs 131 072 B (> 110 580).
-Retired data: h_all, bell_ghz, qft n=13 ok, n=14 `malloc_failed`.
+**ESP32 (327 680 B DRAM).** Static about 43.4 kB (build matrix). The limit is the largest
+single block, not total free heap (`firmware/esp32/src/main.cpp:88` logs it). n=13 needs
+65 536 B, n=14 needs 131 072 B. A largest block of about 110 KB, seen once on this board
+(section 8, **UNVERIFIED for the new run**), puts the wall between them.
 **Last ok n=13, wall n=14, evidence malloc_failed.**
 
 ### Prediction table
 
 | Board | Circuit | Last ok n (memory) | Wall n | Evidence expected | Reachable in practice? |
 |---|---|---|---|---|---|
-| Uno | h_all | 7 | 8 | build_overflow | yes (measured earlier) |
-| Uno | bell_ghz | 7 | 8 | build_overflow | yes (measured earlier) |
-| Uno | qft | 7 | 8 | build_overflow | yes (measured earlier) |
-| Uno | grover | 7 | 8 | build_overflow | yes; n=7 took 2 999 s (30 s/rep) in the retired data |
-| ESP8266 | h_all | 12 | 13 | malloc_failed | yes |
-| ESP8266 | bell_ghz | 12 | 13 | malloc_failed | yes |
-| ESP8266 | qft | 12 | 13 | malloc_failed | yes |
+| Uno | h_all, bell_ghz, qft | 7 | 8 | build_overflow | yes |
+| Uno | grover | 7 | 8 | build_overflow | yes (about 36 min at n=7, ESTIMATE) |
+| ESP8266 | h_all, bell_ghz, qft | 12 | 13 | malloc_failed | yes |
 | ESP8266 | grover | 12 | 13 | malloc_failed | **no: time-limited from n=9** (section 4) |
-| ESP32 | h_all | 13 | 14 | malloc_failed | yes |
-| ESP32 | bell_ghz | 13 | 14 | malloc_failed | yes |
-| ESP32 | qft | 13 | 14 | malloc_failed | yes |
+| ESP32 | h_all, bell_ghz, qft | 13 | 14 | malloc_failed | yes |
 | ESP32 | grover | 13 | 14 | malloc_failed | **no: time-limited from n=10** (section 4) |
 
-Phase 3: no memory wall (static RAM flat in n: Uno 796-806 B, ESP8266 about 29 kB,
-ESP32 about 43 kB, build matrix P2-8); limits there are PC-side simulation time.
+Phase 3: no memory wall (the state lives on the PC); the limit there is PC-side simulation
+time.
 
 Rule kept from `docs/preflight_report.md` H1: a wall is recorded only with positive
 evidence (`build_overflow`, `malloc_failed`); a silent board is not a wall.
 
 ## 4. Points limited by run time, not memory
 
-Per-rep time = model `expected_exec_time_us` (`pc/shared/timing_model.py`, grover
-fitted from gate counts; model vs retired ESP32 measurement: n=8 85 s vs 90.7 s,
-n=9 702 s vs 735 s, i.e. within about 5 %). Per-point = 100 reps + overhead.
+Per-rep time = model `expected_exec_time_us` (`pc/shared/timing_model.py`: gate counts x a
+prior-fit per-gate cost, ESTIMATE; extrapolated far beyond any n it was fitted at, so large
+n carry a wide error band). Per-point = 100 reps + overhead. Assumptions: single-threaded
+state-vector loops, no cache effects, float32 only, fixed per-gate cost per amplitude.
 
 | Board | Circuit | n | Per rep | Per point (device) | Note |
 |---|---|---|---|---|---|
-| Uno | grover | 7 | 30 s (measured) | 50 min (measured) | not flagged |
+| Uno | grover | 7 | 21 s | 36 min | not flagged |
 | ESP8266 | grover | 8 | 15.6 s | 26 min | per-rep above the assumed 6 s WDT threshold (UNVERIFIED), `watchdog_suspected` risk |
 | ESP8266 | grover | 9 | 131 s | **3.6 h** | time-limited |
 | ESP8266 | grover | 10 | 1 144 s | **1.3 days** | time-limited |
 | ESP8266 | grover | 11 | 9 586 s | **11 days** | time-limited |
 | ESP8266 | grover | 12 | 82 090 s | **95 days** | time-limited |
-| ESP32 | grover | 9 | 7.0 s | 12 min (735 s measured) | not flagged |
-| ESP32 | grover | 10 | 61.7 s | **1.7 h** | in the retired run this point lost the USB port at 10 252 s without finishing (`Errno 6`) |
+| ESP32 | grover | 9 | 7.0 s | 12 min | above the assumed 5 s WDT threshold (UNVERIFIED) |
+| ESP32 | grover | 10 | 61.7 s | **1.7 h** | time-limited |
 | ESP32 | grover | 11 | 517 s | **14 h** | time-limited |
 | ESP32 | grover | 12 | 4 433 s | **5.1 days** | time-limited |
 | ESP32 | grover | 13 | 37 764 s | **44 days** | time-limited, still below the memory wall |
 | Phase 3 any | grover | 10 | 40.5 s per request (PC Aer) | 1.1 h | PC-limited, identical on every board |
 
-`pc/run.py` flags a point **TIME-LIMITED** when its device time exceeds 1 h. That is a
-display threshold only. Nothing is skipped, nothing is capped.
+`pc/run.py --plan` marks every point above 6 h / 24 h / 72 h and every point whose per-rep
+time exceeds the WDT threshold, and flags TIME-LIMITED (above 1 h) as a display threshold
+only. Nothing is skipped, nothing is capped. Cumulative-time facts for the ceiling decision
+are in `docs/ceiling_facts.md`.
 
 ### Time ceiling: DECIDED 2026-10-03 — no ceiling, run to the memory wall
 
@@ -130,8 +125,8 @@ The old 4 h ceiling (`timing_model.CEILING_S`) is no longer enforced for Phase 2
 
 | Ceiling | Adds to the plan (beyond cheap points) | Excludes | Plan total (all 24 rows, estimate) |
 |---|---|---|---|
-| 2 h | ESP32 grover n=10 | ESP8266 grover n>=9, ESP32 grover n>=11 | 10.5 h |
-| **4 h (proposed)** | ESP32 grover n=10, ESP8266 grover n=9 | ESP8266 grover n>=10, ESP32 grover n>=11 | 14.1 h |
+| 2 h | ESP32 grover n=10 | ESP8266 grover n>=9, ESP32 grover n>=11 | 9.8 h |
+| **4 h (proposed)** | ESP32 grover n=10, ESP8266 grover n=9 | ESP8266 grover n>=10, ESP32 grover n>=11 | 13.5 h |
 | 24 h | also ESP32 grover n=11 | ESP8266 grover n>=10, ESP32 grover n>=12 | 1.2 days |
 
 Proposal: **4 h**. It keeps one long point per board family, matches the retired
@@ -143,43 +138,58 @@ flagged points.
 
 ## 5. Run-time plan (generated)
 
-Produced by `python pc/run.py --plan --brief` at plan time (estimates; Uno phase 2
-rows use medians measured in the retired dataset, everything else
-`timing_model.py`). Re-run it for the current numbers and per-n tables.
+Produced by `python pc/run.py --plan --brief` (all ESTIMATE from `timing_model.py`: no measured data exists yet;
+rows become MEASURED automatically once the new run has ok points). Re-run it for the current numbers and per-n tables.
 
 ```
 === plan summary (every point from the minimum n to the predicted wall) ===
 ph board    circuit   pts wall n evidence           total   time-limited excl. limited
- 2 uno      h_all       8      8 build_overflow    2.7min              -        2.7min
- 2 uno      bell_ghz    7      8 build_overflow    2.5min              -        2.5min
- 2 uno      qft         8      8 build_overflow    2.8min              -        2.8min
- 2 uno      grover      7      8 build_overflow      1.0h              -          1.0h
- 2 esp8266  h_all      13     13 malloc_failed    14.2min              -       14.2min
- 2 esp8266  bell_ghz   12     13 malloc_failed    12.9min              -       12.9min
- 2 esp8266  qft        13     13 malloc_failed    15.1min              -       15.1min
- 2 esp8266  grover     12     13 malloc_failed  107.6days 4 pt / 107.6days       38.6min
- 2 esp32    h_all      14     14 malloc_failed    18.0min              -       18.0min
- 2 esp32    bell_ghz   13     14 malloc_failed    16.9min              -       16.9min
- 2 esp32    qft        14     14 malloc_failed    18.1min              -       18.1min
- 2 esp32    grover     13     14 malloc_failed   49.5days 4 pt / 49.5days       25.4min
+ 2 uno      h_all       8      8 build_overflow    3.3min              -        3.3min
+ 2 uno      bell_ghz    7      8 build_overflow    3.1min              -        3.1min
+ 2 uno      qft         8      8 build_overflow    3.4min              -        3.4min
+ 2 uno      grover      7      8 build_overflow   44.3min              -       44.3min
+ 2 esp8266  h_all      13     13 malloc_failed    16.4min              -       16.4min
+ 2 esp8266  bell_ghz   12     13 malloc_failed    14.9min              -       14.9min
+ 2 esp8266  qft        13     13 malloc_failed    17.2min              -       17.2min
+ 2 esp8266  grover     12     13 malloc_failed  107.6days 4 pt / 107.6days       39.9min
+ 2 esp32    h_all      14     14 malloc_failed    12.7min              -       12.7min
+ 2 esp32    bell_ghz   13     14 malloc_failed    11.9min              -       11.9min
+ 2 esp32    qft        14     14 malloc_failed    12.8min              -       12.8min
+ 2 esp32    grover     13     14 malloc_failed   49.5days 4 pt / 49.5days       21.9min
  3 uno      h_all       8    n/a (offload)         2.2min              -        2.2min
  3 uno      bell_ghz    7    n/a (offload)         1.9min              -        1.9min
  3 uno      qft         8    n/a (offload)         2.2min              -        2.2min
- 3 uno      grover      7    n/a (offload)         6.6min              -        6.6min
- 3 esp8266  h_all      13    n/a (offload)        13.0min              -       13.0min
- 3 esp8266  bell_ghz   12    n/a (offload)        12.0min              -       12.0min
- 3 esp8266  qft        13    n/a (offload)        13.0min              -       13.0min
- 3 esp8266  grover      9    n/a (offload)           1.6h    1 pt / 1.1h       28.0min
- 3 esp32    h_all      14    n/a (offload)        17.4min              -       17.4min
- 3 esp32    bell_ghz   13    n/a (offload)        16.1min              -       16.1min
- 3 esp32    qft        14    n/a (offload)        17.4min              -       17.4min
- 3 esp32    grover      9    n/a (offload)           1.6h    1 pt / 1.1h       30.0min
+ 3 uno      grover      7    n/a (offload)         6.7min              -        6.7min
+ 3 esp8266  h_all      13    n/a (offload)        15.2min              -       15.2min
+ 3 esp8266  bell_ghz   12    n/a (offload)        14.0min              -       14.0min
+ 3 esp8266  qft        13    n/a (offload)        15.2min              -       15.2min
+ 3 esp8266  grover      9    n/a (offload)           1.6h    1 pt / 1.1h       29.4min
+ 3 esp32    h_all      14    n/a (offload)        11.9min              -       11.9min
+ 3 esp32    bell_ghz   13    n/a (offload)        11.1min              -       11.1min
+ 3 esp32    qft        14    n/a (offload)        11.9min              -       11.9min
+ 3 esp32    grover      9    n/a (offload)           1.6h    1 pt / 1.1h       26.8min
+
+points above 6 h / 24 h / 72 h device time, and watchdog-risk points (per rep above the board's WDT threshold):
+  uno      phase 2: >6h 0, >24h 0, >72h 0, watchdog-risk 0
+  uno      phase 3: >6h 0, >24h 0, >72h 0, watchdog-risk 0
+  esp8266  phase 2: >6h 3, >24h 3, >72h 2, watchdog-risk 5
+  esp8266  phase 3: >6h 0, >24h 0, >72h 0, watchdog-risk 0
+  esp32    phase 2: >6h 3, >24h 2, >72h 2, watchdog-risk 5
+  esp32    phase 3: >6h 0, >24h 0, >72h 0, watchdog-risk 0
+
+grover, time to complete up to the predicted wall (sum of all its points):
+  uno      phase 2: n=2..8: 44.3min
+  uno      phase 3: n=2..8: 6.7min
+  esp8266  phase 2: n=2..13: 107.6days
+  esp8266  phase 3: n=2..10: 1.6h
+  esp32    phase 2: n=2..14: 49.5days
+  esp32    phase 3: n=2..10: 1.6h
 
 per-board totals (all points | excluding TIME-LIMITED points):
-  uno        60 pts        1.4h |       1.4h
-  esp8266    97 pts   107.7days |       2.4h
-  esp32     104 pts    49.7days |       2.7h
-GRAND TOTAL 261 points: 157.5days all | 6.5h excluding 10 TIME-LIMITED point(s) (device > 1.0h, flag only; no ceiling set -- owner decision)
+  uno        60 pts        1.1h |       1.1h
+  esp8266    97 pts   107.7days |       2.7h
+  esp32     104 pts    49.6days |       2.0h
+GRAND TOTAL 261 points: 157.4days all | 5.8h excluding 10 TIME-LIMITED point(s) (device > 1.0h, flag only; no ceiling set -- owner decision)
 estimates are sequential single-operator wall time; the finish clock of a whole plan = start + total
 ```
 
@@ -217,8 +227,27 @@ the original `infidelity_tvd.csv` is untouched. Cell = infidelity / TVD. Thresho
 ## 7. UNVERIFIED list
 
 - ESP8266 usable heap and `largest_block` (assumed about 45-50 KB; the wall n=13 does not depend on it).
-- ESP32 `largest_block` = 110 580 B holds for the restart.
-- Uno grover stack frame size at n=7 (measured outcome only).
-- WDT thresholds (ESP8266 6 s, ESP32 5 s) in `timing_model.WDT_PER_REP_THRESHOLD_S`.
-- ESP8266 compile/upload per point (compile = preflight median, upload guessed 15 s) and ESP32 upload 53.4 s (retired telemetry): estimates, not this dataset.
-- Grover time model beyond n=9 (extrapolated; ESP32 n=10 never completed).
+- ESP32 largest block of about 110 KB holds in the new run (prior observation, section 8).
+- Uno grover stack frame size at n=7.
+- WDT thresholds (ESP8266 6 s, ESP32 5 s) in `timing_model.WDT_PER_REP_THRESHOLD_S`: see the Part 4 finding in `docs/system_design.md` open decisions.
+- Compile/upload/boot per point (all ESTIMATE, bases in `timing_model.py`).
+- Grover time model beyond small n (extrapolated).
+
+## 8. Prior observations (retired data, NOT part of the new dataset)
+
+Kept only because the design above rests on them. All come from runs made before the ESP32
+timer existed; the results were deleted from the tree on 2026-10-04 (git history, commit
+`af40643`). None is a result of the restarted experiment and none is used by `pc/run.py`
+(its numbers are ESTIMATE or measured in the new run).
+
+- Compile-only build matrix (`docs/preflight_report.md` P2-8, no board involved): Uno static
+  RAM about 200 B baseline, at n=8 above 2 048 B (about 110 % of SRAM); ESP8266 static about
+  29 kB; ESP32 static about 43.4 kB.
+- Uno: n=8 hit `build_overflow` for h_all, bell_ghz, qft, qpe; n=7 ran. Free stack gap at n=7
+  about 800 B.
+- ESP32: largest free block 110 580 B, free heap 256 440 B; n=13 ok and n=14 `malloc_failed`
+  for h_all, bell_ghz, qft.
+- ESP8266 (an even earlier REPS=30 dataset): n=12 ok, n=13 `malloc` NULL.
+- Grover on the ESP32: n=8 and n=9 completed with times within about 5 % of the model; an n=10
+  attempt lost its USB port after about 2.9 h without finishing. This is the evidence behind the
+  caution in "Time ceiling".
