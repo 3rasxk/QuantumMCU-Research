@@ -7,6 +7,7 @@
 # for tests and dry flows, no hardware).
 
 import queue
+import socket
 import threading
 import time
 
@@ -30,6 +31,104 @@ class SerialTransport:
             self.ser.close()
         except Exception:  # noqa: BLE001
             pass
+
+
+class TcpServerTransport:
+    """The counter connects TO the PC (WiFi): this side listens on `port` and serves the most recent connection.
+    Same byte stream as the USB serial link (protocol v2 frames). A dropped connection is not an error: read()
+    returns nothing until the counter reconnects; write() raises OSError while nobody is connected, which the
+    session treats like any other counter problem (logged, micros() data untouched).
+    Local network only: bind address defaults to all interfaces because the counter is a separate device; use
+    a trusted WiFi (docs/design/counter_design.md, security)."""
+
+    def __init__(self, port, host="0.0.0.0"):
+        self.port = f"tcp:{port}"
+        self.srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.srv.bind((host, int(port)))
+        self.srv.listen(1)
+        self.srv.settimeout(0.2)
+        self.conn = None
+        self.peer = None
+        self._lock = threading.Lock()
+        self._stop = False
+        self._th = threading.Thread(target=self._accept_loop, daemon=True)
+        self._th.start()
+
+    def _accept_loop(self):
+        while not self._stop:
+            try:
+                c, addr = self.srv.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            c.settimeout(0.05)
+            c.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            with self._lock:
+                old, self.conn, self.peer = self.conn, c, addr
+            if old is not None:
+                try:
+                    old.close()
+                except OSError:
+                    pass
+
+    @property
+    def connected(self):
+        return self.conn is not None
+
+    def write(self, data):
+        with self._lock:
+            c = self.conn
+        if c is None:
+            raise OSError("counter not connected (waiting for it on the TCP port)")
+        try:
+            c.sendall(data)
+        except OSError:
+            self._drop(c)
+            raise
+
+    def _drop(self, c):
+        with self._lock:
+            if self.conn is c:
+                self.conn = None
+        try:
+            c.close()
+        except OSError:
+            pass
+
+    def read(self, n=512):
+        with self._lock:
+            c = self.conn
+        if c is None:
+            time.sleep(0.05)
+            return b""
+        try:
+            data = c.recv(n)
+        except socket.timeout:
+            return b""
+        except OSError:
+            self._drop(c)
+            return b""
+        if data == b"":          # peer closed
+            self._drop(c)
+        return data
+
+    def close(self):
+        self._stop = True
+        for c in (self.conn, self.srv):
+            try:
+                if c is not None:
+                    c.close()
+            except OSError:
+                pass
+
+
+def make_transport(port_spec, baud=921600):
+    """'tcp:5055' -> listen for the counter over WiFi; anything else -> USB serial device path."""
+    if str(port_spec).startswith("tcp:"):
+        return TcpServerTransport(int(str(port_spec)[4:]))
+    return SerialTransport(port_spec, baud)
 
 
 class SimTransport:

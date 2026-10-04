@@ -21,6 +21,11 @@
 #include <soc/gpio_struct.h>
 #include <esp_timer.h>
 #include <esp32/clk.h>
+#if __has_include("wifi_config.h")
+  #include "wifi_config.h"
+  #include <WiFi.h>
+  #define COUNTER_WIFI 1
+#endif
 #include "protocol.hpp"   // crc8() -- CRC-8/SMBUS shared with the PC side
 
 #define PIN_IN_DUT   34
@@ -47,7 +52,17 @@ static void put32(Frame& f, uint32_t v) { put16(f, v >> 16); put16(f, v); }
 static void put64(Frame& f, uint64_t v) { put32(f, v >> 32); put32(f, (uint32_t)v); }
 static void begin(Frame& f, uint8_t type) { f.n = 0; put8(f, M_TO_PC); put8(f, type); put8(f, 0); }
 static void finish(Frame& f) { f.b[2] = f.n - 3; put8(f, crc8(f.b, f.n)); }
-static void send(Frame& f) { Serial.write(f.b, f.n); }
+#ifdef COUNTER_WIFI
+static WiFiClient net;           // TCP client to the PC (same frames as the USB serial link)
+static uint32_t net_retry_ms = 0;
+#endif
+// Frames go to BOTH links: USB serial (always) and the TCP link to the PC when connected.
+static void send(Frame& f) {
+    Serial.write(f.b, f.n);
+#ifdef COUNTER_WIFI
+    if (net.connected()) net.write(f.b, f.n);
+#endif
+}
 
 // --------------------------------------------------------------------- state
 enum Mode : uint8_t { IDLE = 0, ARMED = 1, SELFTEST = 2 };
@@ -325,7 +340,13 @@ static uint32_t rd32(const uint8_t* p) { return ((uint32_t)rd16(p) << 16) | rd16
 static void send_heartbeat() {
     Frame f; begin(f, T_HEARTBEAT);
     put8(f, PROTO_VERSION); put64(f, (uint64_t)esp_timer_get_time()); put8(f, (uint8_t)mode);
-    put16(f, (e_head - e_tail) & (EDGE_N - 1)); put16(f, dropped); put8(f, 0);
+    put16(f, (e_head - e_tail) & (EDGE_N - 1)); put16(f, dropped);
+#ifdef COUNTER_WIFI
+    put8(f, net.connected() ? 1 : 0);   // ws_clients field: 1 = TCP link to the PC up
+#else
+    put8(f, 0);
+#endif
+    
     put32(f, ESP.getFreeHeap()); put16(f, seq ? seq - 1 : 0); finish(f); send(f);
 }
 
@@ -355,20 +376,42 @@ static void on_frame(uint8_t type, const uint8_t* p, uint8_t n) {
     // T_REFVAL: accepted, not shown in S1
 }
 
+static void feed_byte(uint8_t b) {
+    if (rx_n == 0 && b != M_TO_COUNTER) return;
+    rx[rx_n++] = b;
+    if (rx_n >= 3 && rx_n == (uint8_t)(4 + rx[2])) {
+        if (crc8(rx, rx_n - 1) == rx[rx_n - 1]) on_frame(rx[1], rx + 3, rx[2]);
+        rx_n = 0;
+    } else if (rx_n >= sizeof(rx)) rx_n = 0;
+}
+
 static void poll_serial() {
-    while (Serial.available()) {
-        uint8_t b = Serial.read();
-        if (rx_n == 0 && b != M_TO_COUNTER) continue;
-        rx[rx_n++] = b;
-        if (rx_n >= 3 && rx_n == (uint8_t)(4 + rx[2])) {
-            if (crc8(rx, rx_n - 1) == rx[rx_n - 1]) on_frame(rx[1], rx + 3, rx[2]);
-            rx_n = 0;
-        } else if (rx_n >= sizeof(rx)) rx_n = 0;
+    while (Serial.available()) feed_byte(Serial.read());
+#ifdef COUNTER_WIFI
+    while (net.connected() && net.available()) feed_byte(net.read());
+#endif
+}
+
+#ifdef COUNTER_WIFI
+// Non-blocking WiFi + TCP keep-alive: (re)join WiFi, (re)connect to the PC every 2 s. Never blocks capture:
+// the capture ISRs and the frame ring do not depend on this link; lost frames are re-requested by the PC (REPLAY).
+static void wifi_poll() {
+    if (WiFi.status() != WL_CONNECTED) { if (millis() - net_retry_ms > 5000) { net_retry_ms = millis(); WiFi.begin(WIFI_SSID, WIFI_PASS); } return; }
+    if (!net.connected() && millis() - net_retry_ms > 2000) {
+        net_retry_ms = millis();
+        net.stop();
+        if (net.connect(PC_HOST, PC_PORT, 1000)) net.setNoDelay(true);
     }
 }
+#endif
 
 void setup() {
     Serial.begin(BAUD);
+#ifdef COUNTER_WIFI
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);   // no modem sleep: steadier latency for the serial/TCP side (capture itself is hardware)
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+#endif
     pinMode(PIN_LED, OUTPUT);
     pinMode(PIN_IN_DUT, INPUT); pinMode(PIN_IN_SELF, INPUT);   // input-only pads: firmware cannot drive them
     capture_init(); route_capture(PIN_IN_DUT);
@@ -378,6 +421,9 @@ void setup() {
 static uint32_t last_hb = 0;
 void loop() {
     poll_serial();
+#ifdef COUNTER_WIFI
+    wifi_poll();
+#endif
     while (e_tail != e_head && mode != IDLE) {
         Edge e = edges[e_tail]; e_tail = (e_tail + 1) & (EDGE_N - 1);
         handle_edge(e);

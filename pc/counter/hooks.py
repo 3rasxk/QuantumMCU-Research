@@ -13,6 +13,7 @@ REF_CHOICES = ("none", "counter")
 _client = None
 _sessions = []
 _HEARTBEAT_WAIT_S = 6.0
+_TCP_WAIT_S = 60.0   # over WiFi the counter may still be joining the network when the sweep starts
 
 
 def add_args(ap):
@@ -20,8 +21,7 @@ def add_args(ap):
                     help="timing reference: 'counter' = ESP32 pulse counter (official runs REQUIRE it; data goes to "
                          "the with_ref/ bucket), 'none' = micros() only (no_ref/ bucket, not for official runs)")
     ap.add_argument("--counter-port", default=None,
-                    help="serial port of the counter ESP32, required with --ref counter, never auto-guessed, "
-                         "never the same as --port")
+                    help="counter link, required with --ref counter, never auto-guessed: a USB serial device path, or 'tcp:5055' to listen on that TCP port for the counter over WiFi; never the same as --port")
     ap.add_argument("--counter-cal", default=None,
                     help="calibration JSON from pc/counter/calibration.py; its ppm/uncertainty is copied into the "
                          "per-session reference sidecar (recommended for official runs)")
@@ -73,7 +73,7 @@ def from_args(args, board, circuit, session_id=""):
     global _client
     if not ref_active(args):
         return SweepRef()
-    from counter.client import CounterClient, SerialTransport
+    from counter.client import CounterClient, make_transport
     from counter.session import CounterSession
     from shared import paths as sp
     from shared import timing_model as tm
@@ -85,16 +85,17 @@ def from_args(args, board, circuit, session_id=""):
         sys.exit(2)
     if _client is None:
         try:
-            _client = CounterClient(SerialTransport(args.counter_port))
+            _client = CounterClient(make_transport(args.counter_port))
         except Exception as e:  # noqa: BLE001
             print(f"error: cannot open counter port {args.counter_port}: {e}", file=sys.stderr)
             sys.exit(2)
         import time
-        end = time.monotonic() + _HEARTBEAT_WAIT_S
+        wait_s = _TCP_WAIT_S if str(args.counter_port).startswith("tcp:") else _HEARTBEAT_WAIT_S
+        end = time.monotonic() + wait_s
         while time.monotonic() < end and not _client.alive():
             time.sleep(0.1)
         if not _client.alive():
-            print(f"error: no counter heartbeat on {args.counter_port} within {_HEARTBEAT_WAIT_S:.0f} s -- "
+            print(f"error: no counter heartbeat on {args.counter_port} within {wait_s:.0f} s -- "
                   "official runs require a working counter", file=sys.stderr)
             shutdown()
             sys.exit(2)

@@ -268,6 +268,17 @@ or above 60 s (generator timer resolution 1 us, ISR toggling; one 60 s pulse onl
 stress; the generator's own jitter is folded into the measured error, so the observed "resolution" is the generator's
 floor (about 1 us), not the capture unit's 12.5 ns.
 
+## 14a. WiFi data path (owner choice 2026-10-04, implemented as an UNFLASHED draft)
+
+The counter streams the same protocol-v2 frames over **TCP over WiFi** in addition to USB serial: the counter is the TCP **client**,
+the PC listens (`--counter-port tcp:5055` -> `pc/counter/client.py` `TcpServerTransport`). Credentials and the PC address live in
+`firmware/counter_esp32/src/wifi_config.h` (git-ignored; template `wifi_config.example.h`); without it the firmware builds WiFi-free.
+Capture is hardware-timed, so WiFi latency cannot change a width. Frames lost on the link are repaired by REPLAY (the counter keeps
+the last 512 pulses, code 6 is raised and the point becomes `anomaly`); a dropped connection is a counter problem handled by the
+session policy (logged, `micros()` untouched). Security: the TCP port accepts any LAN peer and the frames are not authenticated
+(CRC-8 is an error check, not security): use a trusted network or the PC's own hotspot; no control path beyond ARM/END/REPLAY exists.
+Build: RAM 32.2 %, flash 57.9 % with WiFi (25.1 % / 21.7 % without). Not flashed, not tested on hardware.
+
 ## 14. Missing parts, specified as design only
 
 **WiFi mode.** Default **access point** (`SSID qlab-counter-<id>`, WPA2, password set at flash time, fixed IP

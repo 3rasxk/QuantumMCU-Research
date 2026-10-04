@@ -511,6 +511,19 @@ def check_counter_port(counter_port, target_port):
         raise RunnerError("--ref counter requires --counter-port")
     if counter_port == target_port:
         raise RunnerError("--counter-port must differ from --port (the counter port is never shared)")
+    if str(counter_port).startswith("tcp:"):
+        import socket
+        try:
+            portno = int(str(counter_port)[4:])
+            probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            probe.bind(("0.0.0.0", portno))
+            probe.close()
+        except (ValueError, OSError) as e:
+            raise RunnerError(f"counter TCP port {counter_port!r} cannot be used on this PC: {e}")
+        print(f"counter link: WiFi/TCP, this PC will listen on port {portno} for the counter (it must join the same "
+              f"network and connect to this PC; the sweep waits up to 60 s for its heartbeat)")
+        return
     if not port_exists(counter_port):
         raise RunnerError(f"counter port {counter_port!r} does not exist (no such device file); "
                           "this runner never auto-guesses which ESP32 is the counter")
@@ -689,7 +702,7 @@ def main(argv=None):
                      help="timing reference: 'counter' = ESP32 pulse counter (official runs REQUIRE it, bucket with_ref/); "
                           "'none' = micros() only (bucket no_ref/, warned, not for official runs)")
     ap.add_argument("--counter-port", default=None, dest="counter_port",
-                     help="serial port of the counter ESP32; required with --ref counter; never auto-guessed")
+                     help="counter link; required with --ref counter; never auto-guessed: a USB serial device path, or tcp:5055 to listen on that TCP port for the counter over WiFi")
     ap.add_argument("--counter-cal", default=None, dest="counter_cal",
                      help="calibration JSON (pc/counter/calibration.py) copied into the session sidecar")
     ap.add_argument("--fresh", action="store_true",

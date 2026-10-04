@@ -78,6 +78,27 @@ The common delay cancels in a width; only the difference between the two edges m
 in the plan (tens of microseconds, h_all n=1): below 0.01 %. A 4-microsecond `micros()` tick on the Uno is far larger than any
 of this.
 
+## 4b. Power and data over WiFi (owner choice 2026-10-04: one USB port only)
+
+With one PC USB port the **Uno takes the USB port** and the counter sends its data over **WiFi** (TCP to this PC; firmware
+`firmware/counter_esp32`, config `src/wifi_config.h`, run flag `--counter-port tcp:5055`). The counter then needs power only:
+
+```
+Uno 5V  -----------------> counter VIN (the 5V/VIN pin of the DevKit, NOT 3V3)
+Uno GND -----+------------> counter GND      (this same wire is also the signal ground)
+Uno D7 --[divider, section 4]--> counter GPIO34
+```
+
+- The Uno must be powered from the PC USB, so its 5V pin is live. The counter's own USB cable stays **unplugged** while VIN is fed
+  from the Uno (feeding both may damage a board, UNVERIFIED). Flash the counter over its own USB cable first, alone, then unplug.
+- Current: the Uno 5V pin on USB power supplies roughly 500 mA minus the Uno's own use (UNVERIFIED); an ESP32 with WiFi peaks at
+  roughly 240-350 mA (UNVERIFIED). If the counter resets or drops WiFi, add a 100-470 uF capacitor VIN to GND at the counter or move
+  to a separate USB power source. The Uno's 3.3 V pin (about 50 mA) cannot power the counter.
+- Trade-off: the counter now loads the Uno's supply. Check in the pilot that `exec_time_us` does not change when the counter is attached.
+- WiFi: the counter joins the same network as the PC and connects to the PC's IP, port 5055. The PC and the counter must be on one
+  network that allows device-to-device traffic (some school networks do not; a phone hotspot or the PC's own hotspot does).
+  The target board never enables WiFi.
+
 ## 5. Common ground, power, shielding
 
 - **Common GND** between target and counter: mandatory; use a short dedicated wire.
@@ -91,6 +112,7 @@ of this.
 2. **No 5 V net touches any counter pin.** Trace every wire: counter GPIO34 sees only the divider node or the 3.3 V target pin.
 3. GND wire present; no wire to the counter's 3V3 or VIN.
 4. 10 kohm pull-down (or the divider's R2) present on GPIO34.
+4b. If powering the counter from the Uno: Uno 5V goes to the counter's **VIN** only, the counter's USB cable is unplugged, nothing on 3V3.
 5. The loopback jumper GPIO25 -> GPIO35 is in place and nothing else is on GPIO25/35.
 6. Counter on its own USB port, target on a different one; both device files noted (never swap them).
 7. The board you are about to flash is the **target** (target firmware) or the **counter** (counter firmware): never the other way round.

@@ -10,6 +10,13 @@ Nothing here has been executed yet: all boxes are open.
 - [ ] A3. Clock calibration done (>= 30 min): `.venv/bin/python pc/counter/calibration.py --port <counter> --minutes 30 --out calibration.json`; `within_50ppm` true; JSON kept for `--counter-cal`.
 - [ ] A4. Counter firmware flash status updated in `firmware/counter_esp32/README.md`.
 
+## A2. WiFi link (only if the counter runs on WiFi + Uno power, owner choice 2026-10-04)
+
+- [ ] A2.1. `firmware/counter_esp32/src/wifi_config.h` created from the example (SSID, password, this PC's IP, port 5055) and the counter flashed over its own USB cable, alone.
+- [ ] A2.2. Counter on a trusted network that allows device-to-device TCP; PC firewall allows incoming connections to port 5055.
+- [ ] A2.3. `--counter-port tcp:5055`: the sweep shows the counter's heartbeat within 60 s; self-test repeated over WiFi (host tool can use the TCP link) and a 10-minute soak shows no `counter_lost`.
+- [ ] A2.4. Counter powered from the Uno 5V -> VIN with its USB cable unplugged; no resets in the soak (else add a capacitor or a separate USB supply).
+
 ## B. Input path (S2, counter + known source)
 
 - [ ] B1. A known pulse source on GPIO34 through the **real** wiring (`docs/design/wiring.md` section 3): widths measured within tolerance, no phantom pulses at source reset.

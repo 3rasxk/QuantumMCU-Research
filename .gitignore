@@ -43,3 +43,5 @@ data/archive/*
 # full-restart archives (2026-10-03) are committed on purpose: they are the
 # retired dataset, kept for the record and verified by MANIFEST.json
 !data/archive/restart_*/
+# WiFi credentials for the counter firmware (never commit)
+firmware/counter_esp32/src/wifi_config.h

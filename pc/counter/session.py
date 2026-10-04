@@ -107,6 +107,8 @@ class CounterSession:
             else:
                 report = got[1]
             collected += self.client.drain()
+            if report is not None:
+                self._recover_gaps(n, collected, report)
             if status == "ok" and not alive:
                 self.issue(n, "heartbeat stale at END (report still received)")
         pulses = [f for t, f in collected if t == cp.T_PULSE]
@@ -139,6 +141,29 @@ class CounterSession:
                              {"status": f"refused_{status}", "summary": {}, "notes": status}, status)
         self.armed_ok = False
         return status
+
+    def _recover_gaps(self, n, collected, report, tries=2, wait_s=3.0):
+        """Frames lost on the link (WiFi drop) show up as missing sequence numbers below the counter's own pulse
+        count: ask the counter to REPLAY from the first missing seq (it keeps the last 512 pulses) and merge.
+        The counter raises code 6 when asked; the point is then an `anomaly`, never silently repaired."""
+        for _ in range(tries):
+            have = {f[0] for t, f in collected if t == cp.T_PULSE}
+            missing = [q for q in range(report[2]) if q not in have]
+            if not missing:
+                return
+            self.issue(n, f"sequence gap: missing {missing[:5]}{'...' if len(missing) > 5 else ''}; requesting REPLAY from {missing[0]}")
+            try:
+                self.client.send(cp.encode(cp.T_REPLAY, self.base + n, missing[0]))
+            except Exception as e:  # noqa: BLE001
+                self.issue(n, f"REPLAY send failed: {e}")
+                return
+            end = time.monotonic() + wait_s
+            while time.monotonic() < end:
+                time.sleep(0.05)
+                collected += self.client.drain()
+                have = {f[0] for t, f in collected if t == cp.T_PULSE}
+                if all(q in have for q in missing):
+                    break
 
     @staticmethod
     def _dedupe(pulses):
