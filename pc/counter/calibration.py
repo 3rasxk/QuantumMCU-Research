@@ -26,8 +26,26 @@ from counter import proto as cp  # noqa: E402
 CAL_SCHEMA_VERSION = 1   # own constant: calibration JSON files
 
 
-def fit(pairs):
-    """pairs: [(pc_us, counter_us)]. -> dict(ppm, ppm_stderr, n, span_s, residual_rms_us, offset_us)."""
+def fit(pairs, robust=True):
+    """pairs: [(pc_us, counter_us)]. -> dict(ppm, ppm_stderr, n, span_s, residual_rms_us, offset_us, dropped).
+    robust: WiFi/USB latency has rare long spikes (seen: 1.6 s), so after a first fit the pairs whose residual exceeds
+    5 x the median absolute residual are dropped (at most 10 % of the pairs) and the line is refitted."""
+    dropped = 0
+    if robust and len(pairs) >= 30:
+        r0 = _fit(pairs)
+        x0 = pairs[0][0]
+        res = [abs((y - pairs[0][1]) - (r0["offset_us"] + (r0["ppm"] / 1e6 + 1.0) * (x - x0))) for x, y in pairs]
+        mad = sorted(res)[len(res) // 2] or 1.0
+        keep = [p for p, e in zip(pairs, res) if e <= 5 * mad]
+        if len(pairs) - len(keep) <= 0.1 * len(pairs) and len(keep) >= 10:
+            dropped = len(pairs) - len(keep)
+            pairs = keep
+    out = _fit(pairs)
+    out["dropped"] = dropped
+    return out
+
+
+def _fit(pairs):
     n = len(pairs)
     if n < 10:
         raise ValueError(f"need at least 10 heartbeat pairs, got {n}")
@@ -53,7 +71,7 @@ def write_json(path, result, port="", counter_fw="", note=""):
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "port": port, "counter_fw": counter_fw,
         "ppm": round(result["ppm"], 3), "ppm_stderr": round(result["ppm_stderr"], 3),
-        "pairs": result["n"], "span_s": round(result["span_s"], 1),
+        "pairs": result["n"], "dropped_outliers": result.get("dropped", 0), "span_s": round(result["span_s"], 1),
         "residual_rms_us": round(result["residual_rms_us"], 1),
         "limitation": ("Measured relative to the PC clock (itself a quartz clock, UNVERIFIED tolerance), "
                        "dominated by serial latency jitter; says nothing about the target board's own clock. "
@@ -66,30 +84,33 @@ def write_json(path, result, port="", counter_fw="", note=""):
 
 
 def collect(port, minutes, baud=115200, out=print):
-    import serial
-    d = cp.Decoder()
+    """port: a USB serial device path or 'tcp:PORT' (the counter connects over WiFi). Each heartbeat is stamped with the PC
+    monotonic clock in the reader thread, at arrival (not when the main loop gets round to it)."""
+    from counter.client import CounterClient, make_transport
     pairs = []
+
+    def on_frame(ftype, f):
+        if ftype == cp.T_HEARTBEAT:
+            pairs.append((time.monotonic_ns() / 1000.0, f[1]))
+    cl = CounterClient(make_transport(port, baud), on_frame=on_frame)
     end = time.monotonic() + minutes * 60
-    with serial.Serial(port, baud, timeout=0.2) as s:
-        time.sleep(0.3)
-        s.reset_input_buffer()
-        next_report = time.monotonic() + 60
+    next_report = time.monotonic() + 60
+    try:
         while time.monotonic() < end:
-            data = s.read(256)
-            t_pc = time.monotonic_ns() / 1000.0
-            for t, f in d.feed(data):
-                if t == cp.T_HEARTBEAT:
-                    pairs.append((t_pc, f[1]))
+            cl.drain()
+            time.sleep(0.5)
             if time.monotonic() > next_report and len(pairs) >= 10:
                 next_report += 60
-                r = fit(pairs)
-                out(f"  {r['span_s'] / 60:.1f} min: {r['ppm']:+.2f} ppm +- {r['ppm_stderr']:.2f} ({r['n']} pairs)")
-    return pairs
+                r = fit(list(pairs))
+                out(f"  {r['span_s'] / 60:.1f} min: {r['ppm']:+.2f} ppm +- {r['ppm_stderr']:.2f} ({r['n']} pairs, {r['dropped']} outliers dropped)")
+    finally:
+        cl.close()
+    return list(pairs)
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", required=True)
+    ap.add_argument("--port", required=True, help="USB serial device or tcp:5055 (counter over WiFi; stop the bridge first)")
     ap.add_argument("--minutes", type=float, default=30.0)
     ap.add_argument("--out", required=True, help="calibration JSON to write")
     args = ap.parse_args()

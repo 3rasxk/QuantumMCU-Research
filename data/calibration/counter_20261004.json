@@ -1,0 +1,16 @@
+{
+ "schema_version": 1,
+ "method": "heartbeat counter clock vs PC time.monotonic_ns, least squares",
+ "timestamp_utc": "2026-10-04T17:29:27.729479+00:00",
+ "port": "tcp:5055",
+ "counter_fw": "",
+ "ppm": 17.516,
+ "ppm_stderr": 1.872,
+ "pairs": 1782,
+ "dropped_outliers": 17,
+ "span_s": 1797.9,
+ "residual_rms_us": 41073.8,
+ "limitation": "Measured relative to the PC clock (itself a quartz clock, UNVERIFIED tolerance), dominated by serial latency jitter; says nothing about the target board's own clock. The self-loopback self-test is not a calibration.",
+ "within_50ppm": true,
+ "note": ""
+}

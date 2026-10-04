@@ -67,3 +67,11 @@ typically +-0.5 % (UNVERIFIED), so the Uno is the likely source. The clock calib
 Per-rep fit for n>=4 (200 pairs): counter = 1.00491 x micros() + 6.15 us, the same scale as the first sweep (1.0051): reproducible. The constant part
 (about 6 us) is the two `digitalWrite` calls plus micros() overhead; the scale part (0.49 %) is a clock difference between the Uno and the counter. Which clock
 is off needs the counter calibration (`pc/counter/calibration.py`); the Uno resonator is typically +-0.5 % (UNVERIFIED).
+
+## Counter clock calibration (2026-10-04, 30 min over WiFi, `data/calibration/counter_20261004.json`)
+Counter heartbeat clock vs the PC monotonic clock: **+17.5 ppm** (stated standard error 1.9 ppm, 1782 pairs, 17 spike outliers dropped). The estimate
+moved from +49 ppm at 10 min to +15..+18 ppm from 25 min on, and WiFi latency jitter is large (residual rms 41 ms), so the realistic uncertainty is
+a few ppm, not 1.9 (UNVERIFIED). The reference is the PC's own quartz clock (tolerance UNVERIFIED), so this is a relative figure.
+Consequence for the Uno finding: 17.5 ppm = 0.00175 %, far below the 0.49 % scale difference between counter and `micros()`. So the **Uno's `micros()` clock
+runs about 0.49 % slow** (i.e. reports about 0.49 % fewer microseconds than elapsed), within the +-0.5 % resonator tolerance typical of an Uno R3 (UNVERIFIED),
+unless the PC clock itself were 0.49 % off, which is not plausible for a quartz clock.
