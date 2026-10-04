@@ -10,7 +10,9 @@
 // SELF-LOOPBACK ONLY: generator and counter share one crystal, so the self-test says
 // nothing about absolute clock accuracy (design section 7).
 //
-// WiFi/dashboard are NOT part of S1. Pins: IN_DUT=34, IN_SELF=35, GEN_OUT=25.
+// Protocol version 2 (pc/counter/proto.py). WiFi/dashboard are NOT part of S1.
+// Pins: IN_DUT=34, IN_SELF=35, GEN_OUT=25.
+// STATUS: UNFLASHED until the owner approves (docs/design/readiness.md).
 
 #include <Arduino.h>
 #include <driver/mcpwm.h>
@@ -26,6 +28,7 @@
 #define PIN_GEN_OUT  25
 #define PIN_LED      2
 #define BAUD         921600
+#define PROTO_VERSION 2
 
 // --------------------------------------------------------------------- frame layer
 enum : uint8_t { M_TO_COUNTER = 0xC7, M_TO_PC = 0xD7 };
@@ -33,6 +36,7 @@ enum : uint8_t { T_ARM = 0xC0, T_END = 0xC1, T_ACK = 0xC2, T_REPLAY = 0xC3, T_RE
                  T_SELFTEST = 0xC5, T_STATUS = 0xC6,
                  T_PULSE = 0xD0, T_ANOMALY = 0xD1, T_REPORT = 0xD2, T_HEARTBEAT = 0xD3,
                  T_ARM_ACK = 0xD4, T_SELFTEST_RESULT = 0xD5 };
+enum : uint8_t { ACK_BUSY = 0, ACK_OK = 1, ACK_BAD_VERSION = 2, ACK_MALFORMED = 3 };
 enum : uint8_t { A_MISSING = 1, A_EXTRA, A_GLITCH, A_STUCK_HIGH, A_COUNT_MISMATCH, A_SEQ_GAP,
                  A_NEVER_STARTED, A_CLOCK_FAULT, A_RING_OVERFLOW };
 
@@ -51,7 +55,10 @@ static volatile Mode mode = IDLE;
 static uint32_t session = 0;
 static uint16_t reps = 0;
 static uint32_t min_width_ns = 500;
-static uint16_t max_width_s = 130;
+static uint32_t max_width_s = 130;
+static uint16_t start_timeout_s = 0;
+static int64_t arm_us = 0;
+static bool start_flagged = false;
 static int cap_pin = PIN_IN_DUT;
 
 static uint16_t seq = 0;
@@ -120,17 +127,19 @@ static void capture_init() {
 static void clear_point() {
     e_tail = e_head; e_overflow = 0;
     seq = 0; anomaly_mask = 0; dropped = 0; w_min = ~0ULL; w_max = 0; w_sum = 0;
-    rises = falls = 0; have_rise = false; stuck_flagged = false;
+    rises = falls = 0; have_rise = false; stuck_flagged = false; start_flagged = false;
     for (int i = 0; i < REPLAY_N; i++) replay_used[i] = false;
     pcnt_counter_clear(PCNT_UNIT_0);
     t0_us = esp_timer_get_time();
+    arm_us = t0_us;
 }
 
 // width from the two 32-bit stamps + the 64-bit coarse clock (overflow counting)
-static uint64_t unwrap_ticks(uint32_t r32, uint32_t f32, uint64_t coarse_ticks) {
+static uint64_t unwrap_ticks(uint32_t r32, uint32_t f32, uint64_t coarse_ticks, uint16_t* wraps) {
     uint32_t fine = f32 - r32;                       // mod 2^32
     int64_t k = (int64_t)(((double)coarse_ticks - (double)fine) / 4294967296.0 + 0.5);
     if (k < 0) k = 0;
+    *wraps = (uint16_t)k;
     return (uint64_t)fine + ((uint64_t)k << 32);
 }
 static uint64_t ticks_to_ns(uint64_t t) { return (uint64_t)((double)t * 1e9 / (double)apb_hz + 0.5); }
@@ -138,10 +147,13 @@ static uint64_t ticks_to_ns(uint64_t t) { return (uint64_t)((double)t * 1e9 / (d
 static uint64_t pulse_widths[64];   // self-test scenario record
 static uint8_t n_pw = 0;
 
-static void emit_pulse(uint64_t width_ns, int64_t r_us, uint8_t flags) {
-    Frame f; begin(f, T_PULSE); put16(f, seq); put64(f, (uint64_t)(r_us - t0_us)); put64(f, width_ns); put8(f, flags); finish(f);
+static void emit_pulse(uint64_t ticks, uint64_t width_ns, uint16_t wraps, int64_t r_us, uint8_t flags) {
+    Frame f; begin(f, T_PULSE); put16(f, seq); put64(f, (uint64_t)(r_us - t0_us)); put64(f, ticks); put64(f, width_ns);
+    put16(f, wraps); put8(f, flags); finish(f);
     send(f);
-    int slot = seq % REPLAY_N; replay[slot] = f; replay_seq[slot] = seq; replay_used[slot] = true;
+    int slot = seq % REPLAY_N;
+    if (replay_used[slot]) { dropped++; flag(A_RING_OVERFLOW, seq, replay_seq[slot]); }   // overwrote an unACKed frame
+    replay[slot] = f; replay_seq[slot] = seq; replay_used[slot] = true;
     if (mode == SELFTEST && n_pw < 64) pulse_widths[n_pw++] = width_ns;
     seq++;
 }
@@ -156,13 +168,15 @@ static void handle_edge(const Edge& e) {
         if (!have_rise) { flag(A_COUNT_MISMATCH, seq, 2); return; }  // falling edge without a rise
         have_rise = false;
         uint64_t coarse = (uint64_t)(e.us - rise_us) * (apb_hz / 1000000ULL);
-        uint64_t w_ns = ticks_to_ns(unwrap_ticks(rise_cap, e.cap, coarse));
+        uint16_t wraps = 0;
+        uint64_t w_ticks = unwrap_ticks(rise_cap, e.cap, coarse, &wraps);
+        uint64_t w_ns = ticks_to_ns(w_ticks);
         uint8_t fl = 0;
         if (w_ns < min_width_ns) { fl |= 1; flag(A_GLITCH, seq, (uint32_t)w_ns); }
         if (w_ns < w_min) w_min = w_ns;
         if (w_ns > w_max) w_max = w_ns;
         w_sum += w_ns;
-        emit_pulse(w_ns, rise_us, fl);
+        emit_pulse(w_ticks, w_ns, wraps, rise_us, fl);
     }
 }
 
@@ -196,6 +210,7 @@ static bool IRAM_ATTR gen_isr(void*) {
     if (gen_phase == 0) {                       // rising edge now, falling after width
         if (gen_i >= gen_n) { gen_done = true; return false; }
         GPIO.out_w1ts = (1u << PIN_GEN_OUT);
+        if (gen_steps[gen_i].width_us == 0) { gen_done = true; return false; }   // rise and HOLD (still-high test)
         gen_phase = 1;
         timer_group_set_alarm_value_in_isr(TIMER_GROUP_1, TIMER_0, now + gen_steps[gen_i].width_us);
     } else {                                    // falling edge, next rising after gap
@@ -228,7 +243,8 @@ static void gen_start(uint8_t n) {
 }
 
 // --------------------------------------------------------------------- self-test scenarios
-enum StState : uint8_t { ST_NONE, ST_RUN_CLEAN, ST_RUN_GLITCH, ST_RUN_MISSING, ST_FINISH };
+enum StState : uint8_t { ST_NONE, ST_RUN_CLEAN, ST_RUN_GLITCH, ST_RUN_MISSING, ST_RUN_STUCK, ST_RUN_GAP, ST_PAUSE, ST_FINISH };
+static StState st_after_pause = ST_FINISH;
 static StState st_state = ST_NONE;
 static uint32_t st_wait_until = 0;
 
@@ -259,6 +275,18 @@ static void st_start_missing() {     // reps = 10 but only 9 pulses are generate
     gen_start(9); st_state = ST_RUN_MISSING;
 }
 
+static void st_start_stuck() {       // 3 pulses, then the line rises and STAYS high; END must raise code 4
+    for (uint8_t i = 0; i < 3; i++) { gen_steps[i].width_us = 10000; gen_steps[i].gap_us = 3000; }
+    gen_steps[3].width_us = 0; gen_steps[3].gap_us = 0;
+    st_arm(0xF0000004, 4, 5000);
+    gen_start(4); st_state = ST_RUN_STUCK;
+}
+static void st_start_gap() {         // 10 pulses; the PC deliberately drops one frame and sends REPLAY (code 6)
+    for (uint8_t i = 0; i < 10; i++) { gen_steps[i].width_us = 10000; gen_steps[i].gap_us = 3000; }
+    st_arm(0xF0000005, 10, 5000);
+    gen_start(10); st_state = ST_RUN_GAP;
+}
+
 static void st_group_results() {
     uint8_t idx = 0;
     for (uint8_t g = 0; g < N_GROUPS; g++) {
@@ -276,6 +304,7 @@ static void st_group_results() {
 static void st_poll() {
     if (st_state == ST_NONE) return;
     if (st_state == ST_FINISH) { st_state = ST_NONE; mode = IDLE; return; }
+    if (st_state == ST_PAUSE) { if ((int32_t)(millis() - st_wait_until) >= 0) { st_wait_until = 0; st_state = st_after_pause; } return; }
     if (!gen_done) return;
     if (st_wait_until == 0) { st_wait_until = millis() + 100; return; }   // let the last edge arrive
     if ((int32_t)(millis() - st_wait_until) < 0) return;
@@ -283,7 +312,9 @@ static void st_poll() {
     do_end(false);
     if (st_state == ST_RUN_CLEAN) { st_group_results(); st_start_glitch(); }
     else if (st_state == ST_RUN_GLITCH) st_start_missing();
-    else if (st_state == ST_RUN_MISSING) st_state = ST_FINISH;
+    else if (st_state == ST_RUN_MISSING) st_start_stuck();
+    else if (st_state == ST_RUN_STUCK) { GPIO.out_w1tc = (1u << PIN_GEN_OUT); st_start_gap(); }
+    else if (st_state == ST_RUN_GAP) { st_after_pause = ST_FINISH; st_wait_until = millis() + 2500; st_state = ST_PAUSE; }  // window for the PC's REPLAY
 }
 
 // --------------------------------------------------------------------- host commands
@@ -293,26 +324,35 @@ static uint32_t rd32(const uint8_t* p) { return ((uint32_t)rd16(p) << 16) | rd16
 
 static void send_heartbeat() {
     Frame f; begin(f, T_HEARTBEAT);
-    put32(f, millis() / 1000); put8(f, (uint8_t)mode);
+    put8(f, PROTO_VERSION); put64(f, (uint64_t)esp_timer_get_time()); put8(f, (uint8_t)mode);
     put16(f, (e_head - e_tail) & (EDGE_N - 1)); put16(f, dropped); put8(f, 0);
     put32(f, ESP.getFreeHeap()); put16(f, seq ? seq - 1 : 0); finish(f); send(f);
 }
 
 static void on_frame(uint8_t type, const uint8_t* p, uint8_t n) {
-    if (type == T_ARM && n == 15 && mode == IDLE) {
-        session = rd32(p); reps = rd16(p + 7); min_width_ns = rd32(p + 9); max_width_s = rd16(p + 13);
-        route_capture(PIN_IN_DUT); clear_point(); mode = ARMED;
-        Frame f; begin(f, T_ARM_ACK); put32(f, session); put8(f, 1); finish(f); send(f);
-    } else if (type == T_ARM) {                       // refused: busy or malformed
-        Frame f; begin(f, T_ARM_ACK); put32(f, n >= 4 ? rd32(p) : 0); put8(f, 0); finish(f); send(f);
+    if (type == T_ARM) {
+        uint32_t sess = n >= 5 ? rd32(p + 1) : 0;
+        uint8_t status = ACK_OK;
+        if (n != 20) status = ACK_MALFORMED;
+        else if (p[0] != PROTO_VERSION) status = ACK_BAD_VERSION;
+        else if (mode != IDLE) status = ACK_BUSY;
+        if (status == ACK_OK) {
+            session = sess; reps = rd16(p + 8); min_width_ns = rd32(p + 10); max_width_s = rd32(p + 14);
+            start_timeout_s = rd16(p + 18);
+            route_capture(PIN_IN_DUT); clear_point(); mode = ARMED;
+        }
+        Frame f; begin(f, T_ARM_ACK); put32(f, sess); put8(f, status); put8(f, PROTO_VERSION); finish(f); send(f);
     } else if (type == T_END && mode == ARMED) { do_end(false); mode = IDLE;
     } else if (type == T_REPLAY && n == 6) {
         uint16_t from = rd16(p + 4);
         flag(A_SEQ_GAP, from, 0);
         for (uint16_t s = from; s != seq; s++) { int slot = s % REPLAY_N; if (replay_used[slot] && replay_seq[slot] == s) send(replay[slot]); }
+    } else if (type == T_ACK && n == 6) {          // free every replay slot up to and including the acked seq
+        uint16_t upto = rd16(p + 4);
+        for (int i = 0; i < REPLAY_N; i++) if (replay_used[i] && (uint16_t)(upto - replay_seq[i]) < 0x8000) replay_used[i] = false;
     } else if (type == T_SELFTEST && mode == IDLE) { st_start_clean();
     } else if (type == T_STATUS) { send_heartbeat(); }
-    // T_ACK / T_REFVAL: accepted, nothing to free/show in S1
+    // T_REFVAL: accepted, not shown in S1
 }
 
 static void poll_serial() {
@@ -346,6 +386,10 @@ void loop() {
     if (mode == ARMED && have_rise && !stuck_flagged && max_width_s &&
         (esp_timer_get_time() - rise_us) > (int64_t)max_width_s * 1000000LL) {
         stuck_flagged = true; flag(A_STUCK_HIGH, falls, 2);
+    }
+    if (mode == ARMED && start_timeout_s && !start_flagged && falls == 0 && !have_rise &&
+        (esp_timer_get_time() - arm_us) > (int64_t)start_timeout_s * 1000000LL) {
+        start_flagged = true; flag(A_NEVER_STARTED, 0, 1);   // no first pulse within the start timeout
     }
     st_poll();
     if (millis() - last_hb >= 1000) { last_hb = millis(); digitalWrite(PIN_LED, !digitalRead(PIN_LED)); send_heartbeat(); }
