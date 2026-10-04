@@ -15,7 +15,7 @@ from counter import proto as cp
 
 
 class SerialTransport:
-    def __init__(self, port, baud=921600):
+    def __init__(self, port, baud=115200):
         import serial
         self.port = port
         self.ser = serial.Serial(port, baud, timeout=0.1)
@@ -124,7 +124,7 @@ class TcpServerTransport:
                 pass
 
 
-def make_transport(port_spec, baud=921600):
+def make_transport(port_spec, baud=115200):
     """'tcp:5055' -> listen for the counter over WiFi; anything else -> USB serial device path."""
     if str(port_spec).startswith("tcp:"):
         return TcpServerTransport(int(str(port_spec)[4:]))

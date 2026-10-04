@@ -117,7 +117,7 @@ def report_text(a, bad_frames=0, dropped_records=0, extra=""):
     return "\n".join(L)
 
 
-def run(port, baud=921600, timeout_s=300):
+def run(port, baud=115200, timeout_s=300):
     import serial
     d = cp.Decoder()
     frames = []

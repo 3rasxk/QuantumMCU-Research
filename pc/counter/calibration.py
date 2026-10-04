@@ -65,7 +65,7 @@ def write_json(path, result, port="", counter_fw="", note=""):
     return doc
 
 
-def collect(port, minutes, baud=921600, out=print):
+def collect(port, minutes, baud=115200, out=print):
     import serial
     d = cp.Decoder()
     pairs = []

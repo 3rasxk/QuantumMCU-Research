@@ -32,7 +32,7 @@
 #define PIN_IN_SELF  35
 #define PIN_GEN_OUT  25
 #define PIN_LED      2
-#define BAUD         921600
+#define BAUD         115200   // CH340 USB bridges do not decode 921600 reliably (seen on the first flash, 2026-10-04)
 #define PROTO_VERSION 2
 
 // --------------------------------------------------------------------- frame layer

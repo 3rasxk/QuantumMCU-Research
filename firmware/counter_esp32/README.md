@@ -1,8 +1,9 @@
 # firmware/counter_esp32: pulse counter (protocol v2) — NOT YET FLASHED
 
-**Flash status: never flashed.** Owner decision 2026-10-04 re-authorised S1 (ONE counter ESP32,
-self-loopback only) but flashing waits for the owner's "plugged in" message and the self-test for
-"jumper in place" (`docs/design/readiness.md`). Update this line when that happens.
+**Flash status: FLASHED 2026-10-04** onto one ESP32-D0WD-V3 (MAC 8c:94:df:6c:a3:b8, `/dev/cu.usbserial-110`, WiFi-free build, no `wifi_config.h`).
+Heartbeat verified over USB serial at **115200 baud** (6 heartbeats in 5 s, 0 bad frames, state idle, 1 s period). The first flash used
+921600 baud, which this CH340 bridge did not decode; the firmware and PC tools now default to 115200. **Self-test not run yet** (waits for
+"jumper in place"); WiFi build never flashed.
 
 - It is the timing reference. Never flash a target board with it.
 - Builds with `pio run -d firmware/counter_esp32` (platform `espressif32@7.0.1`, same as `firmware/esp32`).
