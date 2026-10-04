@@ -4,7 +4,8 @@
 Verified without any pulse input: USB heartbeat at 115200 baud; WiFi link to `pc/counter/bridge.py` (counter joined `oasnnp_2.4GHz`, 192.168.1.145,
 TCP :5055, 42 heartbeats / 0 bad frames in about 35 s, `localhost:8080/status` JSON); ARM -> ARM_ACK ok, END -> REPORT with code 7
 (never started, as expected: no pulses), bad-version ARM refused, all over WiFi. The 5 GHz SSID is invisible to the ESP32 (2.4 GHz only).
-**Self-test not run** (waits for the GPIO25-GPIO35 jumper); reconnect-after-drop not yet tested on the real link.
+Link check without wiring (`pc/counter/wifi_link_check.py`, 2026-10-04): 90 s soak 90 heartbeats / 0 bad frames (PC-side gap median 1.01 s, max 2.43 s), STATUS round trip 40/40 (median 17 ms, p95 111 ms, one 1.6 s spike), counter reconnected 0.8 s after the server restarted and about 8 s after a counter reboot.
+**Self-test not run** (waits for the GPIO25-GPIO35 jumper).
 
 - It is the timing reference. Never flash a target board with it.
 - Builds with `pio run -d firmware/counter_esp32` (platform `espressif32@7.0.1`, same as `firmware/esp32`).
