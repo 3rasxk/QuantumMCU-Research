@@ -1,8 +1,10 @@
-# counter_sim.py -- software model of the ESP32 counter's state machine (design
-# sections 4-5). Lets the PC side (client, cross-check) be built and tested with
-# no hardware. Feed it widths in ns; it emits the same frames the firmware would.
+# sim.py -- software model of the ESP32 counter's state machine, protocol v2
+# (design sections 4-5). Lets the PC side (client, session manager, cross-check) be built and
+# tested with no hardware. Feed it widths in ns; it emits the same frames the firmware would.
 
-from shared import counter_proto as cp
+from counter import proto as cp
+
+APB_HZ = 80_000_000
 
 
 class CounterSim:
@@ -13,15 +15,18 @@ class CounterSim:
         self.reps = 0
         self.min_width_ns = 500
         self.max_width_s = 0
+        self.start_timeout_s = 0
         self.seq = 0
         self.ring = []          # unacked PULSE frames
         self.widths = []
         self.mask = 0
         self.dropped = 0
-        self.t_us = 0
+        self.t_us = 0           # counter clock, microseconds
+        self.arm_t_us = 0
         self.pcnt = 0
-        self.high = False        # input level; True between a rising edge and its falling edge
+        self.high = False       # input level; True between a rising edge and its falling edge
         self.rise_t_us = 0
+        self.start_flagged = False
         self.clock_ppm_error = 0.0   # simulated counter oscillator error
         self.clock_tol_ppm = 50.0
 
@@ -30,11 +35,18 @@ class CounterSim:
         ftype, f = cp.decode(frame)
         out = []
         if ftype == cp.T_ARM:
-            self.session, _board, _circ, _n, self.reps, self.min_width_ns, self.max_width_s = f
+            version, session, _board, _circ, _n, reps, minw, maxw, st = f
+            if version != cp.PROTO_VERSION:
+                return [cp.encode(cp.T_ARM_ACK, session, cp.ACK_BAD_VERSION, cp.PROTO_VERSION)]
+            if self.armed:
+                return [cp.encode(cp.T_ARM_ACK, session, cp.ACK_BUSY, cp.PROTO_VERSION)]
+            self.session, self.reps, self.min_width_ns = session, reps, minw
+            self.max_width_s, self.start_timeout_s = maxw, st
             self.armed, self.seq, self.ring, self.widths = True, 0, [], []
-            self.mask = self.dropped = self.pcnt = self.t_us = 0
-            self.high = False
-            out.append(cp.encode(cp.T_ARM_ACK, self.session, 1))
+            self.mask = self.dropped = self.pcnt = 0
+            self.high = self.start_flagged = False
+            self.arm_t_us = self.t_us
+            out.append(cp.encode(cp.T_ARM_ACK, session, cp.ACK_OK, cp.PROTO_VERSION))
         elif ftype == cp.T_ACK:
             self.ring = [fr for fr in self.ring if cp.decode(fr)[1][0] > f[1]]
         elif ftype == cp.T_REPLAY:
@@ -43,6 +55,8 @@ class CounterSim:
             out += [fr for fr in self.ring if cp.decode(fr)[1][0] >= f[1]]
         elif ftype == cp.T_SELFTEST:
             out += self.selftest(f[0])
+        elif ftype == cp.T_STATUS:
+            out.append(self.heartbeat())
         elif ftype == cp.T_END:
             out += self._end()
         return out
@@ -52,8 +66,11 @@ class CounterSim:
         return cp.encode(cp.T_ANOMALY, seq, code, detail)
 
     # --- signal side ---
-    def pulse(self, width_ns, gap_us=100, high_at_end=False):
-        """One pulse seen on the input. Returns frames for the PC."""
+    def advance(self, us):
+        self.t_us += us
+
+    def pulse(self, width_ns, gap_us=100):
+        """One complete pulse seen on the input. Returns frames for the PC."""
         if not self.armed:
             return []
         out = []
@@ -66,7 +83,9 @@ class CounterSim:
         if width_ns < self.min_width_ns:
             flags |= 1
             out.append(self._flag(cp.A_GLITCH, seq, width_ns))
-        frame = cp.encode(cp.T_PULSE, seq & 0xFFFF, self.t_us, width_ns, flags)
+        ticks = width_ns * APB_HZ // 1_000_000_000
+        wraps = ticks >> 32
+        frame = cp.encode(cp.T_PULSE, seq & 0xFFFF, self.t_us, ticks, width_ns, wraps, flags)
         if len(self.ring) >= self.ring_size:
             self.dropped += 1
             out.append(self._flag(cp.A_RING_OVERFLOW, seq))
@@ -82,17 +101,26 @@ class CounterSim:
         self.rise_t_us = self.t_us
 
     def tick(self, now_us):
-        """Watchdog: line still high longer than max_width_s -> code 4."""
-        if self.armed and self.high and self.max_width_s and now_us - self.rise_t_us > self.max_width_s * 1_000_000:
+        """Watchdogs, called as time passes: still high longer than max_width_s -> code 4;
+        no first pulse within start_timeout_s of ARM -> code 7."""
+        self.t_us = max(self.t_us, now_us)
+        out = []
+        if not self.armed:
+            return out
+        if self.high and self.max_width_s and now_us - self.rise_t_us > self.max_width_s * 1_000_000:
             self.high = False
-            return [self._flag(cp.A_STUCK_HIGH, len(self.widths), 1)]
-        return []
+            out.append(self._flag(cp.A_STUCK_HIGH, len(self.widths), 1))
+        if (self.start_timeout_s and not self.start_flagged and not self.widths and not self.high
+                and now_us - self.arm_t_us > self.start_timeout_s * 1_000_000):
+            self.start_flagged = True
+            out.append(self._flag(cp.A_NEVER_STARTED, 0, 1))
+        return out
 
     SELFTEST_EXPECTED_NS = {1: 1_000_000, 2: 1_000_000_000}
 
     def selftest(self, pattern):
-        """Self-loopback: the same oscillator generates and measures, so only a
-        modelled `clock_ppm_error` (e.g. a fault injected for the test) can show up."""
+        """Self-loopback: the same oscillator generates and measures, so only a modelled
+        `clock_ppm_error` (e.g. a fault injected for the test) can show up."""
         exp = self.SELFTEST_EXPECTED_NS.get(pattern, 1_000_000)
         meas = int(round(exp * (1 + self.clock_ppm_error * 1e-6)))
         out = [cp.encode(cp.T_SELFTEST_RESULT, pattern, exp, meas)]
@@ -106,9 +134,9 @@ class CounterSim:
             out.append(self._flag(cp.A_STUCK_HIGH, len(self.widths), 0))
             self.high = False
         n = len(self.widths)
-        if n == 0:
+        if n == 0 and not (self.mask >> cp.A_NEVER_STARTED) & 1:
             out.append(self._flag(cp.A_NEVER_STARTED, 0))
-        elif n < self.reps:
+        elif 0 < n < self.reps:
             out.append(self._flag(cp.A_MISSING, n, self.reps - n))
         elif n > self.reps:
             out.append(self._flag(cp.A_EXTRA, n, n - self.reps))
@@ -120,9 +148,10 @@ class CounterSim:
                              self.mask, min(w), max(w), sum(w), self.pcnt, self.dropped))
         return out
 
-    def heartbeat(self, uptime_s=1):
-        return cp.encode(cp.T_HEARTBEAT, uptime_s, 1 if self.armed else 0, len(self.ring),
-                         self.dropped, 0, 200000, (self.seq - 1) & 0xFFFF)
+    def heartbeat(self):
+        return cp.encode(cp.T_HEARTBEAT, cp.PROTO_VERSION, int(self.t_us * (1 + self.clock_ppm_error * 1e-6)),
+                         1 if self.armed else 0, len(self.ring), self.dropped, 0, 200000,
+                         (self.seq - 1) & 0xFFFF)
 
 
 class SeqTracker:
@@ -142,7 +171,7 @@ class SeqTracker:
         if seq != self.expected & 0xFFFF:
             self.gaps += 1
             req = cp.encode(cp.T_REPLAY, self.session, self.expected & 0xFFFF)
-            self.expected = (seq + 1)
+            self.expected = seq + 1
             return [req]
         self.expected += 1
         return []
