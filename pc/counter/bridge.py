@@ -16,74 +16,29 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from counter import proto as cp  # noqa: E402
 from counter.client import CounterClient, TcpServerTransport  # noqa: E402
-
-
-HTML = Path(__file__).with_name("dashboard.html")
-KEEP_WIDTHS = 200
-
-
-class State:
-    def __init__(self):
-        self.lock = threading.Lock()
-        self.d = {"connected": False, "peer": None, "heartbeats": 0, "last_heartbeat": None, "frames": 0,
-                  "bad_frames": 0, "pulses": 0, "anomalies": [], "started_utc": time.time(),
-                  "widths_us": []}
-
-    def snapshot(self):
-        with self.lock:
-            return dict(self.d)
-
-
-def make_handler(state):
-    class H(BaseHTTPRequestHandler):
-        def _send(self, code, ctype, body):
-            self.send_response(code); self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "no-store")
-            self.end_headers(); self.wfile.write(body)
-
-        def do_GET(self):
-            path = self.path.split("?")[0]
-            if path in ("/", "/index.html"):
-                self._send(200, "text/html; charset=utf-8", HTML.read_bytes())
-            elif path in ("/state", "/status"):
-                self._send(200, "application/json", json.dumps(state.snapshot()).encode())
-            else:
-                self.send_error(404)
-
-        def log_message(self, *a):
-            pass
-    return H
+from counter import live  # noqa: E402
 
 
 def run(tcp_port, http_port, seconds=None, out=print):
-    state = State()
+    state = live.LiveState()
     tr = TcpServerTransport(tcp_port)
-    client = CounterClient(tr)
-    httpd = ThreadingHTTPServer(("127.0.0.1", http_port), make_handler(state))
-    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    client = CounterClient(tr, on_frame=state.on_frame)
+    state.attach(client, tr)
+    httpd = live.serve(state, http_port)
+    if httpd is None:
+        out(f"warning: HTTP port {http_port} is busy, dashboard not started")
     out(f"listening for the counter on TCP :{tcp_port}; dashboard at http://localhost:{http_port}/ (JSON at /state)")
     t0 = time.monotonic()
     last_poll = 0
+    last_hb = 0
     try:
         while seconds is None or time.monotonic() - t0 < seconds:
-            for ftype, f in client.drain():
-                with state.lock:
-                    state.d["frames"] += 1
-                    if ftype == cp.T_HEARTBEAT:
-                        state.d["heartbeats"] += 1
-                        state.d["last_heartbeat"] = {"proto": f[0], "counter_us": f[1], "state": f[2], "ring_depth": f[3],
-                                                     "dropped": f[4], "link_up": f[5], "free_heap": f[6], "last_seq": f[7],
-                                                     "pc_time_utc": time.time()}
-                        out(f"heartbeat #{state.d['heartbeats']}: counter clock {f[1] / 1e6:.3f} s, state {f[2]}, heap {f[6]}")
-                    elif ftype == cp.T_PULSE:
-                        state.d["pulses"] += 1
-                        state.d["widths_us"] = (state.d["widths_us"] + [f[3] / 1000.0])[-KEEP_WIDTHS:]
-                    elif ftype == cp.T_ANOMALY:
-                        state.d["anomalies"].append({"seq": f[0], "code": f[1]})
-            with state.lock:
-                state.d["connected"] = tr.connected
-                state.d["peer"] = None if tr.peer is None else f"{tr.peer[0]}:{tr.peer[1]}"
-                state.d["bad_frames"] = client.bad_frames
+            client.drain()                      # frames are already counted by the live hook; just empty the queue
+            hb = state.d["heartbeats"]
+            if hb != last_hb:
+                last_hb = hb
+                h = state.d["last_heartbeat"]
+                out(f"heartbeat #{hb}: counter clock {h['counter_us'] / 1e6:.3f} s, state {h['state']}, heap {h['free_heap']}")
             if tr.connected and time.monotonic() - last_poll > 5:   # ask for a status frame now and then
                 last_poll = time.monotonic()
                 try:
@@ -94,7 +49,9 @@ def run(tcp_port, http_port, seconds=None, out=print):
     except KeyboardInterrupt:
         pass
     finally:
-        httpd.shutdown(); client.close()
+        if httpd is not None:
+            httpd.shutdown()
+        client.close()
     return state.snapshot()
 
 

@@ -35,7 +35,7 @@ def max_width_for(board, circuit, n):
 
 class CounterSession:
     def __init__(self, client, board, circuit, ref_dir, reps=100, session_id="", counter_session_base=0x10000000,
-                 start_timeout_s=0):
+                 start_timeout_s=0, live=None):
         self.client = client
         self.board, self.circuit = board, circuit
         self.ref_dir = Path(ref_dir)
@@ -47,8 +47,33 @@ class CounterSession:
         self.armed_ok = False
         self.consecutive_lost = 0
         self.log_path = self.ref_dir / "ref_issues.log"
+        self.live = live            # optional counter.live.LiveState: read-only view, never affects the run
 
     # -------------------------------------------------------------- logging
+    def _ctx(self, **kw):
+        if self.live is not None:
+            try:
+                self.live.set_context(**kw)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _publish(self, n, status, pulses, micros_us):
+        if self.live is None:
+            return
+        try:
+            import statistics as st
+            good = [p[3] / 1000.0 for p in pulses if not p[5] & 1]
+            row = {"n": n, "ref_status": status, "pulses": len(pulses), "clean": len(good),
+                   "counter_median_us": round(st.median(good), 3) if good else None,
+                   "micros_median_us": round(st.median(micros_us), 3) if micros_us else None}
+            if row["counter_median_us"] and row["micros_median_us"]:
+                row["diff_us"] = round(row["micros_median_us"] - row["counter_median_us"], 3)
+                row["diff_pct"] = round(row["diff_us"] / row["counter_median_us"] * 100, 3)
+            self.live.point_result(row)
+            self.live.set_context(phase="idle", ref_status=status)
+        except Exception:  # noqa: BLE001
+            pass
+
     def issue(self, n, message):
         try:
             self.ref_dir.mkdir(parents=True, exist_ok=True)
@@ -62,6 +87,7 @@ class CounterSession:
         """ARM the counter for this point. Returns True if armed. A failure is logged and the point
         simply runs without a reference."""
         self.armed_n, self.armed_ok = n, False
+        self._ctx(board=self.board, circuit=self.circuit, n=n, phase="arming", reset_pulses=True, ref_status=None)
         self.client.drain()
         try:
             frame = cp.encode_arm(self.base + n, self.board, self._circuit_id(), n, self.reps, 500,
@@ -79,6 +105,7 @@ class CounterSession:
             self.issue(n, f"ARM refused: status={status} counter_proto={ver}")
             return False
         self.armed_ok = True
+        self._ctx(phase="armed: target running")
         return True
 
     def _circuit_id(self):
@@ -91,6 +118,7 @@ class CounterSession:
         collected = []
         report = None
         status = "ok"
+        self._ctx(phase="point done: collecting reference")
         if not self.armed_ok:
             status = "arm_failed"
         else:
@@ -140,6 +168,7 @@ class CounterSession:
             cc.write_compare(self.ref_dir, self.session_id, self.board, self.circuit, n,
                              {"status": f"refused_{status}", "summary": {}, "notes": status}, status)
         self.armed_ok = False
+        self._publish(n, status, pulses, micros_us)
         return status
 
     def _recover_gaps(self, n, collected, report, tries=2, wait_s=3.0):

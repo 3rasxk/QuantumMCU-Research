@@ -170,8 +170,9 @@ class SimTransport:
 
 
 class CounterClient:
-    def __init__(self, transport):
+    def __init__(self, transport, on_frame=None):
         self.t = transport
+        self.on_frame = on_frame     # optional live-view hook, called in the reader thread for every frame
         self.decoder = cp.Decoder()
         self.frames = queue.Queue()
         self.last_heartbeat = None      # (monotonic time, fields)
@@ -191,6 +192,11 @@ class CounterClient:
                 for ftype, fields in self.decoder.feed(data):
                     if ftype == cp.T_HEARTBEAT:
                         self.last_heartbeat = (time.monotonic(), fields)
+                    if self.on_frame is not None:
+                        try:
+                            self.on_frame(ftype, fields)
+                        except Exception:  # noqa: BLE001 -- the live view must never break the link
+                            pass
                     self.frames.put((ftype, fields))
             else:
                 time.sleep(0.005)

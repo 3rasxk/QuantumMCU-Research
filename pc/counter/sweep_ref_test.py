@@ -38,7 +38,10 @@ class Rig:
         sp.REPO_ROOT = Path(scratch)
         self.sim = CounterSim()
         self.tr = SimTransport(self.sim)
-        self.client = CounterClient(self.tr)
+        from counter import live as live_mod
+        self.live = live_mod.LiveState()
+        self.client = CounterClient(self.tr, on_frame=self.live.on_frame)
+        self.live.attach(self.client, self.tr)
         self.tr.push([self.sim.heartbeat()])
         time.sleep(0.15)
         self.disconnect_after = disconnect_after_points
@@ -57,7 +60,7 @@ class Rig:
         def from_args(args, board, circuit, session_id=""):
             if not refhooks.ref_active(args):
                 return refhooks.SweepRef()
-            return refhooks.SweepRef(CounterSession(rig.client, board, circuit, sp.ref_dir(board, circuit, 2), reps=100, session_id="T"))
+            return refhooks.SweepRef(CounterSession(rig.client, board, circuit, sp.ref_dir(board, circuit, 2), reps=100, session_id="T", live=rig.live))
         refhooks.from_args = from_args
         refhooks.shutdown = lambda: None
 
@@ -123,7 +126,11 @@ def main():
         check("micros() minus counter = +1 us at both points", all(abs(float(r["median_diff_us"]) - 1.0) < 1e-6 for r in cmp_), str([r["median_diff_us"] for r in cmp_]))
         check("raw.csv has 200 trial rows (micros() method unchanged)", len(rows(rd / "raw.csv")) == 200)
         check("memory_wall.csv statuses are ok (reference never changes a status)", [r["status"] for r in rows(rd / "memory_wall.csv")] == ["ok", "ok"])
-        check("per-session sidecar written", list((rd / "env").glob("*.ref.json")) == [] or True)
+        snap = rig.live.snapshot()
+        check("live view saw the run: 200 pulses, both points listed with the micros()-minus-counter difference (+1 us)",
+              snap["pulses"] == 200 and [p["n"] for p in snap["points"]] == [2, 3] and all(abs(p["diff_us"] - 1.0) < 0.01 for p in snap["points"]),
+              str(snap["points"][:1]))
+        check("live context names the point and goes back to idle", snap["context"]["circuit"] == "h_all" and snap["context"]["phase"] == "idle")
 
         # bucket separation: a --ref none run of the same points must NOT be skipped by resume
         code = rig.run([])

@@ -12,6 +12,8 @@ from pathlib import Path
 REF_CHOICES = ("none", "counter")
 _client = None
 _sessions = []
+_live = None
+_httpd = None
 _HEARTBEAT_WAIT_S = 6.0
 _TCP_WAIT_S = 60.0   # over WiFi the counter may still be joining the network when the sweep starts
 
@@ -22,6 +24,8 @@ def add_args(ap):
                          "the with_ref/ bucket), 'none' = micros() only (no_ref/ bucket, not for official runs)")
     ap.add_argument("--counter-port", default=None,
                     help="counter link, required with --ref counter, never auto-guessed: a USB serial device path, or 'tcp:5055' to listen on that TCP port for the counter over WiFi; never the same as --port")
+    ap.add_argument("--dashboard-port", type=int, default=8080,
+                    help="live read-only dashboard during a --ref counter run at http://localhost:PORT/ (0 = off; a busy port is skipped, never fatal)")
     ap.add_argument("--counter-cal", default=None,
                     help="calibration JSON from pc/counter/calibration.py; its ppm/uncertainty is copied into the "
                          "per-session reference sidecar (recommended for official runs)")
@@ -70,7 +74,7 @@ class SweepRef:
 
 def from_args(args, board, circuit, session_id=""):
     """Build the SweepRef for one circuit. Exits (code 2) if --ref counter is requested but the counter is unusable."""
-    global _client
+    global _client, _live, _httpd
     if not ref_active(args):
         return SweepRef()
     from counter.client import CounterClient, make_transport
@@ -85,7 +89,15 @@ def from_args(args, board, circuit, session_id=""):
         sys.exit(2)
     if _client is None:
         try:
-            _client = CounterClient(make_transport(args.counter_port))
+            from counter import live as live_mod
+            _live = live_mod.LiveState()
+            tr = make_transport(args.counter_port)
+            _client = CounterClient(tr, on_frame=_live.on_frame)
+            _live.attach(_client, tr)
+            if getattr(args, "dashboard_port", 0):
+                _httpd = live_mod.serve(_live, args.dashboard_port)
+                print(f"[ref] live dashboard: http://localhost:{args.dashboard_port}/ (read-only)" if _httpd else
+                      f"[ref] dashboard port {args.dashboard_port} busy: continuing without the live page")
         except Exception as e:  # noqa: BLE001
             print(f"error: cannot open counter port {args.counter_port}: {e}", file=sys.stderr)
             sys.exit(2)
@@ -99,20 +111,26 @@ def from_args(args, board, circuit, session_id=""):
                   "official runs require a working counter", file=sys.stderr)
             shutdown()
             sys.exit(2)
-    sess = CounterSession(_client, board, circuit, sp.ref_dir(board, circuit, phase=2), reps=tm.REPS, session_id=session_id)
+    sess = CounterSession(_client, board, circuit, sp.ref_dir(board, circuit, phase=2), reps=tm.REPS, session_id=session_id, live=_live)
     _sessions.append(sess)
     return SweepRef(sess)
 
 
 def shutdown():
     """Disarm and close. Safe to call any number of times, from a `finally` or a Ctrl+C path."""
-    global _client
+    global _client, _httpd
     for s in _sessions:
         try:
             s.abort()
         except Exception:  # noqa: BLE001
             pass
     _sessions.clear()
+    if _httpd is not None:
+        try:
+            _httpd.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+        _httpd = None
     if _client is not None:
         try:
             _client.close()
