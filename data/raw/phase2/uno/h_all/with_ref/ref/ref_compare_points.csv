@@ -1,2 +1,8 @@
 schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
 1,,uno,h_all,2,0,,,,,,,refused_count_mismatch,True,4.0,183 usable pulses (17 glitch) for 100 reps; refusing rep-order join
+1,,uno,h_all,3,0,,,,,,,refused_count_mismatch,True,4.0,182 usable pulses (18 glitch) for 100 reps; refusing rep-order join
+1,,uno,h_all,4,0,,,,,,,refused_count_mismatch,True,4.0,182 usable pulses (18 glitch) for 100 reps; refusing rep-order join
+1,,uno,h_all,5,0,,,,,,,refused_count_mismatch,True,4.0,184 usable pulses (16 glitch) for 100 reps; refusing rep-order join
+1,,uno,h_all,6,0,,,,,,,refused_count_mismatch,True,4.0,149 usable pulses (19 glitch) for 100 reps; refusing rep-order join
+1,,uno,h_all,7,0,,,,,,,refused_count_mismatch,True,4.0,118 usable pulses (14 glitch) for 100 reps; refusing rep-order join
+1,,uno,h_all,8,0,,,,,,,refused_no_target_run,True,4.0,no_target_run

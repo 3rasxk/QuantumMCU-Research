@@ -27,3 +27,24 @@ Command: `pc/run.py --board uno --algorithm h_all --phase 2 --n-start 2 --n-max 
 - Reduce input noise: a 100 pF-1 nF capacitor from GPIO34 to GND at the counter, shorter wires, or a lower-impedance divider; re-run the same point.
 - Implement run splitting (finding 1) and an explicit glitch policy for 13 ns events (drop pairs shorter than a threshold, keep the count in the report).
 - Do not compare micros() and counter widths until the 17 artefacts are explained.
+
+## Full Uno h_all sweep (23:03 Bangkok, `--ref counter`, n=2..8, about 2 minutes)
+Target: n=2..7 `ok` (100 `micros()` rows each), n=8 `build_overflow` at 100 % RAM (upload skipped, recorded as the wall). The ETA lines printed live (`[ETA] n=3 ok in 12.1s ...`).
+Reference: every point `count_mismatch` (comparison refused): 200 pulses for n=2..5 (two runs plus 13 ns artefacts), 168 for n=6 and 132 for n=7 (the
+sweep stops reading before the second run finishes), 0 for n=8 (`no_target_run`, as designed).
+
+Clean-pulse medians (pulses >= 0.5 us only; NOT a join, because the pairing is refused) against the `micros()` median of the same point:
+
+| n | micros() median (us) | counter clean median (us) | difference (us) | ratio |
+|---|---|---|---|---|
+| 2 | 284 | 289.8 | +5.8 | 1.020 |
+| 3 | 812 | 824.5 | +12.5 | 1.015 |
+| 4 | 2 088 | 2 103.9 | +15.9 | 1.0076 |
+| 5 | 4 912 | 4 941.6 | +29.6 | 1.0060 |
+| 6 | 11 468 | 11 529.3 | +61.3 | 1.0053 |
+| 7 | 26 308 | 26 445.8 | +137.8 | 1.0052 |
+
+A straight line through n=5..7 gives counter = 1.0051 x micros() + 4.7 us. Reading (UNVERIFIED, one run, counter not calibrated, counter-side noise
+unexplained): a constant offset of about 5 us (the two `digitalWrite` calls inside the pulse but outside the `micros()` bracket) plus a **0.5 % scale
+difference**, i.e. either the Uno's `micros()` clock runs about 0.5 % slow or the counter clock is 0.5 % off; the ceramic resonator of an Uno R3 is
+typically +-0.5 % (UNVERIFIED), so the Uno is the likely source. The clock calibration of the counter (`pc/counter/calibration.py`) is needed to separate the two.
