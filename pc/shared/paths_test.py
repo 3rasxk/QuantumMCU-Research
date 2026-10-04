@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-# paths_test.py — dedicated tests for pc/shared/paths.py's no_la/with_la split
-# (2026-09-22, see run_log.md "no_la/with_la data layout"). Covers the full
-# la={True,False} x board={uno,esp8266,esp32} matrix for every path helper,
+# paths_test.py — dedicated tests for pc/shared/paths.py's no_ref/with_ref split
+# (2026-09-22, see run_log.md "no_ref/with_ref data layout"). Covers the full
+# ref={True,False} x board={uno,esp8266,esp32} matrix for every path helper,
 # plus a lossless-migration sanity check against the real committed data
-# (data/raw/phase2/uno/*/no_la/ -- migrated via `git mv`, row counts and
+# (data/raw/phase2/uno/*/no_ref/ -- migrated via `git mv`, row counts and
 # sha256 verified at migration time; this test guards against that state
 # silently regressing later, e.g. someone editing a migrated file by hand).
 #
-# Behavioral no_la/with_la-crossing tests (mocked resume must never treat a
-# no_la point as satisfying a with_la request or vice versa; a mocked --la
-# run writes only under with_la/; a mocked non-la run writes only under
-# no_la/) live in pc/shared/la_capture_test.py and
+# Behavioral no_ref/with_ref-crossing tests (mocked resume must never treat a
+# no_ref point as satisfying a with_ref request or vice versa; a mocked --ref counter
+# run writes only under with_ref/; a mocked non-la run writes only under
+# no_ref/) live in pc/shared/la_capture_test.py and
 # pc/shared/uno_upload_retry_test.py, which already exercise the full
 # uno_sweep.py machinery those behaviors depend on (session/resume state,
 # not just path resolution) -- duplicating that harness here would just be a
@@ -49,45 +49,45 @@ def test_raw_dir_matrix():
     sp.REPO_ROOT = root
     try:
         for board in BOARDS:
-            for la in (False, True):
-                bucket = "with_la" if la else "no_la"
+            for ref in (False, True):
+                bucket = "with_ref" if ref else "no_ref"
                 expected = root / "data/raw/phase2" / board / "h_all" / bucket
-                check(f"raw_dir({board}, la={la})",
-                      sp.raw_dir(board, "h_all", phase=2, la=la) == expected)
-                check(f"raw_csv_path({board}, la={la})",
-                      sp.raw_csv_path(board, "h_all", phase=2, la=la) == expected / "raw.csv")
-                check(f"memory_wall_csv_path({board}, la={la})",
-                      sp.memory_wall_csv_path(board, "h_all", phase=2, la=la)
+                check(f"raw_dir({board}, ref={ref})",
+                      sp.raw_dir(board, "h_all", phase=2, ref=ref) == expected)
+                check(f"raw_csv_path({board}, ref={ref})",
+                      sp.raw_csv_path(board, "h_all", phase=2, ref=ref) == expected / "raw.csv")
+                check(f"memory_wall_csv_path({board}, ref={ref})",
+                      sp.memory_wall_csv_path(board, "h_all", phase=2, ref=ref)
                       == expected / "memory_wall.csv")
-                check(f"points_csv_path({board}, la={la})",
-                      sp.points_csv_path(board, "h_all", phase=2, la=la) == expected / "points.csv")
-                check(f"sessions_csv_path({board}, la={la})",
-                      sp.sessions_csv_path(board, "h_all", phase=2, la=la)
+                check(f"points_csv_path({board}, ref={ref})",
+                      sp.points_csv_path(board, "h_all", phase=2, ref=ref) == expected / "points.csv")
+                check(f"sessions_csv_path({board}, ref={ref})",
+                      sp.sessions_csv_path(board, "h_all", phase=2, ref=ref)
                       == expected / "sessions.csv")
-                check(f"env_dir({board}, la={la})",
-                      sp.env_dir(board, "h_all", phase=2, la=la) == expected / "env")
+                check(f"env_dir({board}, ref={ref})",
+                      sp.env_dir(board, "h_all", phase=2, ref=ref) == expected / "env")
 
             # phase 3 uses session_log_csv_path instead of memory_wall_csv_path
-            for la in (False, True):
-                bucket = "with_la" if la else "no_la"
+            for ref in (False, True):
+                bucket = "with_ref" if ref else "no_ref"
                 expected3 = root / "data/raw/phase3" / board / "h_all" / bucket
-                check(f"session_log_csv_path({board}, phase=3, la={la})",
-                      sp.session_log_csv_path(board, "h_all", phase=3, la=la)
+                check(f"session_log_csv_path({board}, phase=3, ref={ref})",
+                      sp.session_log_csv_path(board, "h_all", phase=3, ref=ref)
                       == expected3 / "session_log.csv")
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
 
-def test_la_dir_always_with_la():
-    """la_dir() has no la= parameter -- LA capture files cannot exist for a
-    no_la point, so there is nothing to select."""
+def test_ref_dir_always_with_ref():
+    """ref_dir() has no ref= parameter -- reference files cannot exist for a
+    no_ref point, so there is nothing to select."""
     root = Path(tempfile.mkdtemp(prefix="paths_test_"))
     sp.REPO_ROOT = root
     try:
         for board in BOARDS:
-            expected = root / "data/raw/phase2" / board / "h_all" / "with_la" / "la"
-            check(f"la_dir({board}) always resolves under with_la/",
-                  sp.la_dir(board, "h_all", phase=2) == expected)
+            expected = root / "data/raw/phase2" / board / "h_all" / "with_ref" / "ref"
+            check(f"ref_dir({board}) always resolves under with_ref/",
+                  sp.ref_dir(board, "h_all", phase=2) == expected)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -97,31 +97,31 @@ def test_figures_dir_matrix():
     sp.REPO_ROOT = root
     try:
         for board in BOARDS:
-            for la in (False, True):
-                bucket = "with_la" if la else "no_la"
-                check(f"figures_dir({board}, circuit, la={la})",
-                      sp.figures_dir(board, "h_all", la=la)
+            for ref in (False, True):
+                bucket = "with_ref" if ref else "no_ref"
+                check(f"figures_dir({board}, circuit, ref={ref})",
+                      sp.figures_dir(board, "h_all", ref=ref)
                       == root / "data/figures" / board / "h_all" / bucket)
-                check(f"figures_dir({board}, circuit=None, la={la}) (cumulative chart)",
-                      sp.figures_dir(board, la=la) == root / "data/figures" / board / bucket)
+                check(f"figures_dir({board}, circuit=None, ref={ref}) (cumulative chart)",
+                      sp.figures_dir(board, ref=ref) == root / "data/figures" / board / bucket)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
 
-def test_no_la_and_with_la_never_collide():
-    """For every board/function pair, the no_la and with_la paths must be
+def test_no_ref_and_with_ref_never_collide():
+    """For every board/function pair, the no_ref and with_ref paths must be
     distinct -- the whole point of the split is that these two buckets never
     share a file."""
     root = Path(tempfile.mkdtemp(prefix="paths_test_"))
     sp.REPO_ROOT = root
     try:
         for board in BOARDS:
-            no_la = sp.raw_csv_path(board, "h_all", phase=2, la=False)
-            with_la = sp.raw_csv_path(board, "h_all", phase=2, la=True)
-            check(f"{board}: no_la raw.csv != with_la raw.csv", no_la != with_la,
-                  (no_la, with_la))
+            no_ref = sp.raw_csv_path(board, "h_all", phase=2, ref=False)
+            with_ref = sp.raw_csv_path(board, "h_all", phase=2, ref=True)
+            check(f"{board}: no_ref raw.csv != with_ref raw.csv", no_ref != with_ref,
+                  (no_ref, with_ref))
             check(f"{board}: neither path is a parent/child of the other",
-                  no_la not in with_la.parents and with_la not in no_la.parents)
+                  no_ref not in with_ref.parents and with_ref not in no_ref.parents)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -150,9 +150,9 @@ def main():
     saved_root = sp.REPO_ROOT
     try:
         test_raw_dir_matrix()
-        test_la_dir_always_with_la()
+        test_ref_dir_always_with_ref()
         test_figures_dir_matrix()
-        test_no_la_and_with_la_never_collide()
+        test_no_ref_and_with_ref_never_collide()
     finally:
         sp.REPO_ROOT = saved_root  # real-data test below needs the real REPO_ROOT
     test_pre_timer_results_are_gone_and_recorded()

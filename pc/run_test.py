@@ -141,32 +141,35 @@ def test_dry_run_cli_all_combinations_no_hardware_subprocess():
 
 
 def test_unsupported_combinations_rejected():
+    # (board, phase, ref, settle, counter_port, port)
     cases_should_raise = []
-    for board in ("esp8266", "esp32"):
-        cases_should_raise.append((board, 2, True, None))  # --la on non-uno, phase2
     for board in run_mod.BOARDS:
-        cases_should_raise.append((board, 3, True, None))  # --la on any phase3
+        cases_should_raise.append((board, 3, True, None, "/dev/cu.C", "/dev/cu.T"))   # counter on any phase 3
+        cases_should_raise.append((board, 2, True, None, None, "/dev/cu.T"))          # --ref counter without --counter-port
+        cases_should_raise.append((board, 2, True, None, "/dev/cu.T", "/dev/cu.T"))   # counter port == target port
+        cases_should_raise.append((board, 2, False, None, "/dev/cu.C", "/dev/cu.T"))  # --counter-port without --ref counter
     for board in ("esp8266", "esp32"):
-        cases_should_raise.append((board, 2, False, 2.0))  # --upload-retry-settle-s non-uno
-    cases_should_raise.append(("uno", 3, False, 2.0))  # --upload-retry-settle-s phase3
+        cases_should_raise.append((board, 2, False, 2.0, None, None))  # --upload-retry-settle-s non-uno
+    cases_should_raise.append(("uno", 3, False, 2.0, None, None))  # --upload-retry-settle-s phase3
 
     all_raised = True
-    for board, phase, la, settle in cases_should_raise:
+    for board, phase, ref, settle, cport, port in cases_should_raise:
         try:
-            run_mod.validate_combination(board, "h_all", phase, la, settle)
+            run_mod.validate_combination(board, "h_all", phase, ref, settle, cport, port)
             all_raised = False
         except run_mod.RunnerError:
             pass
     check("every known-unsupported (board, phase, flag) combination raises RunnerError",
           all_raised, f"{len(cases_should_raise)} cases checked")
 
-    # the one combination that IS supported must NOT raise
+    # supported: --ref counter with a distinct explicit counter port on every board, phase 2
     raised_when_should_not = False
-    try:
-        run_mod.validate_combination("uno", "h_all", 2, True, 2.0)
-    except run_mod.RunnerError:
-        raised_when_should_not = True
-    check("--la and --upload-retry-settle-s together on (uno, phase2) is accepted",
+    for board in run_mod.BOARDS:
+        try:
+            run_mod.validate_combination(board, "h_all", 2, True, 2.0 if board == "uno" else None, "/dev/cu.C", "/dev/cu.T")
+        except run_mod.RunnerError:
+            raised_when_should_not = True
+    check("--ref counter with a distinct --counter-port is accepted on uno, esp8266, esp32 (phase 2)",
           not raised_when_should_not)
 
     # unknown board/algorithm/phase themselves must also raise
@@ -343,12 +346,12 @@ def test_fresh_dry_run_cli_shows_clamp_and_archive_destination():
           not h_all_archive_dir.exists())
 
 
-def _make_fake_dataset(root, board, algorithm, phase, n_points=2, la=False):
+def _make_fake_dataset(root, board, algorithm, phase, n_points=2, ref=False):
     """Build a minimal but realistic data/raw + figures + docs tree for one
-    (board, algorithm, phase, la), entirely inside a scratch root -- never
-    touches the real repo's data/. `la` picks the no_la/with_la bucket
+    (board, algorithm, phase, ref), entirely inside a scratch root -- never
+    touches the real repo's data/. `ref` picks the no_ref/with_ref bucket
     (2026-09-22, see pc/shared/paths.py)."""
-    bucket = "with_la" if la else "no_la"
+    bucket = "with_ref" if ref else "no_ref"
     raw_dir = root / "data" / "raw" / f"phase{phase}" / board / algorithm / bucket
     (raw_dir / "env").mkdir(parents=True, exist_ok=True)
     with open(raw_dir / "raw.csv", "w", newline="") as f:
@@ -504,7 +507,7 @@ def sp_module():
 def _make_scratch_uno_h_all(root):
     """Realistic enough scratch Uno h_all dataset for phase2_uno_run_plots.py
     (the real one was archived in the 2026-10-03 restart): raw.csv + memory_wall.csv."""
-    raw_dir = root / "data" / "raw" / "phase2" / "uno" / "h_all" / "no_la"
+    raw_dir = root / "data" / "raw" / "phase2" / "uno" / "h_all" / "no_ref"
     (raw_dir / "env").mkdir(parents=True)
     with open(raw_dir / "raw.csv", "w", newline="") as f:
         w = csv.writer(f)
@@ -563,7 +566,7 @@ def test_archive_independence():
 
         def run_and_hash():
             subprocess.run(cmd, cwd=copy_root, capture_output=True, text=True, timeout=60)
-            fig_dir = copy_root / "data" / "figures" / "uno" / "h_all" / "no_la"
+            fig_dir = copy_root / "data" / "figures" / "uno" / "h_all" / "no_ref"
             return {f.name: hashlib.sha256(f.read_bytes()).hexdigest()
                     for f in sorted(fig_dir.glob("*.png"))} if fig_dir.exists() else {}
 

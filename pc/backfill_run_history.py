@@ -70,13 +70,13 @@ def _tag_for_commit(commit: str) -> str:
         return ""
 
 
-def _la_bucket_from_path(sessions_csv_path: Path) -> bool:
+def _ref_bucket_from_path(sessions_csv_path: Path) -> bool:
     for part in sessions_csv_path.parts:
-        if part == "with_la":
+        if part == "with_ref":
             return True
-        if part == "no_la":
+        if part == "no_ref":
             return False
-    raise ValueError(f"{sessions_csv_path}: no no_la/with_la segment in path")
+    raise ValueError(f"{sessions_csv_path}: no no_ref/with_ref segment in path")
 
 
 def load_env_json(env_json_path: str):
@@ -98,7 +98,7 @@ def build_backfill_record_pair(row: dict, sessions_csv_path: Path):
     phase = int(row["phase"])
     board = row["board"]
     circuit = row["circuits"].split(";")[0]  # every real row here is single-circuit
-    la = _la_bucket_from_path(sessions_csv_path)
+    ref = _ref_bucket_from_path(sessions_csv_path)
     env = load_env_json(row.get("env_json_path", ""))
     port = env.get("serial_port", "UNKNOWN -- not recorded pre-telemetry")
     git_commit = row.get("git_commit", "") or env.get("git_commit", "")
@@ -115,7 +115,7 @@ def build_backfill_record_pair(row: dict, sessions_csv_path: Path):
         "timestamp_utc": row["start_utc"],
         "argv": argv,
         "board": board, "algorithm": circuit, "phase": phase,
-        "la": la, "fresh": False, "dry_run": False,
+        "ref": ref, "fresh": False, "dry_run": False,
         "git_commit": git_commit, "git_tag": git_tag,
         "host": "",
         "source": "backfill",
@@ -163,8 +163,8 @@ def main():
                      help="print what would be written, write nothing")
     args = ap.parse_args()
 
-    sessions_files = sorted(REPO_ROOT.glob("data/raw/phase*/*/*/no_la/sessions.csv")) + \
-        sorted(REPO_ROOT.glob("data/raw/phase*/*/*/with_la/sessions.csv"))
+    sessions_files = sorted(REPO_ROOT.glob("data/raw/phase*/*/*/no_ref/sessions.csv")) + \
+        sorted(REPO_ROOT.glob("data/raw/phase*/*/*/with_ref/sessions.csv"))
     if not sessions_files:
         print("no sessions.csv files found under data/raw/ -- nothing to backfill")
         return 0
@@ -184,7 +184,7 @@ def main():
                 started, terminal = build_backfill_record_pair(row, path)
                 print(f"{'[dry-run] ' if args.dry_run else ''}backfill: "
                       f"{started['board']}/{started['algorithm']}/phase{started['phase']}/"
-                      f"{'with_la' if started['la'] else 'no_la'}  "
+                      f"{'with_ref' if started['ref'] else 'no_ref'}  "
                       f"{started['timestamp_utc']} -> {terminal['timestamp_utc']}  "
                       f"counts={terminal['point_counts']}")
                 if not args.dry_run:

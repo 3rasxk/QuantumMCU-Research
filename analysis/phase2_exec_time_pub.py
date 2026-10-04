@@ -28,10 +28,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--board", required=True)
     ap.add_argument("--circuit", required=True)
-    ap.add_argument("--la", action="store_true")
+    ap.add_argument("--ref", action="store_true")
     args = ap.parse_args()
 
-    raw_path = sp.raw_csv_path(args.board, args.circuit, phase=2, la=args.la)
+    raw_path = sp.raw_csv_path(args.board, args.circuit, phase=2, ref=args.ref)
     if not raw_path.exists():
         raise SystemExit(f"error: {raw_path} not found")
     by_n = defaultdict(list)
@@ -87,7 +87,7 @@ def main():
     ax.text(1.0, -0.2, f"repetitions per point: {rep_txt}", transform=ax.transAxes,
             ha="right", va="top", fontsize=7.5, color=ps.INK_SECONDARY)
 
-    out = REPO_ROOT / "data" / "figures" / args.board / args.circuit / ("with_la" if args.la else "no_la")
+    out = REPO_ROOT / "data" / "figures" / args.board / args.circuit / ("with_ref" if args.ref else "no_ref")
     out.mkdir(parents=True, exist_ok=True)
     for ext, kw in (("png", {"dpi": 300}), ("pdf", {}), ("svg", {})):
         path = out / f"exec_time_vs_qubits.{ext}"

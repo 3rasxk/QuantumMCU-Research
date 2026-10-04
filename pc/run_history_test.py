@@ -75,9 +75,9 @@ def _restore(saved):
 
 
 def _write_fake_terminal_records(scratch: Path):
-    """Fake memory_wall.csv for uno/h_all/phase2/no_la, so point_counts_by_status
+    """Fake memory_wall.csv for uno/h_all/phase2/no_ref, so point_counts_by_status
     has something real to read after a mocked "completed" run."""
-    path = sp.memory_wall_csv_path("uno", "h_all", phase=2, la=False)
+    path = sp.memory_wall_csv_path("uno", "h_all", phase=2, ref=False)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
@@ -225,7 +225,7 @@ def test_simulated_kill_leaves_only_started_line_and_reader_flags_it(scratch_roo
     try:
         inv = rh.start_invocation(["pc/run.py", "--board", "esp8266", "--algorithm", "grover",
                                     "--phase", "2", "--port", "/dev/cu.FAKE"],
-                                   "esp8266", "grover", 2, la=False, fresh=False, dry_run=False)
+                                   "esp8266", "grover", 2, ref=False, fresh=False, dry_run=False)
         # (no finish_invocation call -- the simulated kill)
 
         events = rh.read_events()
@@ -252,9 +252,9 @@ def test_reader_filters_by_board_algorithm_and_source(scratch_root: Path):
     scratch.mkdir(parents=True)
     saved = _redirect(scratch)
     try:
-        inv1 = rh.start_invocation(["x"], "uno", "h_all", 2, la=False, fresh=False, dry_run=False)
+        inv1 = rh.start_invocation(["x"], "uno", "h_all", 2, ref=False, fresh=False, dry_run=False)
         rh.finish_invocation(inv1, "dry_run")
-        inv2 = rh.start_invocation(["x"], "esp32", "qft", 2, la=False, fresh=False, dry_run=False)
+        inv2 = rh.start_invocation(["x"], "esp32", "qft", 2, ref=False, fresh=False, dry_run=False)
         rh.finish_invocation(inv2, "dry_run")
 
         # a "backfill" entry, written directly (this session does not run the
@@ -264,7 +264,7 @@ def test_reader_filters_by_board_algorithm_and_source(scratch_root: Path):
             "schema_version": rh.SCHEMA_VERSION, "invocation_id": "backfill-1",
             "event": "started", "timestamp_utc": "2026-09-20T00:00:00+00:00",
             "argv": [], "board": "uno", "algorithm": "bell_ghz", "phase": 2,
-            "la": False, "fresh": False, "dry_run": False,
+            "ref": False, "fresh": False, "dry_run": False,
             "git_commit": "", "git_tag": "", "host": "", "source": "backfill",
         })
         rh._append({

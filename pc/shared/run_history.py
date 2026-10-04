@@ -3,7 +3,7 @@
 #
 # Why this exists, and why it's not sessions.csv: sessions.csv (see
 # telemetry.py) already records one row per COMPLETED sweep-script session,
-# per (board, circuit, phase, la) directory -- but it is written by the
+# per (board, circuit, phase, ref) directory -- but it is written by the
 # DELEGATED sweep script, only for a session that ran long enough to reach
 # its own `with session:` block, and it's scattered across dozens of
 # directories with no single place to ask "every command anyone has run,
@@ -103,7 +103,7 @@ class Invocation:
         self.start_monotonic = start_monotonic
 
 
-def start_invocation(argv, board, algorithm, phase, la=False, fresh=False, dry_run=False) -> Invocation:
+def start_invocation(argv, board, algorithm, phase, ref=False, fresh=False, dry_run=False) -> Invocation:
     """Writes the "started" line immediately -- call this as the very first
     thing in pc/run.py's main(), before argument validation, so a refused
     run (unknown board, unsupported --la, busy port) still gets a "started"
@@ -117,7 +117,7 @@ def start_invocation(argv, board, algorithm, phase, la=False, fresh=False, dry_r
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "argv": list(argv),
         "board": board, "algorithm": algorithm, "phase": phase,
-        "la": bool(la), "fresh": bool(fresh), "dry_run": bool(dry_run),
+        "ref": bool(ref), "fresh": bool(fresh), "dry_run": bool(dry_run),
         "git_commit": commit, "git_tag": tag,
         "host": platform.node() or "",
         "source": "live",

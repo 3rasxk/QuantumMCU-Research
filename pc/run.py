@@ -109,9 +109,10 @@ MIN_VALID_N = {
     "grover": 2,
 }
 
-# --la exists ONLY on uno_sweep.py (Phase 2). Confirmed absent from esp8266_sweep.py,
-# esp32_sweep.py, and pc/phase3_offload/sweep.py's argparse blocks.
-LA_SUPPORTED = {(2, "uno")}
+# --ref counter (ESP32 pulse counter) is implemented in all three Phase 2 sweep scripts through
+# pc/counter/hooks.py; Phase 3 does not use the counter (docs/design/system_design.md, open decision 4).
+REF_SUPPORTED = {(2, "uno"), (2, "esp8266"), (2, "esp32")}
+REF_CHOICES = ("none", "counter")
 
 # --upload-retry-settle-s exists ONLY on uno_sweep.py. esp8266/esp32/phase3 use a
 # different (currently non-configurable) settle path -- see their own argparse.
@@ -135,7 +136,7 @@ class RunnerError(Exception):
 
 def build_command(python_exe, board, algorithm, phase, *,
                    n_start=None, n_max=None, build_timeout=None,
-                   upload_retry_settle_s=None, la=False, port):
+                   upload_retry_settle_s=None, ref=False, counter_port=None, counter_cal=None, port):
     """Return the exact argv list that would be delegated to, given already-
     validated arguments. Pure function, no I/O, no hardware -- used directly by
     --dry-run and by the tests, and reused unchanged for a real run.
@@ -161,12 +162,14 @@ def build_command(python_exe, board, algorithm, phase, *,
         argv += ["--build-timeout", str(build_timeout)]
     if upload_retry_settle_s is not None:
         argv += ["--upload-retry-settle-s", str(upload_retry_settle_s)]
-    if la:
-        argv += ["--la"]
+    if ref:
+        argv += ["--ref", "counter", "--counter-port", counter_port]
+        if counter_cal:
+            argv += ["--counter-cal", counter_cal]
     return argv
 
 
-def validate_combination(board, algorithm, phase, la, upload_retry_settle_s):
+def validate_combination(board, algorithm, phase, ref, upload_retry_settle_s, counter_port=None, port=None):
     """Raise RunnerError for any (board, algorithm, phase, flag) combination this
     project's own code does not support. Never invents a restriction -- every
     check here maps to a concrete fact read from the underlying scripts."""
@@ -178,11 +181,17 @@ def validate_combination(board, algorithm, phase, la, upload_retry_settle_s):
         raise RunnerError(f"unknown algorithm {algorithm!r} (choices: {', '.join(ALGORITHMS)})")
     if phase not in PHASES:
         raise RunnerError(f"unknown phase {phase!r} (choices: 2, 3)")
-    if la and (phase, board) not in LA_SUPPORTED:
+    if ref and (phase, board) not in REF_SUPPORTED:
         raise RunnerError(
-            "--la is only implemented for Phase 2 on the Uno (uno_sweep.py). "
-            f"Not available for board={board!r}, phase={phase}."
+            "--ref counter is only implemented for Phase 2 (uno, esp8266, esp32); Phase 3 does not use the "
+            f"counter. Not available for board={board!r}, phase={phase}."
         )
+    if ref and not counter_port:
+        raise RunnerError("--ref counter requires --counter-port (never auto-guessed)")
+    if ref and port and counter_port == port:
+        raise RunnerError("--counter-port must differ from --port: the counter port is never shared with the target port")
+    if counter_port and not ref:
+        raise RunnerError("--counter-port given without --ref counter")
     if upload_retry_settle_s is not None and (phase, board) not in UPLOAD_RETRY_SETTLE_SUPPORTED:
         raise RunnerError(
             "--upload-retry-settle-s is only implemented for Phase 2 on the Uno "
@@ -275,19 +284,19 @@ def port_holder_pids(port):
         return None
 
 
-def resume_summary(board, algorithm, phase, la=False):
+def resume_summary(board, algorithm, phase, ref=False):
     """Read-only summary of what already exists under data/raw/ for this
-    (board, algorithm, phase, la) -- reads memory_wall.csv (phase 2) or
+    (board, algorithm, phase, ref) -- reads memory_wall.csv (phase 2) or
     session_log.csv (phase 3) directly with csv.DictReader; never writes
-    anything, never imports pc/shared/resume.py's write-side logic. `la`
-    selects the no_la/with_la bucket (2026-09-22, pc/shared/paths.py) --
+    anything, never imports pc/shared/resume.py's write-side logic. `ref`
+    selects the no_ref/with_ref bucket (2026-09-22, pc/shared/paths.py) --
     resume must only ever compare within the same bucket a run would
     actually write into."""
-    directory = sp.raw_dir(board, algorithm, phase, la)
+    directory = sp.raw_dir(board, algorithm, phase, ref)
     if not directory.exists():
         return f"{directory} does not exist yet -- fresh start."
-    path = sp.memory_wall_csv_path(board, algorithm, phase, la) if phase == 2 \
-        else sp.session_log_csv_path(board, algorithm, phase, la)
+    path = sp.memory_wall_csv_path(board, algorithm, phase, ref) if phase == 2 \
+        else sp.session_log_csv_path(board, algorithm, phase, ref)
     if not path.exists():
         return f"{directory} exists but {path.name} does not -- fresh start."
     with open(path, newline="", encoding="utf-8") as f:
@@ -302,14 +311,14 @@ def resume_summary(board, algorithm, phase, la=False):
     return f"{path}: {len(rows)} point(s) recorded (n={','.join(ns)}), {parts}"
 
 
-def point_counts_by_status(board, algorithm, phase, la=False):
+def point_counts_by_status(board, algorithm, phase, ref=False):
     """Read-only status->count dict from the terminal-record file, for the
     run-history ledger's "point/status counts if it completed" field (see
     pc/shared/run_history.py) -- same file resume_summary() reads, just
     returned as data instead of a formatted string. None if the file doesn't
     exist (e.g. a dry-run, or a run that never wrote a single point)."""
-    path = sp.memory_wall_csv_path(board, algorithm, phase, la) if phase == 2 \
-        else sp.session_log_csv_path(board, algorithm, phase, la)
+    path = sp.memory_wall_csv_path(board, algorithm, phase, ref) if phase == 2 \
+        else sp.session_log_csv_path(board, algorithm, phase, ref)
     if not path.exists():
         return None
     with open(path, newline="", encoding="utf-8") as f:
@@ -360,22 +369,22 @@ def _csv_row_count(path):
         return None
 
 
-def _archive_sources(board, algorithm, phase, la=False):
-    """Read-only: what exists right now for this (board, algorithm, phase, la)
+def _archive_sources(board, algorithm, phase, ref=False):
+    """Read-only: what exists right now for this (board, algorithm, phase, ref)
     that a fresh run would archive. Returns a list of (category, Path)
-    for whichever of raw/figures/docs actually exist and are non-empty. `la`
-    selects the no_la/with_la bucket for raw/figures (2026-09-22, see
+    for whichever of raw/figures/docs actually exist and are non-empty. `ref`
+    selects the no_ref/with_ref bucket for raw/figures (2026-09-22, see
     pc/shared/paths.py) -- a fresh run only ever archives the bucket it is
     about to write into, never the other one. docs are board+algorithm-keyed
-    regardless of phase OR la (see pc/shared/paths.analysis_doc_path -- one
-    write-up per (board, algorithm), not split by la), so a fresh run in
+    regardless of phase OR ref (see pc/shared/paths.analysis_doc_path -- one
+    write-up per (board, algorithm), not split by ref), so a fresh run in
     either bucket would archive the SAME doc. Documented, not invented:
     reflects pc/shared/paths.py exactly as it stands."""
     sources = []
-    raw_src = sp.raw_dir(board, algorithm, phase, la)
+    raw_src = sp.raw_dir(board, algorithm, phase, ref)
     if raw_src.exists() and any(raw_src.iterdir()):
         sources.append(("raw", raw_src))
-    figures_src = sp.figures_dir(board, algorithm, la)
+    figures_src = sp.figures_dir(board, algorithm, ref)
     if figures_src.exists() and any(figures_src.iterdir()):
         sources.append(("figures", figures_src))
     doc_src = sp.analysis_doc_path(board, algorithm)
@@ -384,12 +393,12 @@ def _archive_sources(board, algorithm, phase, la=False):
     return sources
 
 
-def plan_fresh_archive(board, algorithm, phase, la=False):
+def plan_fresh_archive(board, algorithm, phase, ref=False):
     """Read-only preview for --dry-run and for the pre-confirmation notice on
     a real run: what WOULD be archived and to where, without touching
     anything. Returns (dest_path_or_None, sources) -- dest is None if there
     is nothing to archive."""
-    sources = _archive_sources(board, algorithm, phase, la)
+    sources = _archive_sources(board, algorithm, phase, ref)
     if not sources:
         return None, []
     return archive_dest_dir(board, algorithm, phase, _utc_timestamp()), sources
@@ -421,14 +430,14 @@ def _manifest_entries(sources):
 
 
 def perform_fresh_archive(board, algorithm, phase, command_str, timestamp=None,
-                           reason="fresh run", la=False):
+                           reason="fresh run", ref=False):
     """Actually moves data aside. Returns the archive dest Path, or None if
     there was nothing to archive (no-op, not an error). Raises RunnerError,
     with everything already rolled back to its original location, if any step
     fails -- guaranteeing the original data is untouched and no collection
-    starts. Never overwrites an existing archive folder. `la` selects the
-    no_la/with_la bucket, see _archive_sources."""
-    sources = _archive_sources(board, algorithm, phase, la)
+    starts. Never overwrites an existing archive folder. `ref` selects the
+    no_ref/with_ref bucket, see _archive_sources."""
+    sources = _archive_sources(board, algorithm, phase, ref)
     if not sources:
         return None
 
@@ -466,14 +475,14 @@ def perform_fresh_archive(board, algorithm, phase, command_str, timestamp=None,
         raise RunnerError(f"archive move failed ({e}) -- rolled back, original data "
                            f"untouched, no collection started.")
 
-    clean, ref = git_state()
+    clean, git_ref_desc = git_state()
     manifest = {
         "reason": reason,
         "command": command_str,
         "timestamp_utc": ts,
         "git_commit": git_commit_hash(),
         "git_dirty": not clean,
-        "git_ref": ref,
+        "git_ref": git_ref_desc,
         "board": board,
         "algorithm": algorithm,
         "phase": phase,
@@ -494,18 +503,33 @@ def perform_fresh_archive(board, algorithm, phase, command_str, timestamp=None,
     return dest
 
 
-def print_preflight(board, algorithm, phase, port, dry_run, la=False):
-    """`la` here is the REQUESTED --la flag, not the resolved la_active this
-    runner never learns (that's decided inside uno_sweep.py's own main(), by
-    whether sigrok-cli is actually available -- this runner never imports
-    pc/shared/la_capture.py). If --la is requested but sigrok turns out
-    unavailable, the delegated script silently falls back to no_la and this
-    preflight's resume-state line (which assumed with_la) would show "fresh
-    start" even though no_la data may already exist -- a known limitation of
-    checking resume state before delegating, not a bug to fix here."""
+def check_counter_port(counter_port, target_port):
+    """Read-only preflight of the counter's serial port. Never guesses: the port is always explicit, and when
+    more than one candidate device exists (two ESP32 boards both look like usbserial*) the operator's explicit
+    choice is trusted but both are listed so a swapped cable is visible before anything is armed or flashed."""
+    if not counter_port:
+        raise RunnerError("--ref counter requires --counter-port")
+    if counter_port == target_port:
+        raise RunnerError("--counter-port must differ from --port (the counter port is never shared)")
+    if not port_exists(counter_port):
+        raise RunnerError(f"counter port {counter_port!r} does not exist (no such device file); "
+                          "this runner never auto-guesses which ESP32 is the counter")
+    holders = port_holder_pids(counter_port)
+    if holders:
+        raise RunnerError(f"counter port {counter_port!r} is already held by process(es) {holders}")
+    candidates = sorted({p for pats in PORT_GLOBS.values() for pat in pats for p in glob.glob(pat)})
+    print(f"counter port: {counter_port!r} exists and is free; target port {target_port!r}")
+    if len(candidates) > 1:
+        print(f"NOTE: {len(candidates)} serial candidates present {candidates}: confirm by hand that "
+              f"{counter_port!r} is the COUNTER ESP32 and {target_port!r} the target (never guessed here)")
+
+
+def print_preflight(board, algorithm, phase, port, dry_run, ref=False, counter_port=None):
+    """`ref` = --ref counter requested (selects the with_ref bucket for the resume-state line); `counter_port`
+    is the counter's serial port, checked here read-only (exists, not held, differs from the target port)."""
     print("--- preflight ---")
-    clean, ref = git_state()
-    print(f"git: {'clean' if clean else 'DIRTY'}  ({ref})")
+    clean, git_ref_desc = git_state()
+    print(f"git: {'clean' if clean else 'DIRTY'}  ({git_ref_desc})")
     if not clean:
         print("WARNING: working tree is dirty -- the run continues (owner-run standing "
               "decision, 2026-09-21), but the exact commit and dirty flag are recorded "
@@ -517,7 +541,7 @@ def print_preflight(board, algorithm, phase, port, dry_run, la=False):
     print(f"sleep prevention: prevented={sleep_check.get('prevented')} "
           f"({sleep_check.get('note')})")
 
-    print(f"resume state: {resume_summary(board, algorithm, phase, la)}")
+    print(f"resume state: {resume_summary(board, algorithm, phase, ref)}")
 
     if dry_run:
         print("port: [dry-run] skipping pio device list / port checks -- no hardware access")
@@ -544,6 +568,9 @@ def print_preflight(board, algorithm, phase, port, dry_run, la=False):
     else:
         print(f"port lock check: {port!r} is free")
 
+    if ref:
+        check_counter_port(counter_port, port)
+
     result = subprocess.run(["pio", "device", "list"], capture_output=True, text=True, timeout=15)
     if port not in result.stdout:
         print(f"WARNING: {port!r} not seen in `pio device list` output right now -- "
@@ -564,11 +591,11 @@ def confirm(auto_yes):
     return resp in ("y", "yes")
 
 
-def completed_ns(board, algorithm, phase, la=False):
+def completed_ns(board, algorithm, phase, ref=False):
     """Read-only: n values already recorded in the terminal-record file (resume
     skips them), for the run-time table."""
-    path = sp.memory_wall_csv_path(board, algorithm, phase, la) if phase == 2 \
-        else sp.session_log_csv_path(board, algorithm, phase, la)
+    path = sp.memory_wall_csv_path(board, algorithm, phase, ref) if phase == 2 \
+        else sp.session_log_csv_path(board, algorithm, phase, ref)
     if not path.exists():
         return set()
     with open(path, newline="", encoding="utf-8") as f:
@@ -604,17 +631,17 @@ def plan_main(argv):
     return 0
 
 
-def generate_figures(python_exe, board, algorithm, la=False):
+def generate_figures(python_exe, board, algorithm, ref=False):
     """After a completed Phase 2 run, regenerate this algorithm's plots (plus the
     cumulative chart) into data/figures/<board>/<algorithm>/<bucket>/ via
     analysis/phase2_uno_run_plots.py. Never affects the run's outcome: any
     failure is printed and swallowed, the returncode of the sweep is unchanged."""
     cmd = [python_exe, str(REPO_ROOT / "analysis" / "phase2_uno_run_plots.py"),
            "--board", board, "--circuit", algorithm]
-    if la:
-        cmd.append("--la")
+    if ref:
+        cmd.append("--ref")
     print("\n--- generating figures ---\n" + " ".join(cmd))
-    (REPO_ROOT / "data" / "figures" / board / algorithm / ("with_la" if la else "no_la")
+    (REPO_ROOT / "data" / "figures" / board / algorithm / ("with_ref" if ref else "no_ref")
      ).mkdir(parents=True, exist_ok=True)
     try:
         r = subprocess.run(cmd, cwd=REPO_ROOT)
@@ -658,7 +685,13 @@ def main(argv=None):
     ap.add_argument("--build-timeout", type=int, default=None, dest="build_timeout")
     ap.add_argument("--upload-retry-settle-s", type=float, default=None,
                      dest="upload_retry_settle_s")
-    ap.add_argument("--la", action="store_true")
+    ap.add_argument("--ref", choices=REF_CHOICES, default="none",
+                     help="timing reference: 'counter' = ESP32 pulse counter (official runs REQUIRE it, bucket with_ref/); "
+                          "'none' = micros() only (bucket no_ref/, warned, not for official runs)")
+    ap.add_argument("--counter-port", default=None, dest="counter_port",
+                     help="serial port of the counter ESP32; required with --ref counter; never auto-guessed")
+    ap.add_argument("--counter-cal", default=None, dest="counter_cal",
+                     help="calibration JSON (pc/counter/calibration.py) copied into the session sidecar")
     ap.add_argument("--fresh", action="store_true",
                      help="archive (move, never delete) any existing data/figures/analysis "
                           "doc for this (board, algorithm, phase) to data/archive/ with a "
@@ -672,20 +705,22 @@ def main(argv=None):
     ap.add_argument("--yes", action="store_true",
                      help="skip the interactive y/n confirmation before touching hardware")
     args = ap.parse_args(argv)
+    args.ref_mode = args.ref
+    args.ref = args.ref == "counter"   # bool from here on: selects the with_ref/no_ref bucket
     argv_for_history = ["pc/run.py"] + (list(argv) if argv is not None else sys.argv[1:])
     command_str = " ".join(argv_for_history)
 
     # run-history ledger (2026-09-22, pc/shared/run_history.py): "started" is
     # written HERE, before any validation, so a refused run (unknown board,
-    # unsupported --la, busy port) or a crash still leaves a record -- every
+    # unsupported --ref, busy port) or a crash still leaves a record -- every
     # exit path below (including the except RunnerError block) calls
     # rh.finish_invocation exactly once with a terminal event.
     inv = rh.start_invocation(argv_for_history, args.board, args.algorithm, args.phase,
-                               la=args.la, fresh=args.fresh, dry_run=args.dry_run)
+                               ref=args.ref, fresh=args.fresh, dry_run=args.dry_run)
 
     try:
-        validate_combination(args.board, args.algorithm, args.phase, args.la,
-                              args.upload_retry_settle_s)
+        validate_combination(args.board, args.algorithm, args.phase, args.ref,
+                              args.upload_retry_settle_s, args.counter_port, args.port)
         if args.reps is not None and args.reps != tm.REPS:
             raise RunnerError(
                 f"--reps {args.reps} given, but REPS is fixed at {tm.REPS} at compile "
@@ -699,6 +734,13 @@ def main(argv=None):
                   f"come only from pc/shared/timing_model.py and docs/preflight_report.md's "
                   f"compile-only build matrix -- treat every number as a prediction, not a "
                   f"measurement. Do not assume Uno's measured behavior transfers. ***")
+
+        if not args.ref:
+            print("*** WARNING: --ref none: no timing reference. Data goes to the no_ref/ bucket and is NOT valid for "
+                  "official runs (official runs REQUIRE --ref counter --counter-port PORT, see docs/design/readiness.md). ***")
+        else:
+            print(f"timing reference: ESP32 counter on {args.counter_port} (bucket with_ref/); the counter port is never "
+                  f"shared with the target port {args.port}")
 
         n_max_effective = args.n_max if args.n_max is not None else DEFAULT_N_MAX[args.phase][args.board]
 
@@ -721,7 +763,8 @@ def main(argv=None):
         argv_cmd = build_command(
             python_exe, args.board, args.algorithm, args.phase,
             n_start=n_start_for_command, n_max=args.n_max, build_timeout=args.build_timeout,
-            upload_retry_settle_s=args.upload_retry_settle_s, la=args.la, port=args.port)
+            upload_retry_settle_s=args.upload_retry_settle_s, ref=args.ref,
+            counter_port=args.counter_port, counter_cal=args.counter_cal, port=args.port)
 
         print("command:", " ".join(argv_cmd))
 
@@ -729,7 +772,7 @@ def main(argv=None):
         run_start_bkk = eta.now_bangkok()
         eta_n_start = n_start_for_command if n_start_for_command is not None \
             else LEGACY_UNIFORM_N_START_DEFAULT
-        eta_done = set() if args.fresh else completed_ns(args.board, args.algorithm, args.phase, args.la)
+        eta_done = set() if args.fresh else completed_ns(args.board, args.algorithm, args.phase, args.ref)
         eta_points = eta.print_run_table(args.board, args.algorithm, args.phase,
                                          n_start=eta_n_start, n_max=args.n_max,
                                          completed=eta_done, start=run_start_bkk)
@@ -737,9 +780,9 @@ def main(argv=None):
         archive_dest = None
         if args.fresh:
             planned_dest, planned_sources = plan_fresh_archive(
-                args.board, args.algorithm, args.phase, args.la)
+                args.board, args.algorithm, args.phase, args.ref)
             if planned_dest is None:
-                print("archive: nothing exists yet for this (board, algorithm, phase, la) "
+                print("archive: nothing exists yet for this (board, algorithm, phase, ref) "
                       "-- fresh run starts clean, no archive needed")
             else:
                 # re-plan with the SAME timestamp already picked above, so the
@@ -752,13 +795,13 @@ def main(argv=None):
 
         if args.dry_run:
             print_preflight(args.board, args.algorithm, args.phase, args.port, dry_run=True,
-                             la=args.la)
+                             ref=args.ref, counter_port=args.counter_port)
             print("[dry-run] stopping here -- no subprocess started, no file moved")
             rh.finish_invocation(inv, "dry_run")
             return 0
 
         print_preflight(args.board, args.algorithm, args.phase, args.port, dry_run=False,
-                         la=args.la)
+                         ref=args.ref, counter_port=args.counter_port)
 
         if not confirm(args.yes):
             print("not confirmed -- exiting without touching hardware or moving any file")
@@ -768,7 +811,7 @@ def main(argv=None):
         if args.fresh:
             archive_dest = perform_fresh_archive(
                 args.board, args.algorithm, args.phase, command_str, timestamp=fresh_timestamp,
-                la=args.la)
+                ref=args.ref)
             if archive_dest is not None:
                 print(f"archived -> {archive_dest}")
 
@@ -780,8 +823,8 @@ def main(argv=None):
     interrupted = False
     watcher = None
     if eta_points:
-        record_csv = sp.memory_wall_csv_path(args.board, args.algorithm, args.phase, args.la) \
-            if args.phase == 2 else sp.session_log_csv_path(args.board, args.algorithm, args.phase, args.la)
+        record_csv = sp.memory_wall_csv_path(args.board, args.algorithm, args.phase, args.ref) \
+            if args.phase == 2 else sp.session_log_csv_path(args.board, args.algorithm, args.phase, args.ref)
         watcher = eta.PointWatcher(record_csv, eta_points, run_start=eta.now_bangkok(),
                                    skip_existing=True)
         watcher.start()
@@ -801,7 +844,7 @@ def main(argv=None):
             watcher.stop()
 
     if returncode == 0 and args.phase == 2:
-        generate_figures(argv_cmd[0], args.board, args.algorithm, args.la)
+        generate_figures(argv_cmd[0], args.board, args.algorithm, args.ref)
 
     if archive_dest is not None:
         print(f"\n--- fresh run summary ---")
@@ -811,11 +854,11 @@ def main(argv=None):
               f"analysis/, or any delegated sweep script ever reads from "
               f"data/archive/ (see pc/run_test.py's archive-independence test).")
 
-    # point_counts uses args.la (the REQUESTED flag), which may not match
-    # la_active if --la was requested but sigrok turned out unavailable --
+    # point_counts uses args.ref (the REQUESTED flag), which may not match
+    # (legacy sigrok-era comment; the counter is required when --ref counter is given) --
     # same known limitation as print_preflight's resume-state line above,
     # see its docstring.
-    point_counts = point_counts_by_status(args.board, args.algorithm, args.phase, args.la)
+    point_counts = point_counts_by_status(args.board, args.algorithm, args.phase, args.ref)
     if interrupted:
         rh.finish_invocation(inv, "interrupted", returncode=returncode,
                               point_counts=point_counts, archive_dest=archive_dest)

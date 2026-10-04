@@ -84,7 +84,7 @@ from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep, EXPERIMENT_CIRCU
 from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
-from shared import la_capture as lac  # noqa: E402
+from counter import hooks as refhooks  # noqa: E402
 from shared import paths as sp  # noqa: E402
 from shared import upload_retry as ur  # noqa: E402
 
@@ -402,35 +402,17 @@ def main():
                           "หน่วยความจำ) แล้วเช็คว่า port ยังอยู่ก่อน retry จริง — "
                           f"ค่าเริ่มต้น {UPLOAD_RETRY_SETTLE_S_DEFAULT}s "
                           "retry ได้ครั้งเดียวและยังอยู่ภายใต้กติกา budget<=600s เดิม")
-    ap.add_argument("--la", action="store_true",
-                     help="เปิด Logic Analyzer capture ผ่าน sigrok-cli ต่อจุดข้อมูล "
-                          "(ค่าเริ่มต้นปิด — พฤติกรรมเมื่อปิดเหมือนเดิมทุกประการ ไม่มีการ "
-                          "เรียก sigrok-cli เลยแม้แต่ครั้งเดียว) UNVERIFIED: sigrok-cli "
-                          "command lines ไม่เคยรันกับฮาร์ดแวร์จริง (ดู "
-                          "pc/shared/la_capture.py และ run_checklist.md ส่วน 'sigrok-cli "
-                          "command lines — UNVERIFIED') ต้องมี capture_plan.csv อยู่แล้วใน "
-                          "la/ ของ circuit นั้น (จาก analysis/la_capture_plan.py) และ "
-                          "sigrok-cli บน PATH พร้อมอุปกรณ์ที่ตรวจเจอ ไม่งั้นจะรันต่อโดยไม่ "
-                          "capture (ไม่ใช่ error)")
+    refhooks.add_args(ap)   # --ref {none,counter}, --counter-port (pc/counter/hooks.py)
     args = ap.parse_args()
     reject_removed_circuits(args.circuits)
 
-    # --la ปิด (ค่าเริ่มต้น): la_active คงเป็น False เสมอ ไม่มีการเรียก lac.* แม้แต่ครั้ง
-    # เดียวตลอดทั้งการรัน — พฤติกรรมจึงเหมือนก่อนมี flag นี้ทุกประการ (ดู
-    # pc/shared/la_capture_test.py "flag off = unchanged behavior") ตรวจ sigrok-cli
-    # ครั้งเดียวต่อ process (ไม่ผูกกับ circuit ใดวงจรหนึ่ง)
-    la_active = False
-    if args.la:
-        scan = lac.check_sigrok()
-        print(f"[la] sigrok-cli check: {scan['note']}")
-        la_active = scan["available"]
-        if not la_active:
-            print("[la] continuing WITHOUT capture (sigrok-cli unavailable or no device found)")
+    # --ref none (default): every refhooks call is a no-op, behaviour identical to before the counter existed.
+    ref_active = refhooks.ref_active(args)
 
     try:
         for circuit in args.circuits:
             print(f"\n=== circuit={circuit} ===")
-            _run_circuit(args, circuit, la_active)
+            _run_circuit(args, circuit, ref_active)
     except ConsecutiveUploadFailuresError as e:
         # standing decision 1 (2026-09-20): stop the whole run, don't crash past
         # the point of having flushed everything collected so far (_run_circuit's
@@ -438,10 +420,10 @@ def main():
         # its SessionRecorder's __exit__ already wrote a session row noting the
         # exception before it got here).
         print(f"\n!!! STOPPING RUN: {e}")
-        print(f"raw -> {sp.raw_csv_path('uno', e.circuit, la=la_active)}\n"
-              f"memory wall -> {sp.memory_wall_csv_path('uno', e.circuit, la=la_active)}")
-        print(f"telemetry -> {sp.sessions_csv_path('uno', e.circuit, la=la_active)}, "
-              f"{sp.points_csv_path('uno', e.circuit, la=la_active)}")
+        print(f"raw -> {sp.raw_csv_path('uno', e.circuit, ref=ref_active)}\n"
+              f"memory wall -> {sp.memory_wall_csv_path('uno', e.circuit, ref=ref_active)}")
+        print(f"telemetry -> {sp.sessions_csv_path('uno', e.circuit, ref=ref_active)}, "
+              f"{sp.points_csv_path('uno', e.circuit, ref=ref_active)}")
         sys.exit(2)
     except rs.OperatorStoppedError as e:
         # 2026-09-22 standing decision: operator pressed Ctrl+C mid-point --
@@ -450,14 +432,16 @@ def main():
         # read_serial_trials/_sweep_body). Exit code 130 matches the usual
         # Ctrl+C convention (128+SIGINT).
         print(f"\n!!! STOPPED BY OPERATOR: {e}")
-        print(f"raw -> {sp.raw_csv_path('uno', e.circuit, la=la_active)}\n"
-              f"memory wall -> {sp.memory_wall_csv_path('uno', e.circuit, la=la_active)}")
+        print(f"raw -> {sp.raw_csv_path('uno', e.circuit, ref=ref_active)}\n"
+              f"memory wall -> {sp.memory_wall_csv_path('uno', e.circuit, ref=ref_active)}")
         print(f"re-run the exact same command to continue collecting the remaining "
               f"{e.total_reps - e.reps_completed} rep(s) for {e.circuit} n={e.n}")
         sys.exit(130)
+    finally:
+        refhooks.shutdown()   # disarm the counter and close its port (no-op without --ref counter)
 
 
-def _run_circuit(args, circuit, la_active):
+def _run_circuit(args, circuit, ref_active):
     """Set up this one algorithm's directory/files/telemetry session, run its
     sweep, and close everything down again — one call per circuit in
     args.circuits. Each circuit is now a fully independent unit (own raw dir,
@@ -468,29 +452,17 @@ def _run_circuit(args, circuit, la_active):
         print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {args.n_max}]")
         return
 
-    # no_la/with_la split (2026-09-22, see pc/shared/paths.py): la_active, not
-    # args.la, decides the bucket -- if --la was passed but sigrok-cli turned
-    # out unavailable/no device found, la_active is already False and no
-    # capture is ever attempted (see the la_active computation in main()), so
-    # this point belongs under no_la exactly like an ordinary run, not
-    # with_la (which means "a capture was actually attempted").
-    raw_directory = sp.raw_dir("uno", circuit, phase=2, la=la_active)
+    # no_ref/with_ref split (see pc/shared/paths.py): `--ref counter` selects with_ref/, the default selects no_ref/.
+    # Resume never crosses the two buckets.
+    raw_directory = sp.raw_dir("uno", circuit, phase=2, ref=ref_active)
     raw_directory.mkdir(parents=True, exist_ok=True)
-    raw_path = sp.raw_csv_path("uno", circuit, la=la_active)
-    wall_path = sp.memory_wall_csv_path("uno", circuit, la=la_active)
-    points_csv = sp.points_csv_path("uno", circuit, la=la_active)
-    sessions_csv = sp.sessions_csv_path("uno", circuit, la=la_active)
-    env_directory = sp.env_dir("uno", circuit, la=la_active)
+    raw_path = sp.raw_csv_path("uno", circuit, ref=ref_active)
+    wall_path = sp.memory_wall_csv_path("uno", circuit, ref=ref_active)
+    points_csv = sp.points_csv_path("uno", circuit, ref=ref_active)
+    sessions_csv = sp.sessions_csv_path("uno", circuit, ref=ref_active)
+    env_directory = sp.env_dir("uno", circuit, ref=ref_active)
 
-    if la_active:
-        # per-circuit LA dir/plan/issues-log — reassigning these module attributes
-        # is the same redirection mechanism the tests already use (see
-        # la_capture_test.py); load_plan_entry() resolves plan_path=None at call
-        # time, not at def time, so this reassignment actually takes effect (a
-        # latent bug fixed 2026-09-20 during this migration — see its docstring)
-        lac.LA_DIR = sp.la_dir("uno", circuit, phase=2)
-        lac.PLAN_PATH = lac.LA_DIR / "capture_plan.csv"
-        lac.ISSUES_LOG = lac.LA_DIR / "capture_issues.log"
+    ref = refhooks.from_args(args, "uno", circuit)   # SweepRef; disabled (no-op) unless --ref counter
 
     # resume (ค่าเริ่มต้น): มีแถวใน wall CSV = จุดนั้น "เสร็จสิ้น" แล้วไม่ว่าผลจะเป็นอะไร
     # (ok, build_or_upload_fail, skipped_compute_infeasible, ...) ข้ามได้เลย ไม่ต้องแตะ
@@ -567,11 +539,12 @@ def _run_circuit(args, circuit, la_active):
                     session.note_interruption_gap(gap)
             env_path = tel.write_environment_metadata(
                 session.session_id, "uno", args.port, BAUD, F_CPU, FW_DIR / "src",
-                env_dir=env_directory, pio_project_dir=FW_DIR, pio_env="uno", la=la_active)
+                env_dir=env_directory, pio_project_dir=FW_DIR, pio_env="uno", ref=ref_active)
             session.env_json_path = str(env_path)
+            refhooks.write_sidecar(env_directory, session.session_id, args, "uno")   # no-op without --ref counter
 
             _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasible,
-                        raw_w, raw_f, wall_w, wall_f, session, la_active, points_csv)
+                        raw_w, raw_f, wall_w, wall_f, session, ref_active, points_csv, ref=ref)
     finally:
         raw_f.close()
         wall_f.close()
@@ -581,7 +554,9 @@ def _run_circuit(args, circuit, la_active):
 
 
 def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasible,
-                 raw_w, raw_f, wall_w, wall_f, session, la_active, points_csv):
+                 raw_w, raw_f, wall_w, wall_f, session, ref_active, points_csv, ref=None):
+    if ref is None:
+        ref = refhooks.SweepRef()   # disabled: every ref.* call is a no-op
     # ข้าม n boundary ภายในวงจรนี้ — เรื่องพอร์ตทางกายภาพไม่รู้จัก n boundary ตั้งครั้งเดียว
     # หลัง hard_timeout=true หรือ upload-stage failure ใด ๆ แล้วถูก "ใช้" ครั้งเดียวก่อน
     # build_and_upload ครั้งถัดไป ไม่ว่าจะเป็น n ไหนก็ตาม (ดู UPLOAD_SYNC_FAILURE_MARKERS
@@ -723,25 +698,12 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                 pending_settle = False
                 pending_settle_reason = None
 
-            # --la: arm the capture BEFORE build_and_upload (compile+upload+the
-            # reset that actually starts the board running) — this can only add
-            # time to the reflash phase (PC-side, outside any timed region), never
-            # to the GPIO pulse or the micros() window it brackets.
-            armed = None
-            plan_entry = None
-            if la_active:
-                plan_entry = lac.load_plan_entry("uno", circuit, n)
-                if plan_entry is None:
-                    lac.log_issue("uno", circuit, n,
-                                  "no capture_plan.csv entry for this point in this "
-                                  "circuit's la/ dir — skipping capture (run "
-                                  "analysis/la_capture_plan.py first)")
-                else:
-                    out_path = lac.LA_DIR / f"uno_{circuit}_n{n}.csv"
-                    armed = lac.arm_capture("uno", circuit, n, plan_entry, out_path)
-                    if armed is None:
-                        print(f"[la] failed to arm capture for {circuit} n={n} "
-                              "— continuing without capture for this point")
+            # --ref counter: ARM the counter BEFORE build_and_upload (PC-side, outside the timed region);
+            # a no-op without --ref counter.
+            if ref.stop_requested():   # previous points are fully written; stop BEFORE starting a new one
+                print("[ref] counter lost for 2 consecutive points -- stopping the run (all micros() data so far is intact)")
+                sys.exit(3)
+            ref.arm(n)
 
             attempt_start = datetime.now(timezone.utc).isoformat()
             result = build_and_upload(circuit, n, args.port, args.build_timeout_s)
@@ -750,13 +712,8 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
             reflash_s = result["compile_s"] + result["upload_s"]
             point_reflash_s += reflash_s
 
-            if armed is not None and not result["ok"]:
-                # board never ran (build/upload failed before the reset that
-                # starts it) — discard the capture, don't run analysis on it.
-                # This must not touch the micros()/build failure handling below.
-                lac.stop_capture(armed, "uno", circuit, n)
-                lac.log_issue("uno", circuit, n, "build/upload failed — capture discarded")
-                armed = None
+            if not result["ok"]:
+                ref.target_failed(n)   # board never ran; reference record only, micros() handling below untouched
 
             # standing decision 2 (2026-09-20): the Uno linker exits 0 even when
             # RAM usage is above 100% (documented toolchain quirk, docs/
@@ -780,10 +737,7 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                 print(f"\ncompile_ram_pct={result['ram_pct']}% > 100% despite the linker "
                       "exiting 0 (Uno L2 quirk) -- Memory Wall. Not executing this point; "
                       "recorded as build_overflow.")
-                if armed is not None:
-                    lac.stop_capture(armed, "uno", circuit, n)
-                    lac.log_issue("uno", circuit, n, "compile RAM > 100% — not executed, capture discarded")
-                    armed = None
+                ref.target_failed(n)   # not executed: reference record only
                 wall_w.writerow(["uno", circuit, n, theoretical_bytes, result["ram_bytes"],
                                   result["ram_pct"], "build_overflow", ts, retry_used,
                                   budget_s, round(expected_s, 1), retry_policy])
@@ -891,21 +845,9 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                 pending_settle = True
                 pending_settle_reason = f"hard_timeout on {circuit} n={n}"
 
-            # --la: stop the capture after the point (regardless of the outcome
-            # timed above, which is already fixed by this point) and only run
-            # the analysis scripts if the point actually produced micros() data
-            # to cross-check against. A capture/analysis problem is logged and
-            # never changes `done`, `rows`, or anything written below.
-            if armed is not None:
-                cap_ok = lac.stop_capture(armed, "uno", circuit, n)
-                if cap_ok and done:
-                    expected_reps = plan_entry["n_reps_to_capture"] if plan_entry else len(rows)
-                    lac.run_analysis("uno", circuit, n, armed.out_path, expected_reps)
-                elif cap_ok and not done:
-                    lac.log_issue("uno", circuit, n,
-                                  "point did not complete (no DONE) — capture kept on disk "
-                                  "but not analyzed, no micros() data to cross-check against")
-                armed = None
+            # --ref counter: disarm, store pulses, join with the micros() rows of this attempt. Any reference
+            # problem is logged in ref_issues.log and never changes `done`, `rows` or anything written below.
+            ref.finish(n, rows, done)
 
             attempt_end = datetime.now(timezone.utc).isoformat()
 

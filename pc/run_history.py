@@ -69,7 +69,7 @@ def filter_invocations(grouped, board=None, algorithm=None, phase=None,
 def format_invocation(iid, slot):
     started = slot["started"]
     terminal = slot["terminal"]
-    la_str = "with_la" if started.get("la") else "no_la"
+    la_str = "with_ref" if started.get("ref") else "no_ref"
     head = (f"{started.get('timestamp_utc', '?')}  "
             f"{started.get('board', '?')}/{started.get('algorithm', '?')}"
             f"/phase{started.get('phase', '?')}/{la_str}"

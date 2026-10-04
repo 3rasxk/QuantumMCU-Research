@@ -76,6 +76,7 @@ import serial
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
+from counter import hooks as refhooks  # noqa: E402
 from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep, EXPERIMENT_CIRCUITS, reject_removed_circuits  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
@@ -347,13 +348,15 @@ def main():
                           "match เท่านั้น ไม่ใช่ปัญหาหน่วยความจำ) แล้วเช็คว่า port ยังอยู่ "
                           f"ก่อน retry จริง — ค่าเริ่มต้น {UPLOAD_RETRY_SETTLE_S_DEFAULT}s "
                           "(standing decision 1, ported from uno_sweep.py 2026-09-22)")
+    refhooks.add_args(ap)   # --ref {none,counter}, --counter-port (pc/counter/hooks.py)
     args = ap.parse_args()
     reject_removed_circuits(args.circuits)
+    ref_active = refhooks.ref_active(args)
 
     try:
         for circuit in args.circuits:
             print(f"\n=== circuit={circuit} ===")
-            _run_circuit(args, circuit)
+            _run_circuit(args, circuit, ref_active)
     except ConsecutiveUploadFailuresError as e:
         # standing decision 1: stop the whole run, don't crash past the point
         # of having flushed everything collected so far (_run_circuit's own
@@ -361,24 +364,26 @@ def main():
         # its SessionRecorder's __exit__ already wrote a session row noting
         # the exception before it got here) -- mirrors uno_sweep.py's main().
         print(f"\n!!! STOPPING RUN: {e}")
-        print(f"raw -> {sp.raw_csv_path('esp8266', e.circuit)}\n"
-              f"memory wall -> {sp.memory_wall_csv_path('esp8266', e.circuit)}")
-        print(f"telemetry -> {sp.sessions_csv_path('esp8266', e.circuit)}, "
-              f"{sp.points_csv_path('esp8266', e.circuit)}")
+        print(f"raw -> {sp.raw_csv_path('esp8266', e.circuit, ref=ref_active)}\n"
+              f"memory wall -> {sp.memory_wall_csv_path('esp8266', e.circuit, ref=ref_active)}")
+        print(f"telemetry -> {sp.sessions_csv_path('esp8266', e.circuit, ref=ref_active)}, "
+              f"{sp.points_csv_path('esp8266', e.circuit, ref=ref_active)}")
         sys.exit(2)
     except rs.OperatorStoppedError as e:
         # 2026-09-22 standing decision: operator pressed Ctrl+C mid-point --
         # the partial point was already written and flushed before this was
         # raised (see read_serial_trials/_sweep_body). Exit 130 matches Ctrl+C.
         print(f"\n!!! STOPPED BY OPERATOR: {e}")
-        print(f"raw -> {sp.raw_csv_path('esp8266', e.circuit)}\n"
-              f"memory wall -> {sp.memory_wall_csv_path('esp8266', e.circuit)}")
+        print(f"raw -> {sp.raw_csv_path('esp8266', e.circuit, ref=ref_active)}\n"
+              f"memory wall -> {sp.memory_wall_csv_path('esp8266', e.circuit, ref=ref_active)}")
         print(f"re-run the exact same command to continue collecting the remaining "
               f"{e.total_reps - e.reps_completed} rep(s) for {e.circuit} n={e.n}")
         sys.exit(130)
+    finally:
+        refhooks.shutdown()   # disarm the counter and close its port (no-op without --ref counter)
 
 
-def _run_circuit(args, circuit):
+def _run_circuit(args, circuit, ref_active=False):
     """One algorithm's directory/files/telemetry session — see pc/shared/paths.py
     and uno_sweep.py's module docstring for the per-board-per-algorithm layout
     this replaced (2026-09-20, run_log.md)."""
@@ -387,13 +392,14 @@ def _run_circuit(args, circuit):
         print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {args.n_max}]")
         return
 
-    raw_directory = sp.raw_dir("esp8266", circuit, phase=2)
+    ref = refhooks.from_args(args, "esp8266", circuit)   # SweepRef; disabled (no-op) unless --ref counter
+    raw_directory = sp.raw_dir("esp8266", circuit, phase=2, ref=ref_active)
     raw_directory.mkdir(parents=True, exist_ok=True)
-    raw_path = sp.raw_csv_path("esp8266", circuit)
-    wall_path = sp.memory_wall_csv_path("esp8266", circuit)
-    points_csv = sp.points_csv_path("esp8266", circuit)
-    sessions_csv = sp.sessions_csv_path("esp8266", circuit)
-    env_directory = sp.env_dir("esp8266", circuit)
+    raw_path = sp.raw_csv_path("esp8266", circuit, ref=ref_active)
+    wall_path = sp.memory_wall_csv_path("esp8266", circuit, ref=ref_active)
+    points_csv = sp.points_csv_path("esp8266", circuit, ref=ref_active)
+    sessions_csv = sp.sessions_csv_path("esp8266", circuit, ref=ref_active)
+    env_directory = sp.env_dir("esp8266", circuit, ref=ref_active)
 
     # resume (ค่าเริ่มต้น): มีแถวใน wall CSV = จุดนั้น "เสร็จสิ้น" แล้วไม่ว่าผลจะเป็นอะไร
     # ข้ามได้เลย ไม่ต้องแตะฮาร์ดแวร์ซ้ำ ส่วนแถวกำพร้าใน raw CSV (จุดที่โปรเซสตายระหว่าง
@@ -466,11 +472,12 @@ def _run_circuit(args, circuit):
                     session.note_interruption_gap(gap)
             env_path = tel.write_environment_metadata(
                 session.session_id, "esp8266", args.port, BAUD, F_CPU, FW_DIR / "src",
-                env_dir=env_directory, pio_project_dir=FW_DIR, pio_env="nodemcuv2")
+                env_dir=env_directory, pio_project_dir=FW_DIR, pio_env="nodemcuv2", ref=ref_active)
             session.env_json_path = str(env_path)
+            refhooks.write_sidecar(env_directory, session.session_id, args, "esp8266")   # no-op without --ref counter
 
             _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasible,
-                        raw_w, raw_f, wall_w, wall_f, session, points_csv)
+                        raw_w, raw_f, wall_w, wall_f, session, points_csv, ref=ref)
     finally:
         raw_f.close()
         wall_f.close()
@@ -480,7 +487,9 @@ def _run_circuit(args, circuit):
 
 
 def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasible,
-                 raw_w, raw_f, wall_w, wall_f, session, points_csv):
+                 raw_w, raw_f, wall_w, wall_f, session, points_csv, ref=None):
+    if ref is None:
+        ref = refhooks.SweepRef()   # disabled: every ref.* call is a no-op
     # standing decision 1 (ported from uno_sweep.py 2026-09-22): settle once,
     # consumed once, before the very next build_and_upload call regardless of
     # which point that's for -- the port doesn't know about the n boundary.
@@ -606,6 +615,10 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                 pending_settle = False
                 pending_settle_reason = None
 
+            if ref.stop_requested():   # previous points are fully written; stop BEFORE starting a new one
+                print("[ref] counter lost for 2 consecutive points -- stopping the run (all micros() data so far is intact)")
+                sys.exit(3)
+            ref.arm(n)   # no-op without --ref counter
             attempt_start = datetime.now(timezone.utc).isoformat()
             result = build_and_upload(circuit, n, args.port, args.build_timeout_s)
             ts = datetime.now(timezone.utc).isoformat()
@@ -614,6 +627,7 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
             point_reflash_s += reflash_s
 
             if not result["ok"]:
+                ref.target_failed(n)   # board never ran; reference record only
                 # แยกสาเหตุก่อนตัดสิน: timeout ของ toolchain ไม่ใช่กำแพง และ retry ได้
                 # (ดู pc/shared/resume.classify_build_failure และ finding H2)
                 build_status = rs.classify_build_failure(
@@ -691,6 +705,7 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
             if "hard_timeout=true" in note:
                 pending_settle = True
                 pending_settle_reason = f"hard_timeout on {circuit} n={n}"
+            ref.finish(n, rows, done)   # disarm, store pulses, join with micros(); never changes `done`/`rows`
             attempt_end = datetime.now(timezone.utc).isoformat()
 
             if malloc_failed:

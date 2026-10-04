@@ -452,34 +452,34 @@ def check_sleep_prevention():
         return {"checked": False, "prevented": None, "note": f"pmset check failed: {e}"}
 
 
-def _la_bucket_from_path(path: Path):
-    """Which of no_la/with_la a path lives under, by inspecting its parts --
+def _ref_bucket_from_path(path: Path):
+    """Which of no_ref/with_ref a path lives under, by inspecting its parts --
     None if neither segment is present (e.g. a test's scratch directory that
     doesn't go through pc/shared/paths.py at all). Used only for the
-    cross-check below, never to derive `la` itself -- the caller's actual
-    `--la` flag is still the source of truth for what was collected."""
+    cross-check below, never to derive `ref` itself -- the caller's actual
+    `--ref` flag is still the source of truth for what was collected."""
     for part in path.parts:
-        if part in ("no_la", "with_la"):
+        if part in ("no_ref", "with_ref"):
             return part
     return None
 
 
 def write_environment_metadata(session_id, board, port, baud, f_cpu, fw_src_dir,
                                 env_dir: Path = None, pio_project_dir=None, pio_env=None,
-                                la: bool = False):
-    """`la` records whether --la was actually active for this session (2026-
-    09-22, see pc/shared/paths.py's no_la/with_la split). This is NOT trusted
-    blindly: la_dir_bucket/la_dir_matches_flag cross-check it against which
-    bucket env_dir itself resolved to (paths.env_dir's la= argument, the same
+                                ref: bool = False):
+    """`ref` records whether --ref counter was actually active for this session (2026-
+    09-22, see pc/shared/paths.py's no_ref/with_ref split). This is NOT trusted
+    blindly: ref_dir_bucket/ref_dir_matches_flag cross-check it against which
+    bucket env_dir itself resolved to (paths.env_dir's ref= argument, the same
     one that determined raw_dir/points_csv_path/etc for this same session) --
-    a caller bug that passes a `la` flag inconsistent with the directory it's
+    a caller bug that passes a `ref` flag inconsistent with the directory it's
     actually writing into is detectable here instead of silently trusted."""
     if env_dir is None:
         env_dir = ENV_DIR
     env_dir.mkdir(parents=True, exist_ok=True)
     commit, dirty = _git_commit_and_dirty()
-    dir_bucket = _la_bucket_from_path(env_dir)
-    expected_bucket = "with_la" if la else "no_la"
+    dir_bucket = _ref_bucket_from_path(env_dir)
+    expected_bucket = "with_ref" if ref else "no_ref"
     meta = {
         "schema_version": SCHEMA_VERSION,
         "session_id": session_id,
@@ -497,9 +497,9 @@ def write_environment_metadata(session_id, board, port, baud, f_cpu, fw_src_dir,
         "host_os": platform.platform(),
         "host_cpu": platform.processor() or platform.machine(),
         "sleep_prevention": check_sleep_prevention(),
-        "la_used": la,
-        "la_dir_bucket": dir_bucket,
-        "la_dir_matches_flag": None if dir_bucket is None else (dir_bucket == expected_bucket),
+        "ref_used": ref,
+        "ref_dir_bucket": dir_bucket,
+        "ref_dir_matches_flag": None if dir_bucket is None else (dir_bucket == expected_bucket),
         "recorded_utc": datetime.now(timezone.utc).isoformat(),
     }
     path = env_dir / f"{session_id}.json"
