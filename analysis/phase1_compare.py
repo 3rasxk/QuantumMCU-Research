@@ -148,13 +148,30 @@ def build_qiskit_circuit(circuit: str, n: int):
     return qc
 
 
-def run_qiskit_aer(circuit: str, n: int):
+def run_qiskit_aer(circuit: str, n: int, chunk_gates: int = 0):
+    """chunk_gates > 0: run the SAME circuit through Aer in slices of that many instructions,
+    passing the statevector from slice to slice (set_statevector -> save_statevector). The result is
+    identical to one big run (verified bit-for-bit at grover n=9) but peak memory stays small: the
+    one-shot run needs about 1.7 GB at grover n=11 and roughly 4.5 GB at n=12 (8.6 GB machine)."""
     from qiskit_aer import AerSimulator
 
     qc = build_qiskit_circuit(circuit, n)
     depth = qc.depth()  # ความลึกวงจรจริง นับจาก Qiskit (ใช้พล็อตกราฟ Infidelity vs Circuit Depth)
-    qc.save_statevector()
     sim = AerSimulator(method="statevector")
+    if chunk_gates and chunk_gates > 0:
+        data = qc.data
+        total = len(data)
+        state = None
+        for i in range(0, total, chunk_gates):
+            sc = qc.copy_empty_like()
+            if state is not None:
+                sc.set_statevector(state)
+            for inst in data[i:i + chunk_gates]:
+                sc._append(inst)
+            sc.save_statevector()
+            state = np.asarray(sim.run(sc).result().get_statevector(sc).data)
+        return state, depth
+    qc.save_statevector()
     result = sim.run(qc).result()
     sv = result.get_statevector(qc)
     return np.asarray(sv.data), depth
@@ -243,6 +260,8 @@ def main():
                      help="ยอมให้ทับไฟล์ผลลัพธ์เดิม (ค่าเริ่มต้นคือปฏิเสธและออกด้วย exit 1)")
     ap.add_argument("--circuits", nargs="+", default=CIRCUITS)
     ap.add_argument("--grover-n-max", type=int, default=GROVER_N_MAX_DEFAULT)
+    ap.add_argument("--chunk-gates", type=int, default=0,
+                    help="run Qiskit in slices of this many instructions (same result, far less memory)")
     ap.add_argument("--only-n", type=int, nargs="+", default=None,
                     help="restrict to these n (resume a partial run into a new timestamped file)")
     args = ap.parse_args()
@@ -287,7 +306,7 @@ def main():
                     continue
                 t_start = time.monotonic()
                 psi_cpp = run_cpp_simulator(circuit, n)
-                psi_qiskit, depth = run_qiskit_aer(circuit, n)
+                psi_qiskit, depth = run_qiskit_aer(circuit, n, args.chunk_gates)
 
                 infid = infidelity(psi_cpp, psi_qiskit)
                 tvd = total_variation_distance(psi_cpp, psi_qiskit)

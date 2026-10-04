@@ -1,0 +1,2 @@
+circuit,n,depth,infidelity,tvd,pass,grover_marked_prob,flag_above_1e-3
+grover,12,12795101,0.10926345426768824,0.05460720226039234,False,0.8907799887041152,True

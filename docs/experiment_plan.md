@@ -214,14 +214,26 @@ the original `infidelity_tvd.csv` is untouched. Cell = infidelity / TVD. Thresho
 | 9 | 2.05e-07 / 1.02e-07 | 3.45e-08 / 1.72e-08 | 2.05e-07 / 1.02e-07 | 1.47e-03 / 7.41e-04 **FLAG** |
 | 10 | 2.37e-07 / 1.18e-07 | 3.45e-08 / 1.72e-08 | 2.37e-07 / 1.18e-07 | 6.47e-03 / 3.23e-03 **FLAG** |
 | 11 | 2.00e-07 / 1.00e-07 | 3.45e-08 / 1.72e-08 | 2.00e-07 / 1.00e-07 | 2.66e-02 / 1.33e-02 **FLAG** |
-| 12 | 2.43e-07 / 1.22e-07 | 3.45e-08 / 1.72e-08 | 2.43e-07 / 1.22e-07 | NOT RUN |
+| 12 | 2.43e-07 / 1.22e-07 | 3.45e-08 / 1.72e-08 | 2.43e-07 / 1.22e-07 | 1.09e-01 / 5.46e-02 **FLAG** (run 2026-10-04, chunked) |
 | 13 | 2.09e-07 / 1.05e-07 | 3.45e-08 / 1.72e-08 | 2.09e-07 / 1.05e-07 | NOT RUN |
 | 14 | 2.38e-07 / 1.19e-07 | 3.45e-08 / 1.72e-08 | 2.38e-07 / 1.19e-07 | NOT RUN |
 
 - **h_all, bell_ghz, qft: all n=1..14 pass**, worst infidelity 2.4e-07 (h_all/qft), 3.4e-08 (bell_ghz). The never-validated points (n=1 h_all/qft; odd n 5,7,9,11,13) all pass.
 - **grover: n=2..8 pass, n=9, 10, 11 are above 1e-3** (1.47e-3, 6.47e-3, 2.66e-2; P(marked) stays >= 0.973). n=9,10 were already known. The error grows about 4x per n (float32 accumulation over 3^n gates).
-- **grover n=12, 13, 14: NOT RUN.** The run was killed silently at n=12 on an 8.6 GB machine (cause UNVERIFIED, memory is the likely one: n=11 has 3.0 M gates, n=12 about 13 M Qiskit instructions); a retry died the same way. n=13/14 are out of reach on this machine. These n are on the plan only for ESP8266 (n=12, 13 wall) and ESP32 (n=11..13), all TIME-LIMITED points (section 4); by the 4x trend they would also exceed 1e-3.
-- Consequence for the experiment: grover points at n>=9 carry a float32 precision caveat on top of the time caveat. Owner decision whether to collect them at all.
+- **grover n=12: infidelity 1.09e-1, TVD 5.46e-2, P(marked) 0.891** (`data/raw/phase1/infidelity_tvd.20261004T091042Z.csv`, 818 s). Same growth, about 4x per n.
+- **grover n=13, 14: NOT RUN.** n=13 needs roughly 1 h or more and a multi-GB circuit on this 8.6 GB machine (an attempt to build the circuit alone ran over 12 minutes while the machine was swapping and was aborted); n=14 would need about 8.6 GB for the circuit alone. By the 4x trend both would exceed 1e-3 by a wide margin.
+- **Why the first run died at n=12:** the one-shot Aer run peaks at 0.26 / 0.61 / 1.66 GB for n=9 / 10 / 11 (x2.7 per n, so about 4.5 GB at n=12) on an 8.6 GB machine that was already swapping; the process vanished twice with no traceback, which is what an OS memory kill looks like (the OS log kept no record, so this is inferred, not proven). `phase1_compare.py --chunk-gates 250000` runs the same circuit through Aer in slices and carries the statevector across; at grover n=9 the result is bit-identical to the one-shot run, and the n=12 run peaked at 0.61 GB.
+
+| grover n | Qiskit instructions | C++ simulator | Qiskit total | peak memory |
+|---|---|---|---|---|
+| 9 | 199 k | 0.1 s | 11.8 s | 0.26 GB |
+| 10 | 877 k | 0.8 s | 38.8 s | 0.61 GB |
+| 11 | 3.68 M | 6.9 s | 160 s | 1.66 GB (one-shot) |
+| 12 | 15.75 M | 58 s | about 760 s | 0.61 GB (chunked); one-shot about 4.5 GB |
+| 13 | about 66 M | about 8 min (extrapolated) | hours | circuit about 2 GB+, not completed |
+| 14 | about 280 M | about 70 min (extrapolated) | not feasible here | circuit about 8.6 GB |
+
+- Consequence for the experiment: grover points at n>=9 (all validated n above 8 fail 1e-3) carry a float32 precision caveat on top of the time caveat. Owner decision whether to collect them at all.
 
 
 ## 7. UNVERIFIED list

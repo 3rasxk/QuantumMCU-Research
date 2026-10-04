@@ -134,25 +134,16 @@ def _sha256(path):
     return h.hexdigest()
 
 
-def test_restart_archive_is_lossless():
-    """Regression guard (2026-10-03 restart): every file the full-restart
-    archive moved (data/archive/restart_*/MANIFEST.json) must still exist
-    there with the sha256 it had at move time, and nothing may have been left
-    behind at its old location while the old name is unoccupied by new data.
-    Replaces the earlier uno points.csv row-count guard, whose files were
-    moved into that archive."""
-    import hashlib
-    archives = sorted((sp.REPO_ROOT / "data" / "archive").glob("restart_*"))
-    check("restart archive exists", len(archives) >= 1, str(archives))
-    for arch in archives:
-        manifest = json.loads((arch / "MANIFEST.json").read_text())
-        check(f"{arch.name}: manifest has reason + git commit",
-              "LA replaced by ESP32 counter" in manifest["reason"] and len(manifest["git_commit"]) == 40)
-        bad = [e["path"] for e in manifest["files"]
-               if not (arch / e["path"]).exists()
-               or hashlib.sha256((arch / e["path"]).read_bytes()).hexdigest() != e["sha256"]]
-        check(f"{arch.name}: all {manifest['file_count']} files present with matching sha256",
-              not bad, bad[:3])
+def test_pre_timer_results_are_gone_and_recorded():
+    """2026-10-04 purge: results measured before the ESP32 timer existed were deleted
+    (git history, commit af40643). Guard: no data/archive/, and the append-only ledger
+    carries the `restart` and `purge` events. (data/raw/phase2|3 may legitimately fill up
+    again once the new dataset exists, so they are not asserted empty here.)"""
+    check("data/archive/ does not exist", not (sp.REPO_ROOT / "data" / "archive").exists())
+    ledger = sp.REPO_ROOT / "data" / "run_history.jsonl"
+    events = [json.loads(ln).get("event") for ln in ledger.read_text().splitlines() if ln.strip()]
+    check("ledger has a restart and a purge event", "restart" in events and "purge" in events)
+    check("purge comes after restart", events.index("purge") > events.index("restart"))
 
 
 def main():
@@ -164,7 +155,7 @@ def main():
         test_no_la_and_with_la_never_collide()
     finally:
         sp.REPO_ROOT = saved_root  # real-data test below needs the real REPO_ROOT
-    test_restart_archive_is_lossless()
+    test_pre_timer_results_are_gone_and_recorded()
 
     n_fail = sum(1 for _, s in RESULTS if s == "FAIL")
     print(f"\n{len(RESULTS)} checks, {n_fail} failed")
