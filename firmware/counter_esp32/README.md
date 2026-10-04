@@ -1,9 +1,10 @@
 # firmware/counter_esp32: pulse counter (protocol v2) — NOT YET FLASHED
 
-**Flash status: FLASHED 2026-10-04** onto one ESP32-D0WD-V3 (MAC 8c:94:df:6c:a3:b8, `/dev/cu.usbserial-110`, WiFi-free build, no `wifi_config.h`).
-Heartbeat verified over USB serial at **115200 baud** (6 heartbeats in 5 s, 0 bad frames, state idle, 1 s period). The first flash used
-921600 baud, which this CH340 bridge did not decode; the firmware and PC tools now default to 115200. **Self-test not run yet** (waits for
-"jumper in place"); WiFi build never flashed.
+**Flash status: FLASHED 2026-10-04**, ESP32-D0WD-V3 (MAC 8c:94:df:6c:a3:b8, `/dev/cu.usbserial-110`), **WiFi build** (config in the git-ignored `src/wifi_config.h`).
+Verified without any pulse input: USB heartbeat at 115200 baud; WiFi link to `pc/counter/bridge.py` (counter joined `oasnnp_2.4GHz`, 192.168.1.145,
+TCP :5055, 42 heartbeats / 0 bad frames in about 35 s, `localhost:8080/status` JSON); ARM -> ARM_ACK ok, END -> REPORT with code 7
+(never started, as expected: no pulses), bad-version ARM refused, all over WiFi. The 5 GHz SSID is invisible to the ESP32 (2.4 GHz only).
+**Self-test not run** (waits for the GPIO25-GPIO35 jumper); reconnect-after-drop not yet tested on the real link.
 
 - It is the timing reference. Never flash a target board with it.
 - Builds with `pio run -d firmware/counter_esp32` (platform `espressif32@7.0.1`, same as `firmware/esp32`).
