@@ -1,4 +1,0 @@
-schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
-1,,uno,bell_ghz,2,0,,,,,,,refused_count_mismatch,True,4.0,186 usable pulses (15 glitch) for 100 reps; refusing rep-order join
-1,,uno,bell_ghz,3,0,,,,,,,refused_count_mismatch,True,4.0,182 usable pulses (18 glitch) for 100 reps; refusing rep-order join
-1,,uno,bell_ghz,4,0,,,,,,,refused_count_mismatch,True,4.0,180 usable pulses (20 glitch) for 100 reps; refusing rep-order join

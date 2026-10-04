@@ -1,9 +1,0 @@
-schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
-1,,uno,h_all,1,100,-7.65,-7.508,0.815,0.009,9.725,-65.6652,anomaly,True,4.0,"median diff -65.67 % and -7.7 us exceed threshold (5.0 %, 4.0 us)"
-1,,uno,h_all,2,100,-7.913,-7.83,1.638,3.988,9.825,-2.6741,anomaly,False,4.0,
-1,,uno,h_all,3,100,-10.388,-10.356,1.797,4.0,12.5,-1.2693,anomaly,False,4.0,
-1,,uno,h_all,4,100,-15.913,-16.413,1.427,0.025,22.0,-0.7564,anomaly,False,4.0,
-1,,uno,h_all,5,0,,,,,,,refused_count_mismatch,True,4.0,99 usable pulses (1 glitch) for 100 reps; refusing rep-order join
-1,,uno,h_all,6,0,,,,,,,refused_count_mismatch,True,4.0,99 usable pulses (1 glitch) for 100 reps; refusing rep-order join
-1,,uno,h_all,7,100,-135.431,-135.31,1.739,3.687,139.538,-0.5122,anomaly,False,4.0,
-1,,uno,h_all,8,0,,,,,,,refused_no_target_run,True,4.0,no_target_run

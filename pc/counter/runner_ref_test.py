@@ -106,6 +106,11 @@ def main():
                   "confirm by hand" in o.getvalue() and "/dev/cu.usbserial-1" in o.getvalue() and "/dev/cu.usbserial-2" in o.getvalue())
         finally:
             run_mod.port_exists, run_mod.port_holder_pids, run_mod.glob.glob = saved
+        try:
+            run_mod.check_counter_port("tcp:8080", "/dev/cu.T"); ok = False
+        except run_mod.RunnerError as ex:
+            ok = "dashboard" in str(ex) and "tcp:5055" in str(ex)
+        check("tcp:8080 (the dashboard port) is refused with a hint to use tcp:5055", ok)
         argv = run_mod.build_command("py", "esp32", "grover", 2, port="/dev/cu.T", ref=True, counter_port="/dev/cu.C", counter_cal="cal.json")
         check("build_command passes --ref counter, --counter-port, --counter-cal to the delegated sweep",
               argv[-6:] == ["--ref", "counter", "--counter-port", "/dev/cu.C", "--counter-cal", "cal.json"])

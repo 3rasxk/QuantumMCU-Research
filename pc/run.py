@@ -516,6 +516,9 @@ def check_counter_port(counter_port, target_port):
         import socket
         try:
             portno = int(str(counter_port)[4:])
+            if portno == 8080:
+                raise RunnerError("tcp:8080 is the dashboard (web) port; the counter firmware connects to the TCP port in its "
+                                  "wifi_config.h, normally 5055: use --counter-port tcp:5055")
             probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             probe.bind(("0.0.0.0", portno))
