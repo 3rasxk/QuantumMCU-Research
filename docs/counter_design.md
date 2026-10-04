@@ -1,6 +1,6 @@
 # ESP32 pulse counter: design (replaces the Logic Analyzer)
 
-Status: **design only. No firmware, no hardware touched, no code changed.**
+Status: **design. `firmware/counter_esp32/` is an UNFLASHED DRAFT (owner decision 2026-10-04: S1 hardware work cancelled for now). No board has been touched.**
 Facts about the ESP32, ESP-IDF and Arduino-ESP32 are marked **UNVERIFIED**: they
 come from general knowledge, not from this repo or a datasheet read in this
 session. Facts about this repo carry `file:line`.
@@ -211,7 +211,7 @@ the rename is path-only.
 | new | `firmware/counter/` (separate PlatformIO project, **not** under the DUT firmware), `pc/shared/counter_sim.py` (simulator), dashboard page |
 | **not changed** | `firmware/uno|esp8266|esp32/**` (the pin toggle already exists; source hash stays), `firmware/common/**` |
 
-## 9. Staged implementation (each stage testable without a target board)
+## 9. Earlier staged plan S0-S8 (superseded by section 16)
 
 | Stage | Deliverable | Test (no DUT) | Done when |
 |---|---|---|---|
@@ -240,6 +240,105 @@ and counter timing.
 - `docs/run/uno.md:11,15,18`, `docs/run/esp32.md:17`, `docs/run/esp8266.md:17`
 - Code comments that say the same: `pc/shared/paths.py:1,20,23,61,63,104`, `pc/shared/telemetry.py:25,460,534-538`, `analysis/phase2_uno_run_plots.py:40,69-73,321,379`, and the firmware comments `firmware/uno/src/main.cpp:27,86`, `firmware/esp8266/src/main.cpp:27`, `firmware/esp32/src/main.cpp:28`. The firmware comments **stay**: editing them changes the firmware source hash.
 
-## 11. Recommendation
+## 13. Review of the draft `firmware/counter_esp32` (read-only)
+
+Checked by reading the source; frames also checked by compiling the firmware's own helper code on the PC.
+
+| # | Finding | Severity | Detail |
+|---|---|---|---|
+| 1 | Frame format matches the PC codec | ok | `pc/shared/counter_fw_parity_test.py`: 6 firmware-built frames (ARM_ACK, ANOMALY, PULSE, REPORT, HEARTBEAT, SELFTEST_RESULT) equal `counter_proto.encode` byte for byte, CRC-8 included. ARM parsing offsets (payload 15 bytes, `n == 15`) match `>IBBBHIH` |
+| 2 | Capture clock | ok / UNVERIFIED | MCPWM capture timestamps at APB (80 MHz, 12.5 ns); the code converts with `esp_clk_apb_freq()` (`main.cpp` `ticks_to_ns`). Whether one pad can feed CAP0 and CAP1 through the GPIO matrix is UNVERIFIED (S1 would have shown it) |
+| 3 | Overflow counting | ok to about 10^4 days | 32-bit stamp + 64-bit `esp_timer` coarse clock; `unwrap_ticks` needs the coarse clock right to within 26.8 s. Width is u64 ns. A 1 h pulse (2.9e11 ticks, k = 67) and a 1 day pulse (6.9e12 ticks, k = 1 610) unwrap correctly in double precision. **Only 1 x 60 s was in the self-test**, so nothing longer is exercised |
+| 4 | Long reps do not fit the protocol | **high** | `max_width_s` is u16 (65 535 s = 18.2 h) in ARM; the plan has ESP8266 grover n=12 reps of about 22.8 h and ESP32 n=13 of 10.5 h. Needs u32 (protocol change) before such points |
+| 5 | Heartbeat time unusable for calibration | **high** | HEARTBEAT carries `uptime_s` (whole seconds); a 10-minute regression with 1 s quantisation resolves only about 1 700 ppm, not the 2 ppm the design needs. Needs a 64-bit microsecond field |
+| 6 | Edges faster than the ISR can latch | medium | CAP0/CAP1 hold one stamp each until the next edge of the same polarity, so ISR latency must be below one pulse period (>= about 100 us for the tiniest circuits, set by the target's print time). A lost edge shows as rise/fall imbalance (code 5) or a short count (code 1); a pulse lost on both channels shows only as code 1. Whether the legacy MCPWM ISR is IRAM-safe under flash writes is UNVERIFIED; the draft does no flash writes while armed |
+| 7 | Edge ring | ok | 1 024 entries, SPSC; overflow is counted (`e_overflow`) and reported at END as code 9 (not at once) |
+| 8 | Serial backpressure | medium | `Serial.write` blocks when the UART TX buffer is full; the main loop (frames, heartbeat, watchdog) stalls while edges keep filling the ring. 100 reps x 23 B is far inside the 1 024-edge ring; sustained high rates are not supported. `dropped` in the heartbeat is never incremented (dead field) |
+| 9 | Missing / glitch / still-high | partly | glitch (width < `min_width_ns`) flagged at once; stuck-high flagged at END (level or open rise) and by a `max_width_s` watchdog while armed; missing/extra/never-started at END. **Not implemented:** the design's "no first edge within a start timeout" rule (code 7 only at END). Pulses narrower than the capture can see (no input glitch filter, PCNT filter disabled) are invisible; sub-100 ns glitches are not detectable |
+| 10 | ACK / REFVAL | gap | `T_ACK` and `T_REFVAL` are parsed and ignored; the 512-frame replay ring is never freed, which is enough for REPS = 100 |
+| 11 | Sequence | ok | `seq` u16 wraps; REPLAY resends from the ring and raises code 6 |
+| 12 | Self-test coverage | see below | |
+| 13 | Clock fault (code 8) | limited | raised only for self-test groups >= 100 ms with more than 50 ppm error; meaningless when the same crystal generates and measures |
+| 14 | WiFi / WebSocket | not implemented | by design (S4) |
+| 15 | Build | ok | builds with `espressif32@7.0.1` (Arduino-ESP32 2.0.17, IDF 4.4 legacy drivers); never flashed |
+
+**What the self-test cannot prove:** absolute clock accuracy (one crystal generates and measures); the real input path
+(the loopback uses GPIO35, the target is wired to GPIO34, divider, pull-down and noise are untested); widths below 20 us
+or above 60 s (generator timer resolution 1 us, ISR toggling; one 60 s pulse only); behaviour with WiFi running; any edge-rate
+stress; the generator's own jitter is folded into the measured error, so the observed "resolution" is the generator's
+floor (about 1 us), not the capture unit's 12.5 ns.
+
+## 14. Missing parts, specified as design only
+
+**WiFi mode.** Default **access point** (`SSID qlab-counter-<id>`, WPA2, password set at flash time, fixed IP
+192.168.4.1): independent of the school network, no router config, works offline. Optional **station** mode for a school
+network (SSID/password stored in NVS, DHCP, mDNS `qlab-counter.local`); if the school network blocks client-to-client or
+WebSocket traffic, fall back to AP. WiFi is off unless a dashboard is enabled by the owner; recording never needs it.
+
+**WebSocket JSON** (server -> browser, text frames, at most 4 Hz, each a full snapshot):
+```
+{"v":1,"t":<counter_us>,"state":"idle|armed|selftest","session":7,"board":"esp32","circuit":"grover","n":8,
+ "reps":100,"pulse":37,"widths_us":[...last 50...],"median_us":..,"iqr_us":[q1,q3],"micros_diff_us":..,
+ "anomalies":[{"seq":12,"code":3}],"eta_s":..,"hb_age_s":0.4,"ring_depth":3,"fw":"<hash8>"}
+```
+Browser -> counter: only `{"cmd":"snapshot"}` and `{"cmd":"history","n":50}`. **No control path**: the dashboard can
+neither arm, disarm nor change settings.
+
+**Throttling and isolation.** Web server and WebSocket on core 0 at lowest priority; capture ISRs and the serial task on core 1;
+a snapshot is built from a copy of counters taken under a very short critical section; at most one outstanding frame per client,
+a slow client is dropped, never waited for; no flash or filesystem writes while armed (the page is served from flash memory
+mapped read-only). A dashboard crash, disconnect or WiFi stack fault must not change one recorded value: verified by the S4 test
+(WiFi under load, 10^6 loopback pulses, zero count mismatches, zero overruns).
+
+**Dashboard content:** board / circuit / n, rep progress, live widths, running median and IQR, `micros()` minus counter
+difference (PC forwards each target `micros()` value with REFVAL), anomalies, ETA from the PC runner, counter health.
+
+**Where the HTML lives:** one self-contained file (inline CSS/JS, no CDN) in `firmware/counter_esp32/data/dashboard.html`,
+embedded in flash at build time. **Security:** local network only, no internet access, WPA2, no credentials in the page, read-only
+protocol (above), no OTA. The target board **never** enables WiFi (`WiFi.mode(WIFI_OFF)` on ESP32 `esp32/src/main.cpp:56`, ESP8266
+`:56-57`); the only wires to a target are signal and GND.
+
+## 15. Clock accuracy and calibration
+
+- **Expectation (UNVERIFIED):** a 40 MHz crystal on a DevKit is typically +-10 to +-20 ppm over room temperature drift, so
+  +-1.3 to +-2.6 ms on a 130 s pulse and +-0.7 to 1.4 s on a 1-day pulse. The Uno's resonator is looser (about +-0.5 %, UNVERIFIED);
+  that is the target's error and is what the comparison exposes.
+- **Owner-runnable procedure (any one):**
+  1. *PC clock over a long pulse:* with the counter heartbeat carrying a 64-bit microsecond counter (finding 5), regress counter
+     time against the PC monotonic clock over >= 30 minutes; slope - 1 = error in ppm; resolution about 1 ppm at 1 ms serial jitter.
+  2. *Known reference frequency:* feed a 1 Hz or 10 kHz TCXO/GPS-PPS signal into `IN_SELF` for 10 minutes and compare the
+     measured period with nominal.
+  3. *Second counter:* measure the same long pulse on two counters; the difference bounds the relative error only.
+- **Storage and reporting:** result (ppm, method, duration, date, temperature note) written to `env/<session>.ref.json`
+  (`docs/system_design.md` section c) and printed in every analysis that uses counter widths as a **stated limitation**: widths
+  carry +- ppm clock uncertainty; the self-loopback self-test is not a calibration. Recalibrate if the counter board changes or
+  after 30 days.
+
+## 16. Staged plan (S1..S5), none executed
+
+| Stage | Content | Hardware needed | Test |
+|---|---|---|---|
+| S1 | counter core: capture, overflow, protocol, anomalies, heartbeat, self-loopback (the current draft) | counter ESP32 + 1 jumper GPIO25-GPIO35 | `counter_selftest.py` report: error per width 100 us .. 60 s, glitch (code 3) and missing pulse (code 1) raised; **self-loopback only** |
+| S2 | real input path | counter + any MCU as pulse source + resistors (divider, pull-down) | known widths on GPIO34 through the wiring table; divider Vout; no phantom pulses at reset |
+| S3 | protocol hardening and long pulses | counter + pulse source | u32 `max_width_s`, 64-bit heartbeat time, ARM start timeout, ACK; 1 h pulse; calibration procedure 1 (30 min) |
+| S4 | WiFi AP + WebSocket dashboard | counter + laptop | 10^6 loopback pulses with 3 clients connecting/dropping: 0 mismatches, 0 overruns; dashboard crash test |
+| S5 | target integration | Uno, then ESP8266, then ESP32 target + counter (two ESP32 for the last) | Uno pilot h_all n=2..4, compare micros() vs counter, then sweeps with `--ref counter` |
+
+PC-side stages run in parallel without hardware: codec and simulator (done), `counter_client.py`, `ref_schema.py`,
+`ref_crosscheck.py` with simulated frames.
+
+## 17. Bill of materials
+
+| Item | Qty | Notes |
+|---|---|---|
+| ESP32 DevKit (counter) | 1 | **2 when the ESP32 is the target** (target + counter) |
+| USB cables (data capable) | 1 per board | each board on its own port; a powered USB hub is preferred over unpowered ones; avoid daisy-chained cheap hubs (port resets drop serial) |
+| Resistors | 2.2 kohm x1, 3.9 kohm x1 (Uno divider); 330 ohm x2; 10 kohm x2 (pull-downs) | or one BSS138 level-shifter module for the Uno |
+| Jumper wires, breadboard | a few | GND, signal, loopback GPIO25-GPIO35 |
+| Pulse source for S2/S3 | 1 | any spare MCU or function generator (3.3 V logic) |
+| Laptop with WiFi | 1 | dashboard client |
+| Optional: multimeter | 1 | gate G7 |
+
+## 18. Recommendation
 
 Capture: **MCPWM two-channel hardware capture + coarse `esp_timer` unwrap + PCNT cross-count**, GPIO-ISR as fallback. Level: direct for the 3.3 V boards, **2.2k/3.9k divider** for the Uno. Record vs view: **PC records over serial with seq + CRC-8 + replay; Wi-Fi dashboard is a throttled, best-effort view.** Hardware: one extra ESP32 (two if the ESP32 is under test), two USB cables, a few resistors.
