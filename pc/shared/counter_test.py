@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shared import counter_proto as cp  # noqa: E402
 from shared.counter_sim import CounterSim, SeqTracker  # noqa: E402
+from shared import counter_selftest as st  # noqa: E402
 
 R = []
 
@@ -143,6 +144,23 @@ def main():
     out = sim.handle(cp.encode(cp.T_SELFTEST, 2))
     check("200 ppm error -> code 8 with measured != expected",
           cp.A_CLOCK_FAULT in codes(out) and cp.decode(out[0])[1][2] == 10**9 + 200_000)
+
+    # selftest analysis on synthetic frames
+    frames = []
+    seqn = 0
+    for width_us, count in st.GROUPS:
+        for _ in range(count):
+            frames.append((cp.T_PULSE, (seqn, 0, width_us * 1000 + 40, 0))); seqn += 1
+    frames.append((cp.T_ANOMALY, (5, 3, 1)))
+    frames.append((cp.T_REPORT, (1, 1, seqn, 8, 0, 0, 0, seqn, 0)))
+    frames.append((cp.T_PULSE, (0, 0, 10_000_000, 0)))
+    frames.append((cp.T_REPORT, (2, 0, 1, 0, 0, 0, 0, 1, 0)))
+    a = st.analyze(frames)
+    check("analyze splits scenarios at each REPORT", len(a["scenarios"]) == 2 and a["scenarios"][0]["anomalies"] == [3])
+    check("analyze: per-width error and group sizes", [g["n"] for g in a["groups"]] == [20, 20, 10, 3, 2, 1]
+          and all(abs(g["err_ns"] - 40) < 1e-9 for g in a["groups"]))
+    check("analyze flags the 60 s group as beyond the 53.7 s wrap", a["groups"][-1]["exceeds_wrap"] and not a["groups"][-2]["exceeds_wrap"])
+    check("report text carries the self-loopback caveat", "SELF-LOOPBACK TEST ONLY" in st.report_text(a))
 
     n_fail = R.count(False)
     print(f"\n{len(R)} checks, {n_fail} failed")

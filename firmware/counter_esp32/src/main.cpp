@@ -1,0 +1,352 @@
+// main.cpp -- ESP32 pulse counter, stage S1 (docs/counter_design.md).
+//
+// Input-only capture of one pin (never driven), hardware edge timestamps from the
+// MCPWM capture unit (CAP0 = rising, CAP1 = falling, same pad), 32-bit APB-clock
+// timestamps unwrapped with the 64-bit esp_timer as coarse clock, PCNT as an
+// independent rising-edge count, CRC-8 framed serial protocol identical to
+// pc/shared/counter_proto.py, anomaly codes 1-9, 1 Hz heartbeat, and a self-test
+// that generates known widths on GPIO25 and measures them back on GPIO35.
+//
+// SELF-LOOPBACK ONLY: generator and counter share one crystal, so the self-test says
+// nothing about absolute clock accuracy (design section 7).
+//
+// WiFi/dashboard are NOT part of S1. Pins: IN_DUT=34, IN_SELF=35, GEN_OUT=25.
+
+#include <Arduino.h>
+#include <driver/mcpwm.h>
+#include <driver/pcnt.h>
+#include <driver/timer.h>
+#include <soc/gpio_struct.h>
+#include <esp_timer.h>
+#include <esp32/clk.h>
+#include "protocol.hpp"   // crc8() -- CRC-8/SMBUS shared with the PC side
+
+#define PIN_IN_DUT   34
+#define PIN_IN_SELF  35
+#define PIN_GEN_OUT  25
+#define PIN_LED      2
+#define BAUD         921600
+
+// --------------------------------------------------------------------- frame layer
+enum : uint8_t { M_TO_COUNTER = 0xC7, M_TO_PC = 0xD7 };
+enum : uint8_t { T_ARM = 0xC0, T_END = 0xC1, T_ACK = 0xC2, T_REPLAY = 0xC3, T_REFVAL = 0xC4,
+                 T_SELFTEST = 0xC5, T_STATUS = 0xC6,
+                 T_PULSE = 0xD0, T_ANOMALY = 0xD1, T_REPORT = 0xD2, T_HEARTBEAT = 0xD3,
+                 T_ARM_ACK = 0xD4, T_SELFTEST_RESULT = 0xD5 };
+enum : uint8_t { A_MISSING = 1, A_EXTRA, A_GLITCH, A_STUCK_HIGH, A_COUNT_MISMATCH, A_SEQ_GAP,
+                 A_NEVER_STARTED, A_CLOCK_FAULT, A_RING_OVERFLOW };
+
+struct Frame { uint8_t b[64]; uint8_t n; };
+static void put8(Frame& f, uint8_t v) { f.b[f.n++] = v; }
+static void put16(Frame& f, uint16_t v) { put8(f, v >> 8); put8(f, v); }
+static void put32(Frame& f, uint32_t v) { put16(f, v >> 16); put16(f, v); }
+static void put64(Frame& f, uint64_t v) { put32(f, v >> 32); put32(f, (uint32_t)v); }
+static void begin(Frame& f, uint8_t type) { f.n = 0; put8(f, M_TO_PC); put8(f, type); put8(f, 0); }
+static void finish(Frame& f) { f.b[2] = f.n - 3; put8(f, crc8(f.b, f.n)); }
+static void send(Frame& f) { Serial.write(f.b, f.n); }
+
+// --------------------------------------------------------------------- state
+enum Mode : uint8_t { IDLE = 0, ARMED = 1, SELFTEST = 2 };
+static volatile Mode mode = IDLE;
+static uint32_t session = 0;
+static uint16_t reps = 0;
+static uint32_t min_width_ns = 500;
+static uint16_t max_width_s = 130;
+static int cap_pin = PIN_IN_DUT;
+
+static uint16_t seq = 0;
+static uint32_t anomaly_mask = 0;
+static uint16_t dropped = 0;
+static uint64_t w_min = ~0ULL, w_max = 0, w_sum = 0;
+static uint32_t rises = 0, falls = 0;
+static bool have_rise = false, stuck_flagged = false;
+static int64_t t0_us = 0, rise_us = 0;
+static uint32_t rise_cap = 0;
+static uint32_t apb_hz = 80000000;
+
+// edge ring (ISR -> loop), single producer / single consumer
+struct Edge { uint32_t cap; int64_t us; uint8_t rising; };
+#define EDGE_N 1024
+static Edge edges[EDGE_N];
+static volatile uint16_t e_head = 0, e_tail = 0;
+static volatile uint16_t e_overflow = 0;
+
+// replay ring of sent PULSE frames
+#define REPLAY_N 512
+static Frame replay[REPLAY_N];
+static uint16_t replay_seq[REPLAY_N];
+static bool replay_used[REPLAY_N];
+
+static bool IRAM_ATTR cap_cb(mcpwm_unit_t, mcpwm_capture_channel_id_t ch, const cap_event_data_t* e, void*) {
+    uint16_t h = e_head, nh = (h + 1) & (EDGE_N - 1);
+    if (nh == e_tail) { e_overflow++; return false; }
+    edges[h].cap = e->cap_value;
+    edges[h].us = esp_timer_get_time();
+    edges[h].rising = (ch == MCPWM_SELECT_CAP0);
+    e_head = nh;
+    return false;
+}
+
+static void flag(uint8_t code, uint16_t sq, uint32_t detail) {
+    anomaly_mask |= (1u << code);
+    Frame f; begin(f, T_ANOMALY); put16(f, sq); put8(f, code); put32(f, detail); finish(f); send(f);
+}
+
+static void route_capture(int pin) {
+    cap_pin = pin;
+    pinMode(pin, INPUT);
+    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM_CAP_0, pin);
+    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM_CAP_1, pin);
+    pcnt_set_pin(PCNT_UNIT_0, PCNT_CHANNEL_0, pin, PCNT_PIN_NOT_USED);
+}
+
+static void capture_init() {
+    mcpwm_capture_config_t c;
+    c.cap_edge = MCPWM_POS_EDGE; c.cap_prescale = 1; c.capture_cb = cap_cb; c.user_data = nullptr;
+    mcpwm_capture_enable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP0, &c);
+    c.cap_edge = MCPWM_NEG_EDGE;
+    mcpwm_capture_enable_channel(MCPWM_UNIT_0, MCPWM_SELECT_CAP1, &c);
+    pcnt_config_t p = {};
+    p.pulse_gpio_num = PIN_IN_DUT; p.ctrl_gpio_num = PCNT_PIN_NOT_USED;
+    p.pos_mode = PCNT_COUNT_INC; p.neg_mode = PCNT_COUNT_DIS;
+    p.lctrl_mode = PCNT_MODE_KEEP; p.hctrl_mode = PCNT_MODE_KEEP;
+    p.counter_h_lim = 32767; p.counter_l_lim = -32768;
+    p.unit = PCNT_UNIT_0; p.channel = PCNT_CHANNEL_0;
+    pcnt_unit_config(&p);
+    pcnt_filter_disable(PCNT_UNIT_0);
+    apb_hz = esp_clk_apb_freq();
+}
+
+static void clear_point() {
+    e_tail = e_head; e_overflow = 0;
+    seq = 0; anomaly_mask = 0; dropped = 0; w_min = ~0ULL; w_max = 0; w_sum = 0;
+    rises = falls = 0; have_rise = false; stuck_flagged = false;
+    for (int i = 0; i < REPLAY_N; i++) replay_used[i] = false;
+    pcnt_counter_clear(PCNT_UNIT_0);
+    t0_us = esp_timer_get_time();
+}
+
+// width from the two 32-bit stamps + the 64-bit coarse clock (overflow counting)
+static uint64_t unwrap_ticks(uint32_t r32, uint32_t f32, uint64_t coarse_ticks) {
+    uint32_t fine = f32 - r32;                       // mod 2^32
+    int64_t k = (int64_t)(((double)coarse_ticks - (double)fine) / 4294967296.0 + 0.5);
+    if (k < 0) k = 0;
+    return (uint64_t)fine + ((uint64_t)k << 32);
+}
+static uint64_t ticks_to_ns(uint64_t t) { return (uint64_t)((double)t * 1e9 / (double)apb_hz + 0.5); }
+
+static uint64_t pulse_widths[64];   // self-test scenario record
+static uint8_t n_pw = 0;
+
+static void emit_pulse(uint64_t width_ns, int64_t r_us, uint8_t flags) {
+    Frame f; begin(f, T_PULSE); put16(f, seq); put64(f, (uint64_t)(r_us - t0_us)); put64(f, width_ns); put8(f, flags); finish(f);
+    send(f);
+    int slot = seq % REPLAY_N; replay[slot] = f; replay_seq[slot] = seq; replay_used[slot] = true;
+    if (mode == SELFTEST && n_pw < 64) pulse_widths[n_pw++] = width_ns;
+    seq++;
+}
+
+static void handle_edge(const Edge& e) {
+    if (e.rising) {
+        rises++;
+        if (have_rise) { flag(A_COUNT_MISMATCH, seq, 1); }   // two rising edges, no falling between
+        have_rise = true; rise_us = e.us; rise_cap = e.cap;
+    } else {
+        falls++;
+        if (!have_rise) { flag(A_COUNT_MISMATCH, seq, 2); return; }  // falling edge without a rise
+        have_rise = false;
+        uint64_t coarse = (uint64_t)(e.us - rise_us) * (apb_hz / 1000000ULL);
+        uint64_t w_ns = ticks_to_ns(unwrap_ticks(rise_cap, e.cap, coarse));
+        uint8_t fl = 0;
+        if (w_ns < min_width_ns) { fl |= 1; flag(A_GLITCH, seq, (uint32_t)w_ns); }
+        if (w_ns < w_min) w_min = w_ns;
+        if (w_ns > w_max) w_max = w_ns;
+        w_sum += w_ns;
+        emit_pulse(w_ns, rise_us, fl);
+    }
+}
+
+static void do_end(bool quiet) {
+    // drain what the ISR already queued
+    while (e_tail != e_head) { Edge e = edges[e_tail]; e_tail = (e_tail + 1) & (EDGE_N - 1); handle_edge(e); }
+    if (have_rise || gpio_get_level((gpio_num_t)cap_pin)) flag(A_STUCK_HIGH, falls, have_rise ? 0 : 1);
+    if (falls == 0) flag(A_NEVER_STARTED, 0, 0);
+    else if (falls < reps) flag(A_MISSING, falls, reps - falls);
+    else if (falls > reps) flag(A_EXTRA, falls, falls - reps);
+    int16_t pc = 0; pcnt_get_counter_value(PCNT_UNIT_0, &pc);
+    if ((uint16_t)pc != (uint16_t)rises) flag(A_COUNT_MISMATCH, falls, (uint16_t)pc);
+    if (e_overflow) flag(A_RING_OVERFLOW, seq, e_overflow);
+    Frame f; begin(f, T_REPORT);
+    put32(f, session); put8(f, anomaly_mask ? 1 : 0); put16(f, falls); put16(f, (uint16_t)anomaly_mask);
+    put64(f, falls ? w_min : 0); put64(f, w_max); put64(f, w_sum); put16(f, (uint16_t)pc); put16(f, e_overflow);
+    finish(f); send(f);
+    (void)quiet;
+}
+
+// --------------------------------------------------------------------- generator (self-test)
+// One hardware timer (group 1, timer 0, 1 MHz). ISR toggles GPIO25 with direct register writes.
+#define GEN_MAX 64
+struct GenStep { uint32_t width_us; uint32_t gap_us; };
+static GenStep gen_steps[GEN_MAX];
+static volatile uint8_t gen_n = 0, gen_i = 0, gen_phase = 0;
+static volatile bool gen_done = true;
+
+static bool IRAM_ATTR gen_isr(void*) {
+    uint64_t now = timer_group_get_counter_value_in_isr(TIMER_GROUP_1, TIMER_0);
+    if (gen_phase == 0) {                       // rising edge now, falling after width
+        if (gen_i >= gen_n) { gen_done = true; return false; }
+        GPIO.out_w1ts = (1u << PIN_GEN_OUT);
+        gen_phase = 1;
+        timer_group_set_alarm_value_in_isr(TIMER_GROUP_1, TIMER_0, now + gen_steps[gen_i].width_us);
+    } else {                                    // falling edge, next rising after gap
+        GPIO.out_w1tc = (1u << PIN_GEN_OUT);
+        gen_phase = 0;
+        timer_group_set_alarm_value_in_isr(TIMER_GROUP_1, TIMER_0, now + gen_steps[gen_i].gap_us);
+        gen_i++;
+    }
+    timer_group_enable_alarm_in_isr(TIMER_GROUP_1, TIMER_0);
+    return false;
+}
+
+static void gen_init() {
+    pinMode(PIN_GEN_OUT, OUTPUT); digitalWrite(PIN_GEN_OUT, LOW);
+    timer_config_t c = {};
+    c.divider = 80; c.counter_dir = TIMER_COUNT_UP; c.counter_en = TIMER_PAUSE;
+    c.alarm_en = TIMER_ALARM_EN; c.auto_reload = TIMER_AUTORELOAD_DIS;
+    timer_init(TIMER_GROUP_1, TIMER_0, &c);
+    timer_isr_callback_add(TIMER_GROUP_1, TIMER_0, gen_isr, nullptr, ESP_INTR_FLAG_IRAM);
+}
+
+static void gen_start(uint8_t n) {
+    gen_n = n; gen_i = 0; gen_phase = 0; gen_done = false;
+    timer_pause(TIMER_GROUP_1, TIMER_0);
+    timer_set_counter_value(TIMER_GROUP_1, TIMER_0, 0);
+    timer_set_alarm_value(TIMER_GROUP_1, TIMER_0, 1000);   // first rising edge after 1 ms
+    timer_enable_intr(TIMER_GROUP_1, TIMER_0);
+    timer_set_alarm(TIMER_GROUP_1, TIMER_0, TIMER_ALARM_EN);
+    timer_start(TIMER_GROUP_1, TIMER_0);
+}
+
+// --------------------------------------------------------------------- self-test scenarios
+enum StState : uint8_t { ST_NONE, ST_RUN_CLEAN, ST_RUN_GLITCH, ST_RUN_MISSING, ST_FINISH };
+static StState st_state = ST_NONE;
+static uint32_t st_wait_until = 0;
+
+struct Group { uint32_t width_us; uint8_t count; };
+static const Group groups[] = {{100, 20}, {1000, 20}, {100000, 10}, {1000000, 3}, {10000000, 2}, {60000000, 1}};
+static const uint8_t N_GROUPS = sizeof(groups) / sizeof(groups[0]);
+
+static void st_arm(uint32_t id, uint16_t r, uint32_t minw) {
+    session = id; reps = r; min_width_ns = minw; max_width_s = 130;
+    route_capture(PIN_IN_SELF); clear_point(); n_pw = 0; mode = SELFTEST;
+}
+
+static void st_start_clean() {
+    uint8_t n = 0;
+    for (uint8_t g = 0; g < N_GROUPS; g++)
+        for (uint8_t i = 0; i < groups[g].count; i++) { gen_steps[n].width_us = groups[g].width_us; gen_steps[n].gap_us = 3000; n++; }
+    st_arm(0xF0000001, n, 5000);
+    gen_start(n); st_state = ST_RUN_CLEAN;
+}
+static void st_start_glitch() {      // 10 pulses of 10 ms, the 6th is a 20 us glitch (limit 50 us)
+    for (uint8_t i = 0; i < 10; i++) { gen_steps[i].width_us = (i == 5) ? 20 : 10000; gen_steps[i].gap_us = 3000; }
+    st_arm(0xF0000002, 10, 50000);
+    gen_start(10); st_state = ST_RUN_GLITCH;
+}
+static void st_start_missing() {     // reps = 10 but only 9 pulses are generated
+    for (uint8_t i = 0; i < 9; i++) { gen_steps[i].width_us = 10000; gen_steps[i].gap_us = 3000; }
+    st_arm(0xF0000003, 10, 5000);
+    gen_start(9); st_state = ST_RUN_MISSING;
+}
+
+static void st_group_results() {
+    uint8_t idx = 0;
+    for (uint8_t g = 0; g < N_GROUPS; g++) {
+        uint64_t sum = 0; uint8_t c = 0;
+        for (uint8_t i = 0; i < groups[g].count && idx < n_pw; i++, idx++) { sum += pulse_widths[idx]; c++; }
+        uint64_t mean = c ? sum / c : 0, exp_ns = (uint64_t)groups[g].width_us * 1000ULL;
+        Frame f; begin(f, T_SELFTEST_RESULT); put8(f, g + 1); put64(f, exp_ns); put64(f, mean); finish(f); send(f);
+        if (groups[g].width_us >= 100000 && c) {
+            double ppm = fabs((double)mean - (double)exp_ns) / (double)exp_ns * 1e6;
+            if (ppm > 50.0) flag(A_CLOCK_FAULT, g + 1, (uint32_t)ppm);
+        }
+    }
+}
+
+static void st_poll() {
+    if (st_state == ST_NONE) return;
+    if (st_state == ST_FINISH) { st_state = ST_NONE; mode = IDLE; return; }
+    if (!gen_done) return;
+    if (st_wait_until == 0) { st_wait_until = millis() + 100; return; }   // let the last edge arrive
+    if ((int32_t)(millis() - st_wait_until) < 0) return;
+    st_wait_until = 0;
+    do_end(false);
+    if (st_state == ST_RUN_CLEAN) { st_group_results(); st_start_glitch(); }
+    else if (st_state == ST_RUN_GLITCH) st_start_missing();
+    else if (st_state == ST_RUN_MISSING) st_state = ST_FINISH;
+}
+
+// --------------------------------------------------------------------- host commands
+static uint8_t rx[96]; static uint8_t rx_n = 0;
+static uint16_t rd16(const uint8_t* p) { return (p[0] << 8) | p[1]; }
+static uint32_t rd32(const uint8_t* p) { return ((uint32_t)rd16(p) << 16) | rd16(p + 2); }
+
+static void send_heartbeat() {
+    Frame f; begin(f, T_HEARTBEAT);
+    put32(f, millis() / 1000); put8(f, (uint8_t)mode);
+    put16(f, (e_head - e_tail) & (EDGE_N - 1)); put16(f, dropped); put8(f, 0);
+    put32(f, ESP.getFreeHeap()); put16(f, seq ? seq - 1 : 0); finish(f); send(f);
+}
+
+static void on_frame(uint8_t type, const uint8_t* p, uint8_t n) {
+    if (type == T_ARM && n == 15 && mode == IDLE) {
+        session = rd32(p); reps = rd16(p + 7); min_width_ns = rd32(p + 9); max_width_s = rd16(p + 13);
+        route_capture(PIN_IN_DUT); clear_point(); mode = ARMED;
+        Frame f; begin(f, T_ARM_ACK); put32(f, session); put8(f, 1); finish(f); send(f);
+    } else if (type == T_ARM) {                       // refused: busy or malformed
+        Frame f; begin(f, T_ARM_ACK); put32(f, n >= 4 ? rd32(p) : 0); put8(f, 0); finish(f); send(f);
+    } else if (type == T_END && mode == ARMED) { do_end(false); mode = IDLE;
+    } else if (type == T_REPLAY && n == 6) {
+        uint16_t from = rd16(p + 4);
+        flag(A_SEQ_GAP, from, 0);
+        for (uint16_t s = from; s != seq; s++) { int slot = s % REPLAY_N; if (replay_used[slot] && replay_seq[slot] == s) send(replay[slot]); }
+    } else if (type == T_SELFTEST && mode == IDLE) { st_start_clean();
+    } else if (type == T_STATUS) { send_heartbeat(); }
+    // T_ACK / T_REFVAL: accepted, nothing to free/show in S1
+}
+
+static void poll_serial() {
+    while (Serial.available()) {
+        uint8_t b = Serial.read();
+        if (rx_n == 0 && b != M_TO_COUNTER) continue;
+        rx[rx_n++] = b;
+        if (rx_n >= 3 && rx_n == (uint8_t)(4 + rx[2])) {
+            if (crc8(rx, rx_n - 1) == rx[rx_n - 1]) on_frame(rx[1], rx + 3, rx[2]);
+            rx_n = 0;
+        } else if (rx_n >= sizeof(rx)) rx_n = 0;
+    }
+}
+
+void setup() {
+    Serial.begin(BAUD);
+    pinMode(PIN_LED, OUTPUT);
+    pinMode(PIN_IN_DUT, INPUT); pinMode(PIN_IN_SELF, INPUT);   // input-only pads: firmware cannot drive them
+    capture_init(); route_capture(PIN_IN_DUT);
+    gen_init();
+}
+
+static uint32_t last_hb = 0;
+void loop() {
+    poll_serial();
+    while (e_tail != e_head && mode != IDLE) {
+        Edge e = edges[e_tail]; e_tail = (e_tail + 1) & (EDGE_N - 1);
+        handle_edge(e);
+    }
+    if (mode == IDLE) e_tail = e_head;                   // nothing armed: discard edges
+    if (mode == ARMED && have_rise && !stuck_flagged && max_width_s &&
+        (esp_timer_get_time() - rise_us) > (int64_t)max_width_s * 1000000LL) {
+        stuck_flagged = true; flag(A_STUCK_HIGH, falls, 2);
+    }
+    st_poll();
+    if (millis() - last_hb >= 1000) { last_hb = millis(); digitalWrite(PIN_LED, !digitalRead(PIN_LED)); send_heartbeat(); }
+}
