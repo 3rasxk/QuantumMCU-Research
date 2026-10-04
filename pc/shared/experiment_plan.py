@@ -3,7 +3,7 @@
 # Scope: circuits h_all, bell_ghz, qft, grover; boards uno, esp8266, esp32;
 # phases 2 and 3. Pure data + pure functions, no I/O, no hardware. Consumed by
 # pc/shared/eta.py (run-time estimates), analysis/phase1_compare.py (which n to
-# validate) and docs/experiment_plan.md.
+# validate) and docs/design/experiment_plan.md.
 #
 # Nothing here changes what a sweep script collects: the sweeps still climb n
 # from --n-start until their own wall logic stops them (pc/shared/resume.py).
@@ -25,10 +25,10 @@ MIN_N = {"h_all": 1, "bell_ghz": 2, "qft": 1, "grover": 2}
 #   esp8266: malloc'ed state (firmware/esp8266/src/main.cpp:67), 64 KiB at n=13
 #            cannot fit in 81 920 - 29 200 B static = 52 720 B (arithmetic, no measurement).
 #   esp32:   malloc'ed (firmware/esp32/src/main.cpp:65), 128 KiB at n=14; prediction rests on a
-#            ~110 KB largest free block seen in retired data (docs/experiment_plan.md,
+#            ~110 KB largest free block seen in retired data (docs/design/experiment_plan.md,
 #            'Prior observations'); the new run records its own.
 # All three are re-verified only when the restarted run reaches them.
-# docs/experiment_plan.md has the full derivation (UNVERIFIED values marked).
+# docs/design/experiment_plan.md has the full derivation (UNVERIFIED values marked).
 WALL_PREDICTION = {
     "uno": {"wall_n": 8, "evidence": "build_overflow"},
     "esp8266": {"wall_n": 13, "evidence": "malloc_failed"},
@@ -42,7 +42,7 @@ PHASE3_GROVER_N_MAX = 10
 
 # A point is FLAGGED time-limited above this device time. This is a display
 # threshold only, NOT a ceiling: nothing is skipped. The ceiling is an owner
-# decision (docs/experiment_plan.md, "Time ceiling").
+# decision (docs/design/experiment_plan.md, "Time ceiling").
 TIME_FLAG_S = 3600.0
 
 

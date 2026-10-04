@@ -4,18 +4,21 @@
 > (`qpe`/`steane_encode` removed from the plan; `pc/run.py` refuses them) and all
 > earlier hardware data was deleted on 2026-10-04 (recoverable from git history, commit
 > `af40643`); this file keeps no measured values from it, only estimates and method.
-> Current plan and predictions: `docs/experiment_plan.md`.
+> Current plan and predictions: `docs/design/experiment_plan.md`.
 
-The only board `--la` is implemented for today (to be replaced by the counter, see
-`docs/system_design.md`). `GPIO_TIMING_PIN = D7` (`firmware/uno/src/main.cpp:27`),
-logic 5V, UART0 on D0/D1 (never connect a Logic Analyzer there).
+`GPIO_TIMING_PIN = D7` (`firmware/uno/src/main.cpp:27`), logic **5V** (the ESP32 counter needs the
+2.2k/3.9k divider, `docs/design/wiring.md`), UART0 on D0/D1 (never connect the counter there).
 
-**no_la vs with_la (2026-09-22):** every path below has an implicit `no_la/`
-or `with_la/` bucket (`pc/shared/paths.py`) — `no_la/` unless you pass `--la`
-*and* sigrok-cli actually finds a device (a `--la` run with no device found
-still lands in `no_la/`, since no capture was attempted). The two buckets are
-never mixed in analysis. No data exists yet; see
-`run_checklist.md`'s "Logic Analyzer procedure" for `--la` itself.
+**no_ref vs with_ref (renamed 2026-10-04):** every path below has an implicit `no_ref/`
+or `with_ref/` bucket (`pc/shared/paths.py`) — `no_ref/` for `--ref none` (not valid for official runs),
+`with_ref/` for `--ref counter --counter-port PORT` (official runs require it; UNVERIFIED on hardware). The two
+buckets are never mixed in analysis. No data exists yet; see `docs/design/readiness.md`.
+
+Official form of the command (copy-paste, replace the ports; add `--dry-run` first):
+```bash
+.venv/bin/python pc/run.py --board uno --algorithm h_all --phase 2 \
+    --port /dev/cu.usbmodem1101 --ref counter --counter-port /dev/cu.usbserial-110
+```
 
 ```bash
 .venv/bin/python pc/run.py --board uno --algorithm <circuit> --phase 2 \
@@ -58,11 +61,11 @@ prints the per-n table; rows turn MEASURED automatically once the new run has ok
 The wall point costs compile + upload + the 90 s hang budget, because the board may never
 print `DONE` when the static array overflows RAM. The wall is structural
 (`theoretical_bytes = 2^n * 8` against 2048 B SRAM, `firmware/uno/src/main.cpp:30`) and
-predicted at n=8 for every circuit; derivation in `docs/experiment_plan.md`.
+predicted at n=8 for every circuit; derivation in `docs/design/experiment_plan.md`.
 
 ## What to check afterwards
 
-- `data/raw/phase2/uno/<circuit>/no_la/raw.csv` (or `with_la/` for a `--la` run): exactly 100 rows per `n` with
+- `data/raw/phase2/uno/<circuit>/no_ref/raw.csv` (or `with_ref/` for a `--ref counter` run): exactly 100 rows per `n` with
   `status=ok` in `memory_wall.csv`.
 - `memory_wall.csv`: one terminal row per `n` attempted. `status=ok` is
   good; `status=build_overflow` with `compile_ram_pct` > 100% is a real,

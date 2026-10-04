@@ -1,8 +1,8 @@
 # System design: runner, target board, ESP32 counter, files (2026-10-04)
 
-Status: **design only. No code for the reference path exists yet except the hardware-free pieces
-`pc/shared/counter_proto.py`, `counter_sim.py`, `counter_selftest.py` and the UNFLASHED DRAFT
-`firmware/counter_esp32/`.** Statements about hardware that come from general knowledge, not from
+Status (2026-10-04): the PC side of this design is **implemented and tested without hardware** (`pc/counter/`, runner and
+sweep hooks, buckets renamed); the counter firmware `firmware/counter_esp32/` is built but **not flashed**; nothing has run on
+hardware. See "Implementation status" at the end. Statements about hardware that come from general knowledge, not from
 this repo, are marked **UNVERIFIED**. Repo facts carry `file:line`.
 
 ## 0. What stays and what is new
@@ -51,8 +51,9 @@ this repo, are marked **UNVERIFIED**. Repo facts carry `file:line`.
 
 ## b. Run orchestration and owner policy
 
-Proposed flags (runner and sweeps): `--ref counter` (default for official runs) and `--counter-port PORT`
-(never auto-guessed, like `--port`). `--ref none` selects the counter-less bucket.
+Flags (runner and sweeps, implemented): `--ref {none,counter}` (official runs use `counter`; default `none` is warned),
+`--counter-port PORT` (required with `--ref counter`, never auto-guessed, never equal to `--port`) and `--counter-cal FILE`
+(calibration JSON copied into the session sidecar).
 
 **Policy question for the owner (open decision 1).** Recommendation: **official runs REQUIRE the counter**
 (`--ref counter`), because the micros()-vs-counter comparison is the central analysis and a point without it
@@ -75,9 +76,9 @@ status and is never counted as a Memory Wall (rule from `docs/preflight_report.m
 
 ## c. Folder layout and schemas
 
-**Buckets.** `with_la/`, `no_la/` become `with_ref/`, `no_ref/` in `pc/shared/paths.py` (`_la_bucket`, `:46`;
-`raw_dir` `:50`; `figures_dir`; `la_dir` becomes `ref_dir`). No data exists in any bucket (verified: no `with_la`
-or `no_la` folder under `data/`), so the rename is path-only. Resume never crosses buckets (kept: it is
+**Buckets.** `with_ref/`, `no_ref/` become `with_ref/`, `no_ref/` in `pc/shared/paths.py` (`_la_bucket`, `:46`;
+`raw_dir` `:50`; `figures_dir`; `la_dir` becomes `ref_dir`). No data exists in any bucket (verified: no `with_ref`
+or `no_ref` folder under `data/`), so the rename is path-only. Resume never crosses buckets (kept: it is
 bucket-local because every path is bucket-local).
 
 ```
@@ -90,12 +91,13 @@ data/raw/phase2/<board>/<circuit>/with_ref/
 `raw.csv`, `points.csv`, `sessions.csv` keep their columns and `SCHEMA_VERSION = 2`
 (`pc/shared/telemetry.py:62`). New file types get their own constants in a new `pc/shared/ref_schema.py`:
 
-| File | Constant | One row per | Columns |
+| File | Constant (`pc/counter/ref_schema.py`) | One row per | Columns |
 |---|---|---|---|
-| `ref_pulses.csv` | `REF_PULSES_SCHEMA_VERSION = 1` | pulse | schema_version, session_id, counter_session, board, circuit, n, seq, rise_us, width_ns, flags |
-| `ref_points.csv` | `REF_POINTS_SCHEMA_VERSION = 1` | point | schema_version, session_id, board, circuit, n, reps_expected, pulses_received, pulses_used, ref_status, anomaly_mask, anomaly_codes, min_ns, median_ns, max_ns, report_pulses, pcnt_count, overruns, counter_fw_hash, timestamp_utc |
+| `ref_pulses.csv` | `REF_PULSES_SCHEMA_VERSION = 1` | pulse | schema_version, session_id, counter_session, board, circuit, n, seq, rise_us, width_ticks, width_us, wraps, flags, anomaly_code |
+| `ref_points.csv` | `REF_POINTS_SCHEMA_VERSION = 1` | point | schema_version, session_id, board, circuit, n, reps_expected, pulses_received, pulses_used, ref_status, anomaly_mask, anomaly_codes, min_ns, median_ns, max_ns, report_pulses, pcnt_count, overruns, counter_proto, timestamp_utc |
 | `ref_compare.csv` | `REF_COMPARE_SCHEMA_VERSION = 1` | rep | schema_version, session_id, board, circuit, n, rep, micros_us, counter_us, diff_us, diff_pct |
-| `ref_compare_points.csv` | same constant | point | schema_version, session_id, board, circuit, n, n_pairs, median_diff_us, mean_diff_us, std_diff_us, iqr_diff_us, max_abs_diff_us, median_diff_pct, ref_status, micros_quantization_us |
+| `ref_compare_points.csv` | `REF_COMPARE_POINTS_SCHEMA_VERSION = 1` | point | schema_version, session_id, board, circuit, n, n_pairs, median_diff_us, mean_diff_us, std_diff_us, iqr_diff_us, max_abs_diff_us, median_diff_pct, ref_status, flagged, micros_quantization_us, notes |
+| `env/<session>.ref.json` | `REF_ENV_SCHEMA_VERSION = 1` | session | counter port, counter fw sha256, protocol, pin map, divider, calibration, self-test note |
 
 `diff_us = micros_us - counter_us` (positive: the board's own timer reads longer). `micros_quantization_us`
 records the board's `micros()` tick (4 us on the Uno, 1 us on ESP: README Limitations), so a diff of one tick is
@@ -171,7 +173,7 @@ Counter pins (draft firmware, **ESP32 DevKit**): capture input `IN_DUT = GPIO34`
 | G3 tests | all suites pass (pre-existing failures listed separately) |
 | G4 counter standalone | firmware flashed from a clean build, heartbeat OK, loopback self-test passes at all widths (S1 result) |
 | G5 counter + dummy pulses | a second MCU/generator drives the real input pad GPIO34 through the real wiring, known widths measured |
-| G6 calibration | clock calibration done and stored (`docs/counter_design.md` section 15); result and ppm in the sidecar |
+| G6 calibration | clock calibration done and stored (`docs/design/counter_design.md` section 15); result and ppm in the sidecar |
 | G7 wiring | wiring table checked with a multimeter: divider Vout, GND continuity, pull-down, no connection to 3V3 |
 | G8 ports | target and counter device files confirmed with the owner, not auto-guessed; neither held (lsof) |
 | G9 environment | sleep prevention on (`pmset`), USB hub powered, ESP32 counter WiFi off or dashboard-only per policy |
@@ -185,7 +187,7 @@ if the owner decides it needs the counter (section g).
 ## g. Open decisions for the owner
 
 1. **Counter required or optional** for official runs (recommended: required; counter-less points in `no_ref/`, excluded from the central analysis).
-2. **Per-point time ceiling.** Current recorded decision: none, run to the memory wall. Facts in `docs/ceiling_facts.md` (no value is proposed here beyond the earlier note).
+2. **Per-point time ceiling.** Current recorded decision: none, run to the memory wall. Facts in `docs/design/ceiling_facts.md` (no value is proposed here beyond the earlier note).
 3. **ESP32 watchdog threshold** (`timing_model.WDT_PER_REP_THRESHOLD_S`, 5.0 s). Finding (section h): the installed Arduino-ESP32 core's own `sdkconfig` has the task watchdog at 5 s but checks only the CPU0 idle task, while the sketch's loop task runs on CPU1; the 5.0 s per-rep rule has no basis there. Recommendation: set the ESP32 threshold to `None` and classify `watchdog_suspected` from a reset signature instead (below).
 4. **Does Phase 3 use the counter?** Phase 3 times a serial round trip with `micros()` on the board
    (`firmware/*/src_offload/main_offload.cpp`), and the offload firmware does not toggle `GPIO_TIMING_PIN`
@@ -193,15 +195,16 @@ if the owner decides it needs the counter (section g).
    Phase 3, and giving it something to see needs a firmware change (pulse at request send / response receive),
    which is out of scope here. Even then it would measure only the board-side interval, not the PC simulation.
    **Recommendation: no counter in Phase 3**; keep `micros()` round-trip timing and report it as such.
-5. Counter protocol items found in the draft review (`docs/counter_design.md` section 13): `max_width_s` is u16
+5. Counter protocol items found in the draft review (`docs/design/counter_design.md` section 13): `max_width_s` is u16
    (18 h limit, plan has 22.8 h reps), heartbeat time is whole seconds (too coarse for calibration), no ARM start timeout.
-   They need a protocol decision before S2: widen `max_width_s` to u32 and add a 64-bit microsecond field.
+   **Resolved in protocol v2** (2026-10-04): `max_width_s` is u32, the heartbeat carries a 64-bit microsecond clock, ARM has a
+   `start_timeout_s`.
 
 ## h. Housekeeping findings (PC only, read-only)
 
 - **`analysis/la_test.py` failure** (`crosscheck: clean point not flagged`, fails at the pre-restart commit `8fa119f`
   too): the test writes the MCU rows with `_write_raw_rows(...)` into `sp.raw_csv_path(board, circuit, phase)` whose
-  default bucket is `no_la/` (`analysis/la_test.py:35`), but `analysis/la_crosscheck.py` reads `la=True`, i.e. `with_la/`,
+  default bucket is `no_ref/` (`analysis/la_test.py:35`), but `analysis/la_crosscheck.py` reads `la=True`, i.e. `with_ref/`,
   since the 2026-09-22 bucket split (`load_mcu_exec_times`, `la_crosscheck.py:145-157`). The row for `h_all` n=2 finds no MCU
   data, is refused, and `median_relative_diff` is empty, so the next line's `float('')` raises. It is a stale test of the LA path,
   which this design removes. Recommendation: **delete with the LA path** (`la_test.py` is replaced by `ref_crosscheck_test.py`);
@@ -216,3 +219,18 @@ if the owner decides it needs the counter (section g).
   classify `watchdog_suspected` when the serial stream shows a reset signature (boot banner `rst:` / the CSV header line
   reappearing mid-point) instead of from a predicted per-rep time; ESP8266 keeps 6 s until evidence (its firmware disables only the
   software WDT around a rep, `esp8266/src/main.cpp:84-88`, the hardware WDT stays, about 8 s UNVERIFIED).
+
+## Implementation status (2026-10-04)
+
+| Part | State | Where |
+|---|---|---|
+| Counter protocol v2, simulator, parity test | done, tests pass, no hardware | `pc/counter/proto.py`, `sim.py`, `fw_parity_test.py` |
+| Client, session manager, reference files, comparison | done, simulator-tested | `pc/counter/client.py`, `session.py`, `ref_schema.py`, `crosscheck.py` |
+| Sweep hooks (`--ref counter`), default unchanged | done; sha256 proof vs `422216c` | `pc/counter/hooks.py`, `default_unchanged_check.py`, the three `*_sweep.py` |
+| Runner flags, preflight, ETA | done | `pc/run.py` |
+| Buckets `no_ref/` `with_ref/`, `ref_dir` | done (path-only, no data existed) | `pc/shared/paths.py` and callers |
+| LA path removed | done; recoverable at `422216c` | `pc/shared/la_capture*.py`, `analysis/la_*.py` |
+| Calibration tool, self-test host tool | done, simulator-tested | `pc/counter/calibration.py`, `selftest.py` |
+| Counter firmware | built, **not flashed** | `firmware/counter_esp32/` |
+| Wiring, readiness | written | `docs/design/wiring.md`, `docs/design/readiness.md` |
+| S1 self-test on the counter, S2 input path, pilot | **not run** | `docs/design/readiness.md` |

@@ -4,7 +4,7 @@
 > (`qpe`/`steane_encode` removed from the plan; `pc/run.py` refuses them) and all
 > earlier hardware data was deleted on 2026-10-04 (recoverable from git history, commit
 > `af40643`); this file keeps no measured values from it, only estimates and method.
-> Current plan and predictions: `docs/experiment_plan.md`.
+> Current plan and predictions: `docs/design/experiment_plan.md`.
 
 **UNVERIFIED — Phase 3 has never been run against real hardware, on any
 board, in this project.** Every number below is a `pc/shared/timing_model.py`
@@ -57,7 +57,7 @@ Phase 3**: since the PC does all the computing regardless of which board
 asked, the *board's own speed becomes almost irrelevant to Phase 3's own
 cost* — the number that does vary by board is round-trip *latency*, not
 simulation time. No latency value is stated here: it is not yet collected in the
-restarted dataset (`docs/system_design.md` discusses what the counter would add).
+restarted dataset (`docs/design/system_design.md` discusses what the counter would add).
 
 ## Wire protocol (for reference, not something `pc/run.py` changes)
 
@@ -74,9 +74,9 @@ one.
 
 ## What to check afterwards
 
-`data/raw/phase3/<board>/<circuit>/no_la/` — always `no_la/`, Phase 3 has no
-`--la` flag at all (`pc/phase3_offload/sweep.py`'s argparse has no such
-option; see `pc/shared/paths.py`'s no_la/with_la split):
+`data/raw/phase3/<board>/<circuit>/no_ref/` — always `no_ref/`, Phase 3 has no
+`--ref counter` (the offload firmware never toggles `GPIO_TIMING_PIN`; `pc/run.py` refuses it for Phase 3,
+see `docs/design/system_design.md` open decision 4):
 - `raw.csv`: 100 rows per `n` for an ok point, same as Phase 2.
 - `session_log.csv` (Phase 3's terminal-record file — **not**
   `memory_wall.csv`, different schema, see `pc/shared/paths.py`'s

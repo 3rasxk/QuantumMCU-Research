@@ -1,6 +1,6 @@
 # Pre-Hardware Preflight Report
 
-> **PRIOR OBSERVATIONS (retired, pre-timer; not part of the new dataset).** This whole file records the pre-run preflight (compile-only build matrix, tool timings, PC-side checks) over six circuits. It is kept for its method and as the basis of the design predictions in `docs/experiment_plan.md`. The experiment now covers `h_all`, `bell_ghz`, `qft`, `grover` only; `qpe`/`steane_encode` rows no longer apply. RAM percentages and wall statements here come from compile outputs and retired runs and are **not results of the new dataset**.
+> **PRIOR OBSERVATIONS (retired, pre-timer; not part of the new dataset).** This whole file records the pre-run preflight (compile-only build matrix, tool timings, PC-side checks) over six circuits. It is kept for its method and as the basis of the design predictions in `docs/design/experiment_plan.md`. The experiment now covers `h_all`, `bell_ghz`, `qft`, `grover` only; `qpe`/`steane_encode` rows no longer apply. RAM percentages and wall statements here come from compile outputs and retired runs and are **not results of the new dataset**.
 
 **Date:** 2026-09-20
 **Commit:** `08d1a9d` — `git describe --tags` → `pre-run-schema-v1`, working tree clean

@@ -4,7 +4,7 @@
 > (`qpe`/`steane_encode` removed from the plan; `pc/run.py` refuses them) and all
 > earlier hardware data was deleted on 2026-10-04 (recoverable from git history, commit
 > `af40643`); this file keeps no measured values from it, only estimates and method.
-> Current plan and predictions: `docs/experiment_plan.md`.
+> Current plan and predictions: `docs/design/experiment_plan.md`.
 
 **UNVERIFIED — no data has been collected for this board in the restarted dataset.** Every number below is a prediction from `pc/shared/timing_model.py`
 or a compile-only build figure from `docs/preflight_report.md`. Do not
@@ -13,8 +13,9 @@ in this project with a hardware FPU, which changes the relative cost of H
 vs CNOT vs CPhase in ways the Uno's own data cannot predict.
 
 `GPIO_TIMING_PIN = GPIO4` (`firmware/esp32/src/main.cpp`), logic **3.3V**,
-UART0 on GPIO1/GPIO3 (never connect a Logic Analyzer there). `--la` is
-**not implemented** for this board — passing it is refused by `pc/run.py`.
+UART0 on GPIO1/GPIO3 (never connect the counter there). 3.3 V: wire directly to the counter's GPIO34;
+the counter is a **second** ESP32 (`docs/design/wiring.md`). Official runs add `--ref counter
+--counter-port PORT` (UNVERIFIED on hardware); `pc/run.py` refuses to guess which ESP32 is which.
 
 ```bash
 .venv/bin/python pc/run.py --board esp32 --algorithm <circuit> --phase 2 \
@@ -51,12 +52,12 @@ here).
 | `qft` | 1–14 | 14 | 32.6s | 12.8min | malloc_failed at n=14 |
 | `grover` | 2–14 | 13 | 49.5days | 49.5days | malloc_failed at n=14; **TIME-LIMITED from n=10** (device > 1 h per point); watchdog risk n=[9, 10, 11, 12, 13] |
 
-All values ESTIMATE (`python pc/run.py --plan --board esp32 --phase 2` for the per-n table); derivation of the wall in `docs/experiment_plan.md`.
+All values ESTIMATE (`python pc/run.py --plan --board esp32 --phase 2` for the per-n table); derivation of the wall in `docs/design/experiment_plan.md`.
 
 ## What to check afterwards
 
 Same file layout as `docs/run/uno.md` —
-`data/raw/phase2/esp32/<circuit>/no_la/{raw.csv,memory_wall.csv,points.csv,sessions.csv}` — always `no_la/` (this board never supports `--la`, see pc/shared/paths.py's no_la/with_la split).
+`data/raw/phase2/esp32/<circuit>/no_ref/{raw.csv,memory_wall.csv,points.csv,sessions.csv}` — `no_ref/` for `--ref none`, `with_ref/` (plus `ref/`) for `--ref counter`.
 ESP32 has both a hardware watchdog (ESP-IDF task WDT, ~5s default per
 `timing_model.WDT_PER_REP_THRESHOLD_S["esp32"]`) and dynamic allocation —
 same `watchdog_suspected` vs `malloc_failed`/build-RAM-over-100%

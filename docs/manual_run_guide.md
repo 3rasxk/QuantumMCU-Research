@@ -4,7 +4,7 @@
 > (`qpe`/`steane_encode` removed from the plan; `pc/run.py` refuses them) and all
 > earlier hardware data was deleted on 2026-10-04 (recoverable from git history, commit
 > `af40643`); this file keeps no measured values from it, only estimates and method.
-> Current plan and predictions: `docs/experiment_plan.md`.
+> Current plan and predictions: `docs/design/experiment_plan.md`.
 
 เอกสารนี้เขียนจากการอ่านโค้ดจริง ณ commit `pre-run-uno-v1` (tag) โดยตรง — ไฟล์ที่อ่าน:
 `pc/phase2_sweep/uno_sweep.py`, `pc/phase2_sweep/esp8266_sweep.py`,
@@ -36,7 +36,7 @@
 - [ ] `git status` สะอาด หรืออย่างน้อยรู้ว่าอะไร dirty อยู่ — `pc/shared/telemetry.py`
       บันทึก commit hash + dirty flag ต่อ session อยู่แล้ว แต่ tree สะอาดตัดปัญหาได้ตั้งแต่ต้น
 - [ ] `git describe --tags` ตรงกับที่ตั้งใจ (เช่น `pre-run-schema-v2` หรือ `pre-run-uno-v1`
-      ถ้าใช้ฟีเจอร์ `--la`) — จดค่านี้ไว้คู่กับผลข้อมูลเสมอ
+      ถ้าใช้ตัวนับ `--ref counter`) — จดค่านี้ไว้คู่กับผลข้อมูลเสมอ
 - [ ] พอร์ตของบอร์ด: เช็คด้วย `pio device list` หรือ `ls /dev/cu.*` **ก่อน** เสียบบอร์ด
       แล้วเสียบแล้วเช็คอีกครั้งว่ามี entry ใหม่แค่อันเดียว — Uno คือ
       `/dev/cu.usbmodem*`, ESP8266/ESP32 คือ `/dev/cu.usbserial*` /
@@ -47,8 +47,8 @@
       `caffeinate -s -- <command>`) — เช็คด้วย
       `pmset -g assertions | grep PreventUserIdleSystemSleep` ก่อนเริ่ม session
       ยาว (Session B/C) เพราะกลางคันแล็ปท็อปหลับจะทำให้ session พังทั้งก้อน
-- [ ] ถ้าจะใช้ Logic Analyzer: **ต่อสายหลัง** ตรวจ log level ให้ตรง (Uno = 5V, ESP8266/ESP32
-      = 3.3V) และต่อ GND ร่วมกับบอร์ดเสมอ — ดู § "รันแบบมี/ไม่มี Logic Analyzer" ด้านล่าง
+- [ ] รันจริงต้องมีตัวนับ ESP32 (`--ref counter`): ต่อสายตาม `docs/design/wiring.md` (Uno ต้องมีตัวแบ่งแรงดัน 5V→3.2V,
+      ESP8266/ESP32 ต่อตรง, GND ร่วมเสมอ) และติ๊ก `docs/design/readiness.md` ให้ครบก่อน — ดู § "รันแบบมี/ไม่มีตัวนับ" ด้านล่าง
 - [ ] เช็ค `data/raw/phase2/` และ `data/raw/phase3/` ว่ามีอะไรอยู่ก่อนหรือยัง ถ้าเป็นการรัน
       ครั้งแรกจริง ๆ ควรว่างเปล่าหรือไม่มีโฟลเดอร์
 
@@ -66,8 +66,8 @@
   ทั้งชุดจริง ๆ
 - **ห้าม** เปิด `pio device monitor` ค้างไว้แล้วลืมปิดก่อนรัน sweep — sweep เปิด serial port
   เองไม่ได้ถ้ามีโปรแกรมอื่นถือพอร์ตอยู่
-- **ห้าม** เชื่อมต่อ Logic Analyzer แบบ 3.3V-only เข้ากับพิน timing ของ Uno (5V logic) โดย
-  ไม่เช็ค datasheet ก่อน — เสี่ยงพัง LA (ดู § LA ด้านล่าง)
+- **ห้าม** ต่อพิน timing ของ Uno (5V logic) เข้าตัวนับ ESP32 ตรง ๆ — ขา ESP32 ไม่ทน 5V (UNVERIFIED) ต้องผ่านตัวแบ่งแรงดัน
+  (ดู `docs/design/wiring.md`)
 
 ---
 
@@ -102,7 +102,9 @@ Phase 3 (offload — MCU รับผลจาก PC-side Qiskit Aer ผ่า�
 | `--build-timeout` | วินาทีสูงสุดต่อการเรียก `pio run` หนึ่งครั้ง (compile/upload แยกกัน) | 300s |
 | `--wdt-threshold-s` | ถ้า per-rep ที่ประเมินไว้เกินนี้ บอร์ดเงียบจะถูกบันทึกเป็น `watchdog_suspected` ไม่ใช่กำแพงจริง | ตาม `timing_model.WDT_PER_REP_THRESHOLD_S` (esp8266=6s, esp32=5s, uno=ไม่มี) |
 | `--fresh` / `--no-resume` | ไม่ resume — ย้ายผลลัพธ์เดิมไปเป็น `*.pre-fresh-<ts>.csv` แล้วเริ่มใหม่ | ปิด (resume เป็นค่าเริ่มต้น) |
-| `--la` (**เฉพาะ `uno_sweep.py` เท่านั้น**) | เปิด Logic Analyzer capture ผ่าน sigrok-cli ต่อจุด (UNVERIFIED, ดู § LA) | ปิด |
+| `--ref {none,counter}` | `counter` = ใช้ตัวนับ ESP32 เป็นตัวอ้างอิงเวลา (รันจริงต้องใช้; ผลอยู่ `with_ref/`), `none` = `micros()` อย่างเดียว (`no_ref/`, ไม่ใช่การรันจริง) | `none` |
+| `--counter-port PORT` | พอร์ตของตัวนับ (บังคับเมื่อ `--ref counter`, ไม่เดาเอง, ห้ามซ้ำกับ `--port`) | — |
+| `--counter-cal FILE` | ไฟล์ calibration JSON จาก `pc/counter/calibration.py` | — |
 
 **Flag เพิ่มเติมเฉพาะ Phase 3 (`pc/phase3_offload/sweep.py`):**
 
@@ -150,16 +152,15 @@ n=8 ที่จะถูกข้ามอัตโนมัติเพรา�
     --circuits h_all bell_ghz qft grover --n-start 2 --n-max 8
 ```
 
-**Output:** `data/raw/phase2/uno/<circuit>/no_la/raw.csv` (ทุก rep ดิบ, ต่อวงจร),
-`data/raw/phase2/uno/<circuit>/no_la/memory_wall.csv` (สรุป 1 แถวต่อจุด),
-`data/raw/phase2/uno/<circuit>/no_la/points.csv` / `sessions.csv` / `env/*.json`
+**Output:** `data/raw/phase2/uno/<circuit>/no_ref/raw.csv` (ทุก rep ดิบ, ต่อวงจร),
+`data/raw/phase2/uno/<circuit>/no_ref/memory_wall.csv` (สรุป 1 แถวต่อจุด),
+`data/raw/phase2/uno/<circuit>/no_ref/points.csv` / `sessions.csv` / `env/*.json`
 (schema เดียวกันทุกบอร์ด/phase, ดู § "ตรวจผลลัพธ์" ด้านล่าง — แยกเป็นหนึ่ง
 โฟลเดอร์ต่อ (phase, board, circuit) ตั้งแต่ `pre-run-uno-v4`/`v5`, ดู
-`pc/shared/paths.py`) — `no_la/` เพราะคำสั่งด้านบนไม่มี `--la`; ถ้าใส่ `--la`
-และ sigrok-cli เจออุปกรณ์จริง ผลจะไปอยู่ `with_la/` แทน (ดู § "มี LA" ด้านล่าง
-และ `pc/shared/paths.py`'s no_la/with_la split, 2026-09-22) — **ห้ามผสม
-ข้อมูลสองชุดนี้ในการวิเคราะห์เดียวกัน**: `no_la/` วัดแค่เวลา `micros()`,
-`with_la/` มี Logic Analyzer cross-check ด้วย เป็นคนละการวัดกัน
+`pc/shared/paths.py`) — `no_ref/` เพราะคำสั่งด้านบนไม่มี `--ref counter`; ถ้าใส่ `--ref counter --counter-port ...`
+ผลจะไปอยู่ `with_ref/` แทน (ดู § "รันแบบมี/ไม่มีตัวนับ" ด้านล่าง และ `pc/shared/paths.py`) — **ห้ามผสม
+ข้อมูลสองชุดนี้ในการวิเคราะห์เดียวกัน**: `no_ref/` วัดแค่เวลา `micros()`,
+`with_ref/` มีพัลส์จากตัวนับคู่กับ `micros()` เป็นคนละการวัดกัน
 
 ### Phase 3 (offload)
 
@@ -176,18 +177,18 @@ n=8 ที่จะถูกข้ามอัตโนมัติเพรา�
 ~1.1h เพราะ PC-side Aer simulation ไม่ cache; n=12 ถูกข้ามอัตโนมัติเพราะ
 `skipped_sim_cost_infeasible`)
 
-**Output:** `data/raw/phase3/uno/<circuit>/no_la/raw.csv`,
-`data/raw/phase3/uno/<circuit>/no_la/session_log.csv` (Phase 3's terminal-record
+**Output:** `data/raw/phase3/uno/<circuit>/no_ref/raw.csv`,
+`data/raw/phase3/uno/<circuit>/no_ref/session_log.csv` (Phase 3's terminal-record
 file — คนละชื่อจาก Phase 2's `memory_wall.csv`, ดู
-`pc/shared/paths.session_log_csv_path`) — Phase 3 ไม่รองรับ `--la` เลย
-(ไม่มี flag นี้ใน `pc/phase3_offload/sweep.py`) จึงอยู่ `no_la/` เสมอ
+`pc/shared/paths.session_log_csv_path`) — Phase 3 ไม่รองรับ `--ref counter` เลย
+(ไม่มี flag นี้ใน `pc/phase3_offload/sweep.py`) จึงอยู่ `no_ref/` เสมอ
 
 ---
 
 ## NodeMCU ESP8266
 
 `GPIO_TIMING_PIN = GPIO5` (= สัญลักษณ์ `D1` บนบอร์ด, `firmware/esp8266/src/main.cpp`),
-logic 3.3V, UART0 บน GPIO1/GPIO3 (**ห้ามต่อ LA ที่นั่น**) — **ไม่รองรับ `--la`** (ฟีเจอร์นี้
+logic 3.3V, UART0 บน GPIO1/GPIO3 (**ห้ามต่อสายตัวนับที่นั่น**) (ฟีเจอร์นี้
 implement เฉพาะ Uno เท่านั้นในตอนนี้)
 
 ### Phase 2
@@ -215,7 +216,7 @@ implement เฉพาะ Uno เท่านั้นในตอนนี้)
 **⚠ ข้อควรระวังเฉพาะ ESP8266 (ยัง UNVERIFIED-needs-hardware, ดู `docs/preflight_report.md`
 finding H1):** grover ที่ n=8/n=9 คำนวณไว้ว่าอาจชน hardware watchdog (~8 วินาที) ก่อนจบ 1
 rep เพราะ per-rep คาดไว้ 15.6s (n=8) / 130.5s (n=9) — ถ้าบอร์ดเงียบแล้วเจอ
-`watchdog_suspected` ใน `data/raw/phase2/esp8266/grover/no_la/memory_wall.csv`
+`watchdog_suspected` ใน `data/raw/phase2/esp8266/grover/no_ref/memory_wall.csv`
 **อย่าตีความเป็น Memory Wall จริง**
 (ระบบแยกสถานะนี้ไว้ให้แล้วตั้งแต่ SCHEMA_VERSION 2) — แนะนำรัน grover n=8 เดี่ยว ๆ ก่อน
 ทั้ง session B จริง เพื่อดูผลก่อนลงทุนเวลา 4 ชั่วโมง:
@@ -242,7 +243,7 @@ rep เพราะ per-rep คาดไว้ 15.6s (n=8) / 130.5s (n=9) — �
 ## ESP32 DevKit V1
 
 `GPIO_TIMING_PIN = GPIO4` (`firmware/esp32/src/main.cpp`), logic 3.3V, UART0 บน
-GPIO1/GPIO3 — **ไม่รองรับ `--la`** เช่นกัน
+GPIO1/GPIO3 
 
 ### Phase 2
 
@@ -314,10 +315,10 @@ GPIO1/GPIO3 — **ไม่รองรับ `--la`** เช่นกัน
 ## ตรวจผลลัพธ์หลังรัน (how to check after a run)
 
 **ทุกไฟล์ด้านล่างอยู่ใต้โฟลเดอร์เดียวกัน — หนึ่งโฟลเดอร์ต่อหนึ่ง (phase, board,
-circuit, no_la/with_la):** `data/raw/phase<N>/<board>/<circuit>/{no_la,with_la}/`
+circuit, no_ref/with_ref):** `data/raw/phase<N>/<board>/<circuit>/{no_ref,with_ref}/`
 (ดู `pc/shared/paths.py`, เปลี่ยนจาก path แบบเดิม `data/raw/phaseN/<board>_*.csv`
-ตั้งแต่ `pre-run-uno-v4`/`v5`; ชั้น `no_la`/`with_la` เพิ่มเข้ามา 2026-09-22 —
-ไม่ใส่ `--la` = `no_la/` เสมอ)
+ตั้งแต่ `pre-run-uno-v4`/`v5`; ชั้น `no_ref`/`with_ref` เพิ่มเข้ามา 2026-09-22 —
+ไม่ใส่ `--ref counter` = `no_ref/` เสมอ)
 
 **ไฟล์ที่ต้องมีหลังทุกจุดสำเร็จ (ในโฟลเดอร์ข้างต้น):**
 - `raw.csv` — 1 แถวต่อ 1 rep, ต้องมี **100 แถวพอดี** ต่อ `n` ที่ status=ok
@@ -371,76 +372,30 @@ circuit, no_la/with_la):** `data/raw/phase<N>/<board>/<circuit>/{no_la,with_la}/
 
 ---
 
-## รันแบบมี/ไม่มี Logic Analyzer
+## รันแบบมี/ไม่มีตัวนับ (ESP32 pulse counter)
 
-**ไม่มี LA (ค่าเริ่มต้นของทุกคำสั่งข้างบน):** ไม่ต้องทำอะไรเพิ่ม พฤติกรรมเดิมทุกประการ
-ผลลัพธ์อยู่ `no_la/` เสมอ
+แทนที่ขั้นตอน Logic Analyzer/sigrok เดิม (ลบเมื่อ 2026-10-04 กู้ได้จาก git ที่ commit `422216c`)
+⚠ **UNVERIFIED บนฮาร์ดแวร์ทั้งหมด** — ตัวนับยังไม่เคยถูก flash หรือต่อสายจริง
 
-**มี LA (เฉพาะ Uno เท่านั้น ผ่าน flag `--la`):** ผลลัพธ์อยู่ `with_la/` แทน — **แต่เฉพาะ
-จุดที่ sigrok-cli เจออุปกรณ์จริงเท่านั้น** ถ้าใส่ `--la` แต่ sigrok-cli หาไม่เจอ/ไม่มี
-อุปกรณ์ จุดนั้นยังคงถูกบันทึกลง `no_la/` เหมือนเดิม (ดู `la_active` ใน
-`pc/phase2_sweep/uno_sweep.py`) เพราะไม่มี capture เกิดขึ้นจริง — **ห้ามรวม `no_la/`
-กับ `with_la/` เข้าด้วยกันตอนวิเคราะห์** สองชุดนี้วัดคนละอย่าง (timing เฉยๆ vs
-timing + LA cross-check)
+**ไม่มีตัวนับ (`--ref none`, ค่าเริ่มต้น):** ผลอยู่ `no_ref/` ใช้ `micros()` อย่างเดียว ไม่ใช่การรันจริง (runner เตือน)
 
-⚠ **UNVERIFIED ทั้งหมด** — sigrok-cli integration นี้ไม่เคยรันกับฮาร์ดแวร์จริงหรือแม้แต่
-`sigrok-cli`'s demo driver ในสภาพแวดล้อมที่เขียนโค้ดนี้ (ไม่มี `sigrok-cli` ติดตั้งเลย ณ ตอน
-เขียน — เช็คด้วย `which sigrok-cli` ก่อนใช้งานจริงเสมอ)
+**มีตัวนับ (`--ref counter`, การรันจริงต้องใช้):** ผลอยู่ `with_ref/` พร้อมไฟล์อ้างอิงใน `with_ref/ref/`
 
-1. ต่อสายตามที่ระบุใน `run_checklist.md` § "Logic Analyzer procedure": probe เข้า
-   `GPIO_TIMING_PIN` (Uno = D7/pin 7), GND ร่วมกับบอร์ด, **เช็คว่า LA รับ 5V ได้ก่อนต่อ**
-   (Uno เป็น 5V logic)
-2. สร้าง capture plan ก่อนเสมอ (ครั้งเดียว ครอบคลุมทุกจุด ไม่ต้องรันซ้ำต่อจุด):
+1. ต่อสายตาม `docs/design/wiring.md` และติ๊ก `docs/design/readiness.md` ให้ครบ
+2. สั่งรัน (ตัวอย่าง Uno; พอร์ตตัวนับต้องระบุเองเสมอ):
    ```bash
-   .venv/bin/python analysis/la_capture_plan.py
+   .venv/bin/python pc/run.py --board uno --algorithm h_all --phase 2 \
+       --port /dev/cu.usbmodemXXXX --ref counter --counter-port /dev/cu.usbserialYYYY \
+       --counter-cal calibration.json --dry-run
    ```
-   จะได้ `data/raw/phase2/<board>/<circuit>/with_la/la/capture_plan.csv` แยกไฟล์ต่อวงจร
-   (ดู `pc/shared/paths.la_dir` — อยู่ใต้ `with_la/` เสมอ เพราะ capture มีอยู่ได้
-   เฉพาะจุดที่รันด้วย `--la` เท่านั้น) — ถ้าไฟล์นี้ไม่มี `--la` จะข้าม capture ของจุดนั้น
-   โดยอัตโนมัติ (บันทึกเหตุผลไว้ใน
-   `data/raw/phase2/<board>/<circuit>/with_la/la/capture_issues.log`) ไม่ใช่ error, sweep
-   ยังรันจนจบตามปกติ
-3. เช็ค sigrok-cli พร้อมใช้งาน (สคริปต์เช็คให้อัตโนมัติเมื่อใส่ `--la` แต่เช็คมือได้เช่นกัน):
-   ```bash
-   which sigrok-cli && sigrok-cli --scan
-   ```
-   ถ้าไม่เจอ binary หรือไม่เจออุปกรณ์ — sweep จะพิมพ์ข้อความแล้ว **รันต่อโดยไม่ capture**
-   (ไม่ crash, ไม่ใช่ความล้มเหลวของจุดข้อมูล)
-4. รันด้วย `--la`:
-   ```bash
-   .venv/bin/python pc/phase2_sweep/uno_sweep.py --port /dev/cu.usbmodem1101 \
-       --circuits h_all --n-start 2 --n-max 2 --la
-   ```
-5. **capture แรกจริง ๆ ต้องทำตาม "First real capture checklist" ใน `run_checklist.md`
-   ทีละขั้นก่อนไปจุดอื่น** — ตรวจ
-   `data/raw/phase2/uno/h_all/with_la/la/uno_h_all_n2.csv` ด้วย `analysis/la_pulses.py`
-   ว่า `is_clean: True` และจำนวนพัลส์ตรง 100 ก่อนเชื่อผลลัพธ์จาก
-   `analysis/la_crosscheck.py` (เขียนลง `la_crosscheck.csv` ในโฟลเดอร์ `with_la/la/`
-   เดียวกัน — `--la-dir` เป็น flag บังคับของสคริปต์นั้น ไม่มีค่า default อีกต่อไป,
-   `analysis/la_crosscheck.py` เอง join กับ `with_la/raw.csv` เสมอ ไม่ใช่ `no_la/`)
-
-**สิ่งที่รับประกันได้จากโค้ด (ตรวจแล้วด้วย `pc/shared/la_capture_test.py`):**
-- ปิด `--la` = ไม่มีการเรียก sigrok-cli หรือโค้ดใน `pc/shared/la_capture.py` เลยแม้แต่
-  ครั้งเดียว
-- capture มีปัญหา (sigrok error, pulse ไม่ครบ, ไฟล์ capture ว่าง) ถูกบันทึกลง
-  `la/capture_issues.log` (ของ circuit นั้น) เท่านั้น **ไม่กระทบ** ข้อมูล `micros()`
-  ที่บันทึกลง `raw.csv`/`memory_wall.csv`/`points.csv` — จุดข้อมูลนั้นยังนับว่า `ok`
-  ตามปกติถ้าบอร์ดตอบสนองถูกต้อง ไม่ว่า LA จะจับสัญญาณได้หรือไม่ก็ตาม
-
-**`GPIO_TIMING_PIN` ต่อบอร์ด (อ้างอิงถ้าจะต่อ LA กับบอร์ดอื่นในอนาคต แม้ `--la` ยังไม่รองรับ
-ESP8266/ESP32):**
-
-| บอร์ด | พิน | Logic level |
-|---|---|---|
-| Uno R3 | D7 (`firmware/uno/src/main.cpp:27`) | 5V |
-| NodeMCU ESP8266 | GPIO5 = D1 บนบอร์ด | 3.3V |
-| ESP32 DevKit V1 | GPIO4 | 3.3V |
-
----
+   ถอด `--dry-run` เมื่อพร้อมจริงเท่านั้น (sweep script รับ flag เดียวกันโดยตรง)
+3. ถ้าตัวนับหาย/พัลส์ไม่ครบ/มี anomaly: ข้อมูล `micros()` และสถานะของจุดยังถูกต้อง ปัญหาถูกบันทึกใน
+   `with_ref/ref/ref_issues.log` และ `ref_points.csv`; ถ้าตัวนับหายติดกัน 2 จุด sweep จะหยุดก่อนเริ่มจุดถัดไป
+4. Ctrl+C: sweep ปลด arm ตัวนับและปิดทั้งสองพอร์ต; รันคำสั่งเดิมซ้ำเพื่อ resume ใน bucket เดิม
 
 ## หมายเหตุปิดท้าย
 
-- คำสั่งทั้งหมดในเอกสารนี้ (นอกจาก `--la` ซึ่งไม่เคยรันกับฮาร์ดแวร์จริงเลย — ดูคำเตือน
+- คำสั่งทั้งหมดในเอกสารนี้ (นอกจาก `--ref counter` ซึ่งไม่เคยรันกับฮาร์ดแวร์จริงเลย — ดูคำเตือน
   UNVERIFIED ด้านบน) เป็นรูปแบบเดียวกับที่ `run_checklist.md` ใช้และได้รันจริงแล้วอย่างน้อย
   1 จุด (Uno, `h_all` n=2) ในการรันฮาร์ดแวร์ครั้งแรกของโครงการ
 - ตัวเลขเวลาโดยประมาณทั้งหมดในเอกสารนี้เป็น **ค่าประมาณจากโมเดล ไม่ใช่ค่าที่วัดจริงครบทุก

@@ -3,8 +3,8 @@
 > **รีสตาร์ท 2026-10-03 / ล้างข้อมูล 2026-10-04** การทดลองเหลือ 4 วงจร (`h_all`, `bell_ghz`,
 > `qft`, `grover`) ผลที่วัดก่อนมีตัวจับเวลา ESP32 ถูก **ลบ** แล้ว (กู้ได้จาก git history ที่ commit
 > `af40643`) วิธีวัดคงเดิม (`micros()` ต่อ rep, คอลัมน์ `exec_time_us`) และชุดข้อมูลใหม่จะบันทึกคู่กับ
-> ตัวนับ ESP32 ตัวเลขในไฟล์นี้เป็นค่าประมาณ/คาดการณ์ ดู `docs/experiment_plan.md`,
-> `docs/system_design.md`, `docs/counter_design.md`
+> ตัวนับ ESP32 ตัวเลขในไฟล์นี้เป็นค่าประมาณ/คาดการณ์ ดู `docs/design/experiment_plan.md`,
+> `docs/design/system_design.md`, `docs/design/counter_design.md`
 
 เวอร์ชันย่อของ [`README.md`](README.md) — คำสั่ง, ชื่อไฟล์/โฟลเดอร์, flag, และ
 ชื่อ tag คงเป็นภาษาอังกฤษทั้งหมดตามต้นฉบับ อ่าน `README.md` ฉบับเต็มสำหรับ
@@ -108,7 +108,8 @@ VID:PID ที่ยืนยันแล้วของบอร์ดจริ
 | `--reps REPS` | ไม่ | **เช็คค่าเท่านั้น ไม่ส่งต่อ** ต้องเท่ากับ `100` (`timing_model.REPS`) ไม่งั้นถูกปฏิเสธ | — | ทุกบอร์ด |
 | `--build-timeout BUILD_TIMEOUT` | ไม่ | วินาทีสูงสุดต่อการ compile/upload หนึ่งครั้ง | `300` | ทุกบอร์ด |
 | `--upload-retry-settle-s UPLOAD_RETRY_SETTLE_S` | ไม่ | วินาทีรอก่อน retry เมื่ออัปโหลดล้มเหลว | `2.0` | **Uno Phase 2 เท่านั้น** — บอร์ด/phase อื่นถูกปฏิเสธ |
-| `--la` | ไม่ | เปิด Logic Analyzer capture (`sigrok-cli`) | ปิด | **Uno Phase 2 เท่านั้น** — UNVERIFIED ไม่เคยรันกับ `sigrok-cli` จริง |
+| `--ref {none,counter}` | ไม่ | ตัวอ้างอิงเวลา: `counter` = ตัวนับ ESP32 (**การรันจริงต้องใช้**, ผลอยู่ `with_ref/`) / `none` = `micros()` อย่างเดียว (`no_ref/`) | `none` | Phase 2 ทุกบอร์ด |
+| `--counter-port PORT` | เมื่อใช้ `--ref counter` | พอร์ตของตัวนับ ESP32 — ไม่เดาเอง ห้ามซ้ำ `--port` | — | — |
 | `--fresh` | ไม่ | archive ข้อมูลเดิมของ (board, algorithm, phase, la) แล้วเริ่มที่ n ต่ำสุดที่มีความหมาย | ปิด | ทุกบอร์ด |
 | `--dry-run` | ไม่ | ดูตัวอย่างเฉย ๆ ไม่แตะฮาร์ดแวร์/ไฟล์ใด ๆ เลย | ปิด | ทุกบอร์ด |
 | `--yes` | ไม่ | ข้ามการถาม y/n ก่อนแตะฮาร์ดแวร์ | ปิด | ทุกบอร์ด |
@@ -196,17 +197,17 @@ pipeline เลย (พิสูจน์แล้วใน `pc/run_test.py`)
 ของสคริปต์เอง: บรรทัด `already done: N/M point(s)` ตามด้วย `skip (...): already
 <status>` ต่อจุด แปลว่า resume เจอของเดิม; `already done: 0/M` แปลว่าเริ่มใหม่
 ล้วน ๆ (`git status` ไม่ช่วยบอกตรงนี้ — สถานะ resume อยู่ใน
-`data/raw/.../no_la/memory_wall.csv` ไม่ใช่ git)
+`data/raw/.../no_ref/memory_wall.csv` ไม่ใช่ git)
 
 ### ฉ. เช็คผลหลังรัน
 
 ```bash
-head -3 data/raw/phase2/uno/h_all/no_la/raw.csv
-cat data/raw/phase2/uno/h_all/no_la/memory_wall.csv
-tail -1 data/raw/phase2/uno/h_all/no_la/points.csv
+head -3 data/raw/phase2/uno/h_all/no_ref/raw.csv
+cat data/raw/phase2/uno/h_all/no_ref/memory_wall.csv
+tail -1 data/raw/phase2/uno/h_all/no_ref/points.csv
 .venv/bin/python pc/run_history.py --board uno --algorithm h_all --phase 2
 ```
-(ใช้ `with_la/` แทน `no_la/` ถ้ารันด้วย `--la` และ sigrok-cli เจออุปกรณ์จริง)
+(ใช้ `with_ref/` แทน `no_ref/` ถ้ารันด้วย `--ref counter`)
 สถานะที่ควรเห็นใน `memory_wall.csv`: แถว `ok` ติดกันที่ n ต่ำ ๆ แล้วจบด้วยแถว
 เดียวที่เป็นกำแพงจริง (`build_overflow` หรือ ESP-only `malloc_failed`) หรือ
 `runtime_hang_or_reset`/`watchdog_suspected` (ไม่ใช่กำแพง ต้องตรวจด้วยตา)
@@ -292,7 +293,7 @@ data/figures/<board>/all_algorithms_so_far.png   กราฟรวม สร้
 ## สถานะปัจจุบัน
 
 **รีสตาร์ท 2026-10-03: ยังไม่มีข้อมูลฮาร์ดแวร์ใน `data/raw/phase2/` หรือ `data/raw/phase3/`**
-ข้อมูลที่เก็บก่อนมีตัวจับเวลาถูกลบเมื่อ 2026-10-04 (กู้ได้จาก git ที่ `af40643`) resume เห็นสถานะว่างทุกบอร์ด/วงจร/phase ดู `docs/experiment_plan.md`
+ข้อมูลที่เก็บก่อนมีตัวจับเวลาถูกลบเมื่อ 2026-10-04 (กู้ได้จาก git ที่ `af40643`) resume เห็นสถานะว่างทุกบอร์ด/วงจร/phase ดู `docs/design/experiment_plan.md`
 
 ## ข้อจำกัดสำคัญ
 
@@ -300,9 +301,9 @@ data/figures/<board>/all_algorithms_so_far.png   กราฟรวม สร้
   `1.5e-3` (n=9) และ `6.5e-3` (n=10) เพราะ Oracle แบบ multi-controlled-phase
   ทำให้ความลึกวงจรโตแบบ `O(3^n)` (`docs/preflight_report.md` finding H3)
 - **ความละเอียด `micros()`**: 4µs/tick บน Uno, 1µs บน ESP — เป็นสัดส่วนไม่น้อย
-  ของค่าที่วัดได้ที่ n ต่ำ ๆ (ยังไม่ได้ยืนยันด้วย Logic Analyzer จริง)
-- **ยังไม่มีข้อมูล Logic Analyzer จริงเลย** — `--la` implement และเทสต์ด้วย
-  mock ไว้แล้ว แต่ไม่เคยรันกับฮาร์ดแวร์จริงหรือแม้แต่ `sigrok-cli` demo driver
+  ของค่าที่วัดได้ที่ n ต่ำ ๆ (ยังไม่ได้ยืนยันด้วยตัวนับ ESP32 จริง)
+- **ยังไม่มีข้อมูลจากตัวนับ ESP32 เลย** — `--ref counter` implement และเทสต์กับ simulator แล้ว แต่ตัวนับยังไม่เคยถูก flash
+  และยังไม่เคยต่อสายกับบอร์ดจริง
 - **ESP8266/ESP32 และ Phase 3 ทุกบอร์ด ไม่มีข้อมูลฮาร์ดแวร์จริงเลย**
 - เฟิร์มแวร์ใช้ `float` (binary32) ทั้งหมด ส่วน Qiskit Aer อ้างอิงใช้
   `complex128` — ตัวเลข infidelity ที่ผ่านเกณฑ์ในโครงการนี้จึงเทียบกับ

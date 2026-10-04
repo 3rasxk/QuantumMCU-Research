@@ -12,7 +12,7 @@ dataset (`data/archive/restart_20261003T111500Z/`, read once to freeze numbers).
 | Circuits | `h_all`, `bell_ghz`, `qft`, `grover` (qpe, steane_encode removed from the plan; code stays in `firmware/common/circuits.hpp`) |
 | Boards | Uno, ESP8266, ESP32 |
 | Phases | 2 (on-device) and 3 (offload, same four circuits) |
-| Timing reference | second ESP32 pulse counter, see `docs/counter_design.md` (collect the restarted dataset only after it works) |
+| Timing reference | second ESP32 pulse counter, see `docs/design/counter_design.md` (collect the restarted dataset only after it works) |
 | Machine-readable plan | `pc/shared/experiment_plan.py`; times: `python pc/run.py --plan` |
 
 Plan n range per row = minimum meaningful n (h_all 1, bell_ghz 2, qft 1, grover 2,
@@ -114,7 +114,7 @@ state-vector loops, no cache effects, float32 only, fixed per-gate cost per ampl
 `pc/run.py --plan` marks every point above 6 h / 24 h / 72 h and every point whose per-rep
 time exceeds the WDT threshold, and flags TIME-LIMITED (above 1 h) as a display threshold
 only. Nothing is skipped, nothing is capped. Cumulative-time facts for the ceiling decision
-are in `docs/ceiling_facts.md`.
+are in `docs/design/ceiling_facts.md`.
 
 ### Time ceiling: DECIDED 2026-10-03 — no ceiling, run to the memory wall
 
@@ -241,7 +241,7 @@ the original `infidelity_tvd.csv` is untouched. Cell = infidelity / TVD. Thresho
 - ESP8266 usable heap and `largest_block` (assumed about 45-50 KB; the wall n=13 does not depend on it).
 - ESP32 largest block of about 110 KB holds in the new run (prior observation, section 8).
 - Uno grover stack frame size at n=7.
-- WDT thresholds (ESP8266 6 s, ESP32 5 s) in `timing_model.WDT_PER_REP_THRESHOLD_S`: see the Part 4 finding in `docs/system_design.md` open decisions.
+- WDT thresholds (ESP8266 6 s, ESP32 5 s) in `timing_model.WDT_PER_REP_THRESHOLD_S`: see the Part 4 finding in `docs/design/system_design.md` open decisions.
 - Compile/upload/boot per point (all ESTIMATE, bases in `timing_model.py`).
 - Grover time model beyond small n (extrapolated).
 

@@ -1,4 +1,4 @@
-// main.cpp -- ESP32 pulse counter, stage S1 (docs/counter_design.md).
+// main.cpp -- ESP32 pulse counter, stage S1 (docs/design/counter_design.md).
 //
 // Input-only capture of one pin (never driven), hardware edge timestamps from the
 // MCPWM capture unit (CAP0 = rising, CAP1 = falling, same pad), 32-bit APB-clock

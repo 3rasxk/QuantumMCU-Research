@@ -1,6 +1,6 @@
 # ESP32 pulse counter: design (replaces the Logic Analyzer)
 
-Status: **design. `firmware/counter_esp32/` is an UNFLASHED DRAFT (owner decision 2026-10-04: S1 hardware work cancelled for now). No board has been touched.**
+Status (2026-10-04): protocol **v2** implemented in `pc/counter/` and in `firmware/counter_esp32/` (built, **not flashed**). Owner decision 2026-10-04: the timer system proceeds; S1 (one counter ESP32, self-loopback only) waits for "plugged in". No board has been touched.
 Facts about the ESP32, ESP-IDF and Arduino-ESP32 are marked **UNVERIFIED**: they
 come from general knowledge, not from this repo or a datasheet read in this
 session. Facts about this repo carry `file:line`.
@@ -124,17 +124,17 @@ thousands per second); 921600 if the dashboard-forwarding load grows (UNVERIFIED
 
 | Dir | Marker/type | Payload |
 |---|---|---|
-| PC -> C | `0xC0 ARM` | session u32, board u8 (0 uno, 1 esp8266, 2 esp32), circuit u8 (`CIRCUIT_IDS`: 0-3), n u8, reps u16, min_width_ns u32, max_width_s u16 |
+| PC -> C | `0xC0 ARM` | proto u8 (=2), session u32, board u8 (0 uno, 1 esp8266, 2 esp32), circuit u8 (`CIRCUIT_IDS`: 0-3), n u8, reps u16, min_width_ns u32, max_width_s **u32**, start_timeout_s u16 |
 | PC -> C | `0xC1 END` | session u32 |
 | PC -> C | `0xC2 ACK` | session u32, last_seq u16 |
 | PC -> C | `0xC3 REPLAY` | session u32, from_seq u16 |
 | PC -> C | `0xC4 REFVAL` | session u32, seq u16, micros_exec_us u32 (DUT `micros()` for dashboard diff, best effort) |
 | PC -> C | `0xC5 SELFTEST` / `0xC6 STATUS` | pattern id / none |
-| C -> PC | `0xD0 PULSE` | seq u16, rise_us u64, width_ns u64, flags u8 |
+| C -> PC | `0xD0 PULSE` | seq u16, rise_us u64, width_ticks u64, width_ns u64, wraps u16, flags u8 |
 | C -> PC | `0xD1 ANOMALY` | seq u16, code u8, detail u32 |
 | C -> PC | `0xD2 REPORT` | session u32, status u8, pulses u16, anomaly_mask u16, min/max/sum width_ns u64, pcnt_count u16, overruns u16 |
-| C -> PC | `0xD3 HEARTBEAT` | uptime_s u32, state u8, ring_depth u16, dropped u16, ws_clients u8, free_heap u32, last_seq u16 |
-| C -> PC | `0xD4 ARM_ACK`, `0xD5 SELFTEST_RESULT` | session + accept/refuse; pattern + measured vs expected |
+| C -> PC | `0xD3 HEARTBEAT` | proto u8, counter_us u64 (microsecond clock), state u8, ring_depth u16, dropped u16, ws_clients u8, free_heap u32, last_seq u16 |
+| C -> PC | `0xD4 ARM_ACK`, `0xD5 SELFTEST_RESULT` | session u32, status u8 (1 ok, 0 busy, 2 bad version, 3 malformed), counter proto u8; group + expected_ns + measured_ns |
 
 Sequence per point (replacing `pc/shared/la_capture.py`'s arm-before-reflash order,
 `la_capture.py` header): ARM -> ARM_ACK -> reflash + run DUT -> stream PULSE -> PC reads
@@ -185,10 +185,10 @@ is refused, not guessed.
   UNVERIFIED): that is the DUT's clock, and it is exactly what the cross-check
   exposes.
 
-## 8. PC-side integration (what would change)
+## 8. PC-side integration (DONE 2026-10-04: see `docs/design/system_design.md`, "Implementation status"; the list below is the original plan)
 
-`with_la/` -> `with_ref/`, `--la` -> `--counter`. **Confirmed: no `with_la` data exists**
-(`find` over the working tree finds no `with_la`; the restart MANIFEST has 0 hits), so
+`with_la/` -> `with_ref/` (and `no_la/` -> `no_ref/`), `--la` -> `--ref counter`. **Confirmed: no `with_ref` data exists**
+(`find` over the working tree finds no `with_ref`; the restart MANIFEST has 0 hits), so
 the rename is path-only.
 
 | File | Change |
@@ -206,7 +206,7 @@ the rename is path-only.
 | `pc/phase2_sweep/esp32_sweep.py`, `esp8266_sweep.py` | **add** `--counter` (today only the Uno has `--la`) |
 | `pc/run.py` | `LA_SUPPORTED` -> counter-supported boards (all three, Phase 2), `--la` -> `--counter`, preflight line for the counter port, ETA table adds counter arm cost |
 | `pc/run_test.py`, `pc/run_history_test.py`, `pc/shared/paths_test.py`, `pc/shared/uno_upload_retry_test.py`, `pc/shared/telemetry_test.py` | rename expectations |
-| `analysis/phase2_uno_run_plots.py`, `analysis/phase2_exec_time_pub.py` | `with_la`/`no_la` buckets and subtitle text |
+| `analysis/phase2_uno_run_plots.py`, `analysis/phase2_exec_time_pub.py` | `with_ref`/`no_ref` buckets and subtitle text |
 | `README.md`, `README.th.md`, `run_checklist.md`, `docs/manual_run_guide.md`, `docs/run/*.md`, `docs/preflight_report.md` | see section 10 |
 | new | `firmware/counter/` (separate PlatformIO project, **not** under the DUT firmware), `pc/shared/counter_sim.py` (simulator), dashboard page |
 | **not changed** | `firmware/uno|esp8266|esp32/**` (the pin toggle already exists; source hash stays), `firmware/common/**` |
@@ -228,11 +228,11 @@ the rename is path-only.
 Collect the restarted dataset only after S8 passes, so every point has both `micros()`
 and counter timing.
 
-## 10. Docs that still name the Logic Analyzer as the timing reference
+## 10. Docs that named the Logic Analyzer as the timing reference (all reworded 2026-10-04; line numbers are historical)
 
 (file:line; all to be reworded when the counter lands; none changed now)
 
-- `README.md:27-29` (what is measured), `:87` (analysis/ description), `:240` (`--la` flag), `:419-440` (data layout, `with_la/`), `:528`, `:622` (tag `pre-run-uno-v1`), `:661` (limitations)
+- `README.md:27-29` (what is measured), `:87` (analysis/ description), `:240` (`--la` flag), `:419-440` (data layout, `with_ref/`), `:528`, `:622` (tag `pre-run-uno-v1`), `:661` (limitations)
 - `README.th.md:112`, `:210`, `:305-307`
 - `run_checklist.md:16`, `:48-55`, `:114-117`, `:583-740` (whole "Logic Analyzer procedure" section), `:914-941`
 - `docs/manual_run_guide.md:39`, `:50-51`, `:69`, `:105`, `:120`, `:158-162`, `:182`, `:190`, `:245`, `:320`, `:374-430` (section "run with/without Logic Analyzer"), `:443`
@@ -249,13 +249,13 @@ Checked by reading the source; frames also checked by compiling the firmware's o
 | 1 | Frame format matches the PC codec | ok | `pc/shared/counter_fw_parity_test.py`: 6 firmware-built frames (ARM_ACK, ANOMALY, PULSE, REPORT, HEARTBEAT, SELFTEST_RESULT) equal `counter_proto.encode` byte for byte, CRC-8 included. ARM parsing offsets (payload 15 bytes, `n == 15`) match `>IBBBHIH` |
 | 2 | Capture clock | ok / UNVERIFIED | MCPWM capture timestamps at APB (80 MHz, 12.5 ns); the code converts with `esp_clk_apb_freq()` (`main.cpp` `ticks_to_ns`). Whether one pad can feed CAP0 and CAP1 through the GPIO matrix is UNVERIFIED (S1 would have shown it) |
 | 3 | Overflow counting | ok to about 10^4 days | 32-bit stamp + 64-bit `esp_timer` coarse clock; `unwrap_ticks` needs the coarse clock right to within 26.8 s. Width is u64 ns. A 1 h pulse (2.9e11 ticks, k = 67) and a 1 day pulse (6.9e12 ticks, k = 1 610) unwrap correctly in double precision. **Only 1 x 60 s was in the self-test**, so nothing longer is exercised |
-| 4 | Long reps do not fit the protocol | **high** | `max_width_s` is u16 (65 535 s = 18.2 h) in ARM; the plan has ESP8266 grover n=12 reps of about 22.8 h and ESP32 n=13 of 10.5 h. Needs u32 (protocol change) before such points |
-| 5 | Heartbeat time unusable for calibration | **high** | HEARTBEAT carries `uptime_s` (whole seconds); a 10-minute regression with 1 s quantisation resolves only about 1 700 ppm, not the 2 ppm the design needs. Needs a 64-bit microsecond field |
+| 4 | Long reps do not fit the protocol | **fixed in v2** | `max_width_s` is u16 (65 535 s = 18.2 h) in ARM; the plan has ESP8266 grover n=12 reps of about 22.8 h and ESP32 n=13 of 10.5 h. Needs u32 (protocol change) before such points |
+| 5 | Heartbeat time too coarse | **fixed in v2** | v1 HEARTBEAT carried whole seconds. Regression over many samples averages quantisation, so ppm was not impossible, but sub-second timing is needed to pair counter and PC clocks cleanly. v2 carries a 64-bit microsecond clock; `pc/counter/calibration.py` fits it |
 | 6 | Edges faster than the ISR can latch | medium | CAP0/CAP1 hold one stamp each until the next edge of the same polarity, so ISR latency must be below one pulse period (>= about 100 us for the tiniest circuits, set by the target's print time). A lost edge shows as rise/fall imbalance (code 5) or a short count (code 1); a pulse lost on both channels shows only as code 1. Whether the legacy MCPWM ISR is IRAM-safe under flash writes is UNVERIFIED; the draft does no flash writes while armed |
 | 7 | Edge ring | ok | 1 024 entries, SPSC; overflow is counted (`e_overflow`) and reported at END as code 9 (not at once) |
 | 8 | Serial backpressure | medium | `Serial.write` blocks when the UART TX buffer is full; the main loop (frames, heartbeat, watchdog) stalls while edges keep filling the ring. 100 reps x 23 B is far inside the 1 024-edge ring; sustained high rates are not supported. `dropped` in the heartbeat is never incremented (dead field) |
-| 9 | Missing / glitch / still-high | partly | glitch (width < `min_width_ns`) flagged at once; stuck-high flagged at END (level or open rise) and by a `max_width_s` watchdog while armed; missing/extra/never-started at END. **Not implemented:** the design's "no first edge within a start timeout" rule (code 7 only at END). Pulses narrower than the capture can see (no input glitch filter, PCNT filter disabled) are invisible; sub-100 ns glitches are not detectable |
-| 10 | ACK / REFVAL | gap | `T_ACK` and `T_REFVAL` are parsed and ignored; the 512-frame replay ring is never freed, which is enough for REPS = 100 |
+| 9 | Missing / glitch / still-high | partly | glitch (width < `min_width_ns`) flagged at once; stuck-high flagged at END (level or open rise) and by a `max_width_s` watchdog while armed; missing/extra/never-started at END. The start-timeout rule (code 7) is implemented in v2 (`start_timeout_s` in ARM). Pulses narrower than the capture can see (no input glitch filter, PCNT filter disabled) are invisible; sub-100 ns glitches are not detectable |
+| 10 | ACK / REFVAL | ACK done in v2; REFVAL still ignored | `T_ACK` and `T_REFVAL` are parsed and ignored; the 512-frame replay ring is never freed, which is enough for REPS = 100 |
 | 11 | Sequence | ok | `seq` u16 wraps; REPLAY resends from the ring and raises code 6 |
 | 12 | Self-test coverage | see below | |
 | 13 | Clock fault (code 8) | limited | raised only for self-test groups >= 100 ms with more than 50 ppm error; meaningless when the same crystal generates and measures |
@@ -310,7 +310,7 @@ protocol (above), no OTA. The target board **never** enables WiFi (`WiFi.mode(WI
      measured period with nominal.
   3. *Second counter:* measure the same long pulse on two counters; the difference bounds the relative error only.
 - **Storage and reporting:** result (ppm, method, duration, date, temperature note) written to `env/<session>.ref.json`
-  (`docs/system_design.md` section c) and printed in every analysis that uses counter widths as a **stated limitation**: widths
+  (`docs/design/system_design.md` section c) and printed in every analysis that uses counter widths as a **stated limitation**: widths
   carry +- ppm clock uncertainty; the self-loopback self-test is not a calibration. Recalibrate if the counter board changes or
   after 30 days.
 
@@ -320,7 +320,7 @@ protocol (above), no OTA. The target board **never** enables WiFi (`WiFi.mode(WI
 |---|---|---|---|
 | S1 | counter core: capture, overflow, protocol, anomalies, heartbeat, self-loopback (the current draft) | counter ESP32 + 1 jumper GPIO25-GPIO35 | `counter_selftest.py` report: error per width 100 us .. 60 s, glitch (code 3) and missing pulse (code 1) raised; **self-loopback only** |
 | S2 | real input path | counter + any MCU as pulse source + resistors (divider, pull-down) | known widths on GPIO34 through the wiring table; divider Vout; no phantom pulses at reset |
-| S3 | protocol hardening and long pulses | counter + pulse source | u32 `max_width_s`, 64-bit heartbeat time, ARM start timeout, ACK; 1 h pulse; calibration procedure 1 (30 min) |
+| S3 | long pulses and calibration | counter + pulse source | (protocol hardening done in v2) 1 h pulse; calibration procedure 1 (30 min) with `calibration.py` |
 | S4 | WiFi AP + WebSocket dashboard | counter + laptop | 10^6 loopback pulses with 3 clients connecting/dropping: 0 mismatches, 0 overruns; dashboard crash test |
 | S5 | target integration | Uno, then ESP8266, then ESP32 target + counter (two ESP32 for the last) | Uno pilot h_all n=2..4, compare micros() vs counter, then sweeps with `--ref counter` |
 

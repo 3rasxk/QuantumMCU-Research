@@ -7,7 +7,7 @@
 > git history at commit `af40643`); the measurement METHOD is unchanged (`micros()` per rep,
 > column `exec_time_us`) and the new dataset records it together with the ESP32 counter.
 > Every number in this README is an estimate or a prediction unless it says otherwise.
-> Plan: `docs/experiment_plan.md`; design: `docs/system_design.md`, `docs/counter_design.md`;
+> Plan: `docs/design/experiment_plan.md`; design: `docs/design/system_design.md`, `docs/design/counter_design.md`;
 > `python pc/run.py --plan` prints the time table.
 
 Comparative performance benchmarking of quantum micro-simulators across
@@ -23,9 +23,10 @@ PC running Qiskit Aer?
   repetition, via `micros()` bracketing the simulation loop on the MCU
   itself, for `n = 2` upward until the board fails. Compile-time RAM usage
   (`avr-size` / equivalent) is recorded for every point, not just failures.
-  A Logic Analyzer cross-check of the `micros()` timing exists in code
-  (`--la`, Uno only, to be replaced by the counter) but has **never been run against real hardware or even
-  a `sigrok-cli` demo driver** — see Limitations.
+  An independent timing reference, a second ESP32 acting as a pulse counter on
+  `GPIO_TIMING_PIN` (`--ref counter`), records the same pulse; the comparison
+  `micros()` minus counter is a central analysis. Designed and tested without
+  hardware, **never run on a board yet** — see `docs/design/system_design.md`.
 - **Measured (Phase 3, offload):** round-trip latency and frame integrity
   (CRC-8) of a fixed 4-byte request / 6-byte response protocol between MCU
   and PC. The PC re-simulates with Qiskit Aer from scratch on every request
@@ -83,7 +84,7 @@ pc/
                         source of truth for every data/raw and data/figures
                         path), telemetry.py, resume.py, plot_style.py
 
-analysis/               validation, statistics, figure generation, LA tooling
+analysis/               validation, statistics, figure generation, micros()-vs-counter comparison plots
 
 data/
   raw/phase{2,3}/<board>/<circuit>/   per-repetition measurements, one
@@ -236,7 +237,9 @@ with predicted wall `n`, per-board totals and a grand total. No hardware access.
 | `--reps REPS` | no | **validation only, never passed through** — must equal `100` (`pc/shared/timing_model.REPS`, a compile-time firmware constant) or the run is refused | — | all |
 | `--build-timeout BUILD_TIMEOUT` | no | max seconds per `pio run` (compile) or `pio run -t upload` call, passed through | `300` | all |
 | `--upload-retry-settle-s UPLOAD_RETRY_SETTLE_S` | no | settle delay before retrying an upload-stage failure | `2.0` | **Uno Phase 2 only** — refused for every other board/phase |
-| `--la` | no | enable Logic Analyzer capture (`sigrok-cli`) | off | **Uno Phase 2 only** — refused for every other board/phase; UNVERIFIED, never run against real `sigrok-cli` (see Limitations) |
+| `--ref {none,counter}` | no | timing reference: `counter` = ESP32 pulse counter (**official runs REQUIRE it**, data in `with_ref/`); `none` = `micros()` only (`no_ref/`, warned, not for official runs) | `none` | Phase 2, all boards; refused for Phase 3 |
+| `--counter-port PORT` | with `--ref counter` | serial port of the counter ESP32 — never auto-guessed, never equal to `--port` | — | with `--ref counter` |
+| `--counter-cal FILE` | no | calibration JSON from `pc/counter/calibration.py`, copied into the session sidecar | — | with `--ref counter` |
 | `--fresh` | no | archive existing data for this (board, algorithm, phase, la) to `data/archive/`, then start at the circuit's own minimum meaningful `n` | off | all |
 | `--dry-run` | no | preview only — print the resolved command, the preflight checks, and (if `--fresh`) the planned archive destination; never touches hardware, never calls `pio`, never moves or writes a data file | off | all |
 | `--yes` | no | skip the interactive y/n confirmation before touching hardware | off | all |
@@ -258,7 +261,7 @@ step (a.4) — these are illustrative examples, not values to copy blindly.**
     --port /dev/cu.usbmodem1101 --dry-run
 ```
 Expect: a `--- preflight ---` block (git clean/dirty state, sleep-prevention
-status, resume state read from the existing `no_la/memory_wall.csv` if any),
+status, resume state read from the existing `no_ref/memory_wall.csv` if any),
 the line `command: <python> pc/phase2_sweep/uno_sweep.py --port
 /dev/cu.usbmodem1101 --circuits h_all`, then `port: [dry-run] skipping pio
 device list / port checks -- no hardware access`, and finally `[dry-run]
@@ -405,37 +408,32 @@ no new default, no clamping, exactly the pre-2026-09-21 behavior.
 ## Data layout
 
 ```
-data/raw/phase<N>/<board>/<circuit>/{no_la,with_la}/
-  raw.csv            every repetition, 1 row per rep, 100 rows per ok point
+data/raw/phase<N>/<board>/<circuit>/{no_ref,with_ref}/
+  raw.csv            every repetition, 1 row per rep, 100 rows per ok point (micros() in exec_time_us)
   memory_wall.csv     Phase 2 only: 1 terminal row per (circuit, n) point
   session_log.csv      Phase 3 only: 1 terminal row per (circuit, n, baud) point
   points.csv          1 row per upload attempt (a retried point has >1 row)
   sessions.csv         1 row per script invocation
   env/<session_id>.json   toolchain versions, firmware_source_hash,
-                        sleep_prevention, per session, la_used +
-                        la_dir_bucket + la_dir_matches_flag (cross-check)
-  la/                 with_la/ only — Logic Analyzer captures, capture_plan.csv,
-                        capture_issues.log (can't exist without --la)
+                        sleep_prevention, per session, ref_used +
+                        ref_dir_bucket + ref_dir_matches_flag (cross-check)
+  env/<session_id>.ref.json   with_ref/ only — counter port, firmware sha256, pin map, divider, calibration
+  ref/                with_ref/ only — ref_pulses.csv, ref_points.csv, ref_compare.csv,
+                        ref_compare_points.csv, ref_issues.log (schemas: pc/counter/ref_schema.py)
 
-data/figures/<board>/<circuit>/{no_la,with_la}/{exec_time_vs_n,outcomes_vs_n,time_per_point}.png
-data/figures/<board>/{no_la,with_la}/all_algorithms_so_far.png   cumulative, regenerated every run
+data/figures/<board>/<circuit>/{no_ref,with_ref}/{exec_time_vs_n,outcomes_vs_n,time_per_point}.png
+data/figures/<board>/{no_ref,with_ref}/all_algorithms_so_far.png   cumulative, regenerated every run
 ```
 
-**no_la vs with_la (2026-09-22).** Every point lives under `no_la/` (default,
-plain `micros()` timing) or `with_la/` (collected with `--la` — Uno Phase 2
-only, and only once sigrok-cli actually found a device; if `--la` was passed
-but sigrok was unavailable, the point still lands under `no_la/`, since no
-capture was actually attempted — see `pc/phase2_sweep/uno_sweep.py`'s
-`la_active`). **The two are never mixed in analysis**: timing-only and
-LA-cross-checked points are different measurements of the same circuit, not
-interchangeable samples of the same thing — a sweep resuming a `no_la` run
-never treats an existing `with_la` point (or vice versa) as already done,
-and every plotting/summarize script reads from exactly one bucket per
-invocation. Every point collected so far (all of it, prior to 2026-09-22)
-was collected without `--la` and now lives under `no_la/` — migrated
-losslessly with `git mv` (row counts + sha256 verified identical before and
-after, see `run_log.md`), never rewritten. No `with_la/` data exists yet
-anywhere in this repo (`--la` has never completed against real hardware).
+**no_ref vs with_ref (renamed 2026-10-04 from no_la/with_la; no data existed under either name).**
+Every point lives under `no_ref/` (default `--ref none`: `micros()` only, **not valid
+for official runs**) or `with_ref/` (`--ref counter`: `micros()` plus the counter's pulse
+for every rep). The two are never mixed in analysis: a sweep resuming one bucket never
+treats a point in the other as done, and every plotting/summarize script reads exactly
+one bucket per invocation. The join between the two measurements is by pulse order
+(pulse i = rep i); a pulse-count mismatch or counter anomaly refuses the comparison for
+that point but never touches the `micros()` rows or the point status. No data exists in
+either bucket yet.
 
 **PNG only.** All figure-generation in this project (`pc/shared/plot_style.
 save_figure_png_only`) writes PNG, never SVG, to this tree. (A separate,
@@ -470,7 +468,7 @@ done: 0/M point(s)` means it's starting clean (either truly the first run,
 or every previous point was swept away as an orphan — the script prints
 `resume: purged N orphan raw row(s)...` when that happens). `git status`
 itself won't show this — resume state lives in
-`data/raw/.../no_la/memory_wall.csv`, not in what's staged/modified in git;
+`data/raw/.../no_ref/memory_wall.csv`, not in what's staged/modified in git;
 check that file directly (or `pc/run_history.py`, see below) if you want to
 confirm before running.
 - A point with a terminal row in `memory_wall.csv`/`session_log.csv` is
@@ -517,14 +515,14 @@ for the full, dated record of every rule and why it was adopted.
 
 ```bash
 # raw trials, terminal-record summary, per-attempt log, session log, env metadata
-head -3 data/raw/phase2/uno/h_all/no_la/raw.csv
-cat data/raw/phase2/uno/h_all/no_la/memory_wall.csv
-tail -1 data/raw/phase2/uno/h_all/no_la/points.csv
-tail -1 data/raw/phase2/uno/h_all/no_la/sessions.csv
-ls data/raw/phase2/uno/h_all/no_la/env/
+head -3 data/raw/phase2/uno/h_all/no_ref/raw.csv
+cat data/raw/phase2/uno/h_all/no_ref/memory_wall.csv
+tail -1 data/raw/phase2/uno/h_all/no_ref/points.csv
+tail -1 data/raw/phase2/uno/h_all/no_ref/sessions.csv
+ls data/raw/phase2/uno/h_all/no_ref/env/
 ```
-Use `with_la/` instead of `no_la/` if you ran with `--la` and sigrok-cli
-actually found a device (see § "no_la vs with_la" under Data layout below).
+Use `with_ref/` instead of `no_ref/` if you ran with `--ref counter`
+(see § "no_ref vs with_ref" under Data layout below).
 
 **A healthy status distribution** in `memory_wall.csv`, one terminal row per
 `n` attempted: a run of consecutive `ok` rows for the low `n` values, then
@@ -635,7 +633,7 @@ which is the append-only source of truth these one-liners summarize.
 timer existed was deleted on 2026-10-04 (recoverable from git history at `af40643`).
 Resume sees an empty state for every board / circuit / phase. Phase 1 (PC-only) was
 re-validated for every `n` of the new plan
-(`data/raw/phase1/infidelity_tvd.<timestamp>.csv`). See `docs/experiment_plan.md`
+(`data/raw/phase1/infidelity_tvd.<timestamp>.csv`). See `docs/design/experiment_plan.md`
 for the predicted walls and `python pc/run.py --plan` for the time table.
 
 ---
@@ -654,12 +652,11 @@ for the predicted walls and `python pc/run.py --plan` for the time table.
   fraction of the measured pulse width — plausible explanation for
   low-`n` measurement variability, not independently confirmed (see next
   point).
-- **No Logic Analyzer data exists yet.** `--la` (Uno only) is implemented
-  and unit-tested against mocks, but has never captured against real
-  hardware, nor even against `sigrok-cli`'s own demo driver (`sigrok-cli`
-  was not installed in the environment that wrote this integration). Every
-  quantization-noise explanation for low-`n` variability in
-  `docs/analysis/uno/*.md` is therefore INTERPRETATION, not verified.
+- **No counter (reference) data exists yet.** `--ref counter` is implemented and
+  tested against a software simulator of the counter; the counter firmware has
+  never been flashed and no board has been wired. Every explanation for low-`n`
+  variability (4 us `micros()` tick on the Uno) is therefore INTERPRETATION until
+  the comparison exists.
 - **ESP8266 and ESP32 have no real hardware data.** Every timing/wall
   number for them is a `timing_model.py` prediction or a compile-only
   build-matrix figure (`docs/preflight_report.md`), never a measurement.
