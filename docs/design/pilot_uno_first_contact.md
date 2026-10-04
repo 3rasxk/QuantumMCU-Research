@@ -48,3 +48,22 @@ A straight line through n=5..7 gives counter = 1.0051 x micros() + 4.7 us. Readi
 unexplained): a constant offset of about 5 us (the two `digitalWrite` calls inside the pulse but outside the `micros()` bracket) plus a **0.5 % scale
 difference**, i.e. either the Uno's `micros()` clock runs about 0.5 % slow or the counter clock is 0.5 % off; the ceramic resonator of an Uno R3 is
 typically +-0.5 % (UNVERIFIED), so the Uno is the likely source. The clock calibration of the counter (`pc/counter/calibration.py`) is needed to separate the two.
+
+## Second full sweep after the 100 uF capacitor on VIN-GND, with run splitting (23:55 Bangkok)
+- 13 ns artefacts fell from 14-19 per point to 0-2 per point after the 100 uF capacitor was added across the counter's VIN-GND (UNVERIFIED which part of
+  the change did it; the divider may have been changed too). Likely cause of the earlier noise: supply ripple from the counter's WiFi transmissions.
+- `pc/counter/crosscheck.split_runs` splits the pulse stream where the idle gap is > 0.5 s and > 50x the in-run gap and pairs the LAST run (the Uno restarts
+  after upload and again when the sweep opens its port; the first run is cut short). n=1,2,3,4,7 now have 100 clean pairs; n=5,6 have 99 (one artefact) and are refused.
+- Per-point difference, micros() minus counter (negative: counter reads longer), 100 pairs each:
+
+| n | median diff (us) | % | std (us) | IQR (us) |
+|---|---|---|---|---|
+| 1 | -7.65 | -65.7 (fixed overhead on a 4 us tick) | 0.82 | 0.01 |
+| 2 | -7.91 | -2.67 | 1.64 | 3.99 |
+| 3 | -10.39 | -1.27 | 1.80 | 4.00 |
+| 4 | -15.91 | -0.76 | 1.43 | 0.03 |
+| 7 | -135.43 | -0.51 | 1.74 | 3.69 |
+
+Per-rep fit for n>=4 (200 pairs): counter = 1.00491 x micros() + 6.15 us, the same scale as the first sweep (1.0051): reproducible. The constant part
+(about 6 us) is the two `digitalWrite` calls plus micros() overhead; the scale part (0.49 %) is a clock difference between the Uno and the counter. Which clock
+is off needs the counter calibration (`pc/counter/calibration.py`); the Uno resonator is typically +-0.5 % (UNVERIFIED).

@@ -46,6 +46,27 @@ def _iqr(xs):
     return q[2] - q[0]
 
 
+def split_runs(pulses, min_gap_s=0.5, gap_factor=50):
+    """The Uno restarts its firmware when the sweep opens the serial port (DTR reset) after the restart caused by the
+    upload, so the counter can see two runs (the first one usually cut short). Pulses are split where the idle gap
+    between the end of one pulse and the next rise is longer than `min_gap_s` AND `gap_factor` times the median in-run
+    gap. The sweep reads the rows of the LAST run, so only the last run is paired. -> list of runs (lists of PULSE tuples)."""
+    if len(pulses) < 3:
+        return [list(pulses)]
+    gaps = []
+    for a, b in zip(pulses, pulses[1:]):
+        gaps.append(b[1] - (a[1] + a[3] // 1000))      # rise_us(next) - (rise_us + width_us)
+    med = sorted(gaps)[len(gaps) // 2]
+    thr = max(min_gap_s * 1e6, gap_factor * max(med, 1))
+    runs, cur = [], [pulses[0]]
+    for g, p in zip(gaps, pulses[1:]):
+        if g > thr:
+            runs.append(cur); cur = []
+        cur.append(p)
+    runs.append(cur)
+    return runs
+
+
 def join_point(pulses, micros_us, reps, board, max_relative_pct=DEFAULT_MAX_RELATIVE_PCT):
     """pulses: list of PULSE field tuples (seq, rise_us, width_ticks, width_ns, wraps, flags) in seq order.
     -> {"status", "pairs": [(rep, micros_us, counter_us, diff_us, diff_pct)], "summary": {...}, "notes"}"""

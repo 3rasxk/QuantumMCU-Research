@@ -179,6 +179,27 @@ def main():
         check("target build/upload failure: ref_status no_target_run", st == "no_target_run")
         cs.close()
 
+    # two target runs (upload restart + serial-open restart): the LAST run is paired
+    with tempfile.TemporaryDirectory() as tmp:
+        sim, tr, cl, cs = make(tmp)
+        cs.arm_point(4)
+        for i in range(4):                       # first run cut short after 4 pulses
+            tr.push(sim.pulse(90_000, gap_us=2000))
+        sim.advance(2_300_000)                   # 2.3 s restart gap
+        for i in range(REPS):
+            tr.push(sim.pulse(90_000 + 10 * i, gap_us=2000))
+        time.sleep(0.2)
+        st = cs.finish_point(4, [90.0 + 0.01 * i + 1.0 for i in range(REPS)])
+        cmpp = rows(tmp, "ref_compare_points.csv")[0]
+        check("two runs seen: last run paired, comparison joined (diff +1 us), status not count_mismatch",
+              st != "count_mismatch" and cmpp["ref_status"] in ("ok", "anomaly") and cmpp["n_pairs"] == "10", f"{st} {cmpp['ref_status']}")
+        check("all pulses of both runs are kept in ref_pulses.csv and the split is logged",
+              len(rows(tmp, "ref_pulses.csv")) == 14 and "2 target runs" in (Path(tmp) / "ref" / "ref_issues.log").read_text())
+        cs.close()
+    runs = cc.split_runs([(i, i * 3000, 0, 100_000, 0, 0) for i in range(5)] + [(5 + i, 2_000_000 + i * 3000, 0, 100_000, 0, 0) for i in range(5)])
+    check("split_runs finds one split and keeps pulse order", [len(r) for r in runs] == [5, 5])
+    check("split_runs: a uniform stream is one run", len(cc.split_runs([(i, i * 3000, 0, 100_000, 0, 0) for i in range(20)])) == 1)
+
     # join logic, direct
     pulses = [(i, 0, 0, 90_000, 0, 0) for i in range(REPS)]
     check("join refuses when raw.csv is short", cc.join_point(pulses, [90.0] * 3, REPS, "uno")["status"] == "refused_short_raw")

@@ -142,6 +142,11 @@ class CounterSession:
         pulses = [f for t, f in collected if t == cp.T_PULSE]
         anomalies = [(f[0], f[1], f[2]) for t, f in collected if t == cp.T_ANOMALY]
         pulses = self._dedupe(pulses)
+        all_pulses = pulses
+        runs = cc.split_runs(pulses)
+        if len(runs) > 1:
+            self.issue(n, f"{len(runs)} target runs seen by the counter ({[len(r) for r in runs]} pulses); pairing the LAST run (the one whose rows the sweep read)")
+            pulses = runs[-1]
         codes = sorted({a[1] for a in anomalies})
         if status == "ok":
             if aborted:
@@ -158,7 +163,7 @@ class CounterSession:
             self.consecutive_lost = 0
         for code in codes:
             self.issue(n, f"anomaly code {code} ({cp.ANOMALY_NAMES.get(code, '?')})")
-        self._write(n, pulses, anomalies, report, status, codes)
+        self._write(n, all_pulses, anomalies, report, status, codes, used=pulses)
         if status in ("ok", "anomaly", "count_mismatch") and micros_us is not None:
             result = cc.join_point(pulses, micros_us, self.reps, self.board)
             cc.write_compare(self.ref_dir, self.session_id, self.board, self.circuit, n, result, status)
@@ -204,7 +209,8 @@ class CounterSession:
                 out.append(p)
         return sorted(out, key=lambda p: p[0])
 
-    def _write(self, n, pulses, anomalies, report, status, codes):
+    def _write(self, n, pulses, anomalies, report, status, codes, used=None):
+        used = pulses if used is None else used
         by_seq = {a[0]: a[1] for a in anomalies}
         rs.append_rows(self.ref_dir / "ref_pulses.csv", [{
             "session_id": self.session_id, "counter_session": self.base + n, "board": self.board,
@@ -214,7 +220,7 @@ class CounterSession:
         widths = sorted(p[3] for p in pulses)
         rs.append_rows(self.ref_dir / "ref_points.csv", [{
             "session_id": self.session_id, "board": self.board, "circuit": self.circuit, "n": n,
-            "reps_expected": self.reps, "pulses_received": len(pulses), "pulses_used": len([p for p in pulses if not p[5] & 1]),
+            "reps_expected": self.reps, "pulses_received": len(pulses), "pulses_used": len([p for p in used if not p[5] & 1]),
             "ref_status": status, "anomaly_mask": report[3] if report else "", "anomaly_codes": " ".join(map(str, codes)),
             "min_ns": widths[0] if widths else "", "median_ns": widths[len(widths) // 2] if widths else "",
             "max_ns": widths[-1] if widths else "", "report_pulses": report[2] if report else "",
