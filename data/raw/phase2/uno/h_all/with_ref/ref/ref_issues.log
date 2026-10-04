@@ -1,0 +1,4 @@
+2026-10-04T15:56:13.028034+00:00  uno/h_all/n=2  anomaly code 2 (extra pulse)
+2026-10-04T15:56:13.028412+00:00  uno/h_all/n=2  anomaly code 3 (glitch)
+2026-10-04T15:56:13.028570+00:00  uno/h_all/n=2  anomaly code 5 (count mismatch)
+2026-10-04T15:56:13.034270+00:00  uno/h_all/n=2  comparison refused: refused_count_mismatch 183 usable pulses (17 glitch) for 100 reps; refusing rep-order join
