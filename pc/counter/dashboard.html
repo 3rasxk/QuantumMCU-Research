@@ -57,7 +57,11 @@ async function tick(){
    $("last").textContent=fmt(w[w.length-1]);$("lastsub").textContent="พัลส์ที่ "+s.pulses;
    $("med").textContent=fmt(q(.5));$("iqr").textContent="IQR "+fmt(q(.25))+" – "+fmt(q(.75))+" · min "+fmt(a[0])+" · max "+fmt(a[a.length-1])}
   const an=s.anomalies.slice(-8).reverse();$("an").innerHTML=an.length?an.map(x=>"<tr><td>seq "+x.seq+"</td><td>code "+x.code+"</td><td>"+(NAMES[x.code]||"?")+"</td></tr>").join(""):'<tr><td class="sub">ยังไม่มี</td></tr>';
- }catch(e){pill($("link"),"อ่านเซิร์ฟเวอร์ไม่ได้","bad")}
+ fails=0;
+ }catch(e){fails++;pill($("link"),"เซิร์ฟเวอร์หยุด (ข้อมูลที่เห็นเป็นค่าสุดท้าย) — รอเชื่อมใหม่อัตโนมัติ","bad")}
+ sched();
 }
-tick();setInterval(tick,500);
+let fails=0,timer=null;
+function sched(){clearTimeout(timer);timer=setTimeout(tick,Math.min(5000,500*Math.pow(2,Math.min(fails,4))))}
+tick();
 </script></body></html>

@@ -26,7 +26,32 @@ def free_port():
     s = socket.socket(); s.bind(("127.0.0.1", 0)); p = s.getsockname()[1]; s.close(); return p
 
 
+def test_ctl():
+    import subprocess
+    import tempfile
+    from counter import bridge_ctl as bc
+    tmp = Path(tempfile.mkdtemp())
+    pf = tmp / "pid"
+    fake = tmp / "bridge.py"
+    fake.write_text("import time\nwhile True: time.sleep(0.2)\n")
+    pid = bc.start(free_port(), 0, pidfile=pf, script=fake)
+    check("bridge_ctl.start writes the pid file and the process runs", pf.read_text().strip() == str(pid) and bc._alive(pid))
+    check("bridge_ctl.stop stops it and removes the pid file", bc.stop(pf) and not pf.exists())
+    import os
+    time.sleep(0.5)
+    try:
+        os.waitpid(pid, os.WNOHANG)            # reap: in this test we are the parent (run.py is not, in real use)
+    except ChildProcessError:
+        pass
+    check("stopped process is gone", not bc._alive(pid))
+    other = subprocess.Popen(["sleep", "30"])
+    pf.write_text(str(other.pid))
+    check("stop never kills a process that is not a bridge", bc.stop(pf) is False and other.poll() is None)
+    other.kill()
+
+
 def main():
+    test_ctl()
     tp, hp = free_port(), free_port()
     result = {}
     th = threading.Thread(target=lambda: result.update(bridge.run(tp, hp, seconds=4, out=lambda *_: None)), daemon=True)

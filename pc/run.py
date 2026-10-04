@@ -47,6 +47,7 @@ from shared import paths as sp  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import run_history as rh  # noqa: E402
 from shared import eta  # noqa: E402
+from counter import bridge_ctl  # noqa: E402
 from shared.telemetry import check_sleep_prevention  # noqa: E402
 
 BOARDS = ("uno", "esp8266", "esp32")
@@ -833,6 +834,9 @@ def main(argv=None):
         rh.finish_invocation(inv, "failed", error=str(e))
         return 1
 
+    tcp_counter = args.ref and str(args.counter_port).startswith("tcp:")
+    if tcp_counter and bridge_ctl.stop():
+        print("stopped the stand-alone dashboard bridge (the sweep takes over the counter port and the dashboard; it comes back after the run)")
     interrupted = False
     watcher = None
     if eta_points:
@@ -856,6 +860,12 @@ def main(argv=None):
         if watcher is not None:
             watcher.stop()
 
+    if tcp_counter:
+        try:
+            pid = bridge_ctl.start(int(str(args.counter_port)[4:]), 8080, log=str(REPO_ROOT / "pc" / "counter" / ".bridge.log"))
+            print(f"dashboard bridge restarted (pid {pid}): http://localhost:8080/ keeps showing the counter between runs")
+        except Exception as e:  # noqa: BLE001
+            print(f"note: could not restart the dashboard bridge: {e}")
     if returncode == 0 and args.phase == 2:
         generate_figures(argv_cmd[0], args.board, args.algorithm, args.ref)
 

@@ -333,6 +333,8 @@ def test_fresh_dry_run_cli_shows_clamp_and_archive_destination():
           "shows the resulting --n-start 2 in the command",
           code == 0 and "clamped" in text.lower() and "--n-start 2" in text)
 
+    h_all_archive_dir = run_mod.REPO_ROOT / "data" / "archive" / "phase2" / "uno" / "h_all"
+    before_archives = sorted(h_all_archive_dir.glob("*")) if h_all_archive_dir.exists() else []
     with captured_stdout() as out2:
         code2 = run_mod.main(["--board", "uno", "--algorithm", "h_all", "--phase", "2",
                                "--port", "/dev/cu.FAKE", "--fresh", "--dry-run"])
@@ -340,10 +342,10 @@ def test_fresh_dry_run_cli_shows_clamp_and_archive_destination():
     check("fresh dry-run: exits 0 and either names the planned archive destination "
           "under data/archive/ (data exists) or says nothing exists yet (post-restart tree)",
           code2 == 0 and ("data/archive/" in text2 or "nothing exists yet" in text2))
-    h_all_archive_dir = run_mod.REPO_ROOT / "data" / "archive" / "phase2" / "uno" / "h_all"
+    after_archives = sorted(h_all_archive_dir.glob("*")) if h_all_archive_dir.exists() else []
     check("fresh dry-run never actually creates an archive for (uno, h_all, phase2) "
           "-- no file moved despite naming the destination in its preview",
-          not h_all_archive_dir.exists())
+          after_archives == before_archives)
 
 
 def _make_fake_dataset(root, board, algorithm, phase, n_points=2, ref=False):

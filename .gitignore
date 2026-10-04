@@ -45,3 +45,5 @@ data/archive/*
 !data/archive/restart_*/
 # WiFi credentials for the counter firmware (never commit)
 firmware/counter_esp32/src/wifi_config.h
+pc/counter/.bridge.pid
+pc/counter/.bridge.log
