@@ -139,7 +139,7 @@ class RunnerError(Exception):
 
 def build_command(python_exe, board, algorithm, phase, *,
                    n_start=None, n_max=None, build_timeout=None,
-                   upload_retry_settle_s=None, ref=False, counter_port=None, counter_cal=None, port):
+                   upload_retry_settle_s=None, ref=False, counter_port=None, counter_cal=None, force_infeasible=False, port):
     """Return the exact argv list that would be delegated to, given already-
     validated arguments. Pure function, no I/O, no hardware -- used directly by
     --dry-run and by the tests, and reused unchanged for a real run.
@@ -165,6 +165,8 @@ def build_command(python_exe, board, algorithm, phase, *,
         argv += ["--build-timeout", str(build_timeout)]
     if upload_retry_settle_s is not None:
         argv += ["--upload-retry-settle-s", str(upload_retry_settle_s)]
+    if force_infeasible:
+        argv += ["--force-infeasible"]
     if ref:
         argv += ["--ref", "counter", "--counter-port", counter_port]
         if counter_cal:
@@ -676,9 +678,9 @@ def generate_figures(python_exe, board, algorithm, ref=False, phase=2):
         if r.returncode != 0:
             print(f"warning: figure generation exited {r.returncode} "
                   "(run itself is unaffected; re-run the command above by hand)")
-        elif not any((REPO_ROOT / "data" / "figures" / board / algorithm).rglob("*.png")):
+        elif not any(sp.figures_dir(board, algorithm, ref, phase=phase).rglob("*.png")):
             print(f"note: no plottable data for {algorithm} (e.g. only wall points) -- "
-                  f"empty folder data/figures/{board}/{algorithm}/ created")
+                  f"empty folder {sp.figures_dir(board, algorithm, ref, phase=phase)} created")
     except Exception as e:  # noqa: BLE001
         print(f"warning: figure generation failed: {e} (run itself is unaffected)")
 
@@ -720,6 +722,10 @@ def main(argv=None):
                      help="counter link; required with --ref counter; never auto-guessed: a USB serial device path, or tcp:5055 to listen on that TCP port for the counter over WiFi")
     ap.add_argument("--counter-cal", default=None, dest="counter_cal",
                      help="calibration JSON (pc/counter/calibration.py) copied into the session sidecar")
+    ap.add_argument("--force-infeasible", action="store_true", dest="force_infeasible",
+                     help="Phase 3 only: also run the points the 2 h per-point cap would skip (one request already passes 2 h), "
+                          "with 1 rep each, so the run reaches --n-max. Documented exception to the cap; the point is recorded "
+                          "'cap_exceeded reps=1/100' in points.csv.")
     ap.add_argument("--fresh", action="store_true",
                      help="archive (move, never delete) any existing data/figures/analysis "
                           "doc for this (board, algorithm, phase) to data/archive/ with a "
@@ -749,6 +755,8 @@ def main(argv=None):
     try:
         validate_combination(args.board, args.algorithm, args.phase, args.ref,
                               args.upload_retry_settle_s, args.counter_port, args.port)
+        if args.force_infeasible and args.phase != 3:
+            raise RunnerError("--force-infeasible is only implemented for Phase 3 (the 2 h cap on the PC's simulation time).")
         if args.reps is not None and args.reps != tm.REPS:
             raise RunnerError(
                 f"--reps {args.reps} given, but REPS is fixed at {tm.REPS} at compile "
@@ -792,7 +800,7 @@ def main(argv=None):
             python_exe, args.board, args.algorithm, args.phase,
             n_start=n_start_for_command, n_max=args.n_max, build_timeout=args.build_timeout,
             upload_retry_settle_s=args.upload_retry_settle_s, ref=args.ref,
-            counter_port=args.counter_port, counter_cal=args.counter_cal, port=args.port)
+            counter_port=args.counter_port, counter_cal=args.counter_cal, force_infeasible=args.force_infeasible, port=args.port)
 
         print("command:", " ".join(argv_cmd))
 

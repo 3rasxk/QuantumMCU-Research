@@ -89,6 +89,16 @@ Phase 3 no longer splits the counter's pulses into runs by gap (a noise spike at
 into 14 + 86 pulses). `ref_status` is `ok` when every rep matched. Real data (grover n=2-10, h_all n=2-15) all re-joined this way:
 100/100 reps, micros() minus counter -2 us (h_all) to -1.1 ms (grover n=10, -0.004 %).
 
+**Reaching `--n-max` past the cap (`--force-infeasible`)**: `pc/run.py ... --phase 3 --force-infeasible` also runs the points
+the 2 h cap skips (one request already above 2 h: grover n>=14), with **1 rep** each, recorded `cap_exceeded reps=1/100` in
+`points.csv`. Documented exception: no IQR, hours per point (model, ESTIMATE: n=14 about 2-3 h, n=15 about 10-12 h per request).
+The offload firmware now keeps the round trip in 64 bits (`micros()` wraps every 71.6 min; before this fix any request longer
+than that would have been reported modulo 71.6 min). The session timeout of a forced point is 2.5 x the model's request time.
+
+Counter frame budget (firmware, 2026-10-07): per point the counter sends at most 4 ANOMALY frames per code and 4 glitch PULSE frames;
+the anomaly mask / REPORT still carry everything and the debug line `supp=` counts what was not sent. This keeps a burst of line
+spikes from flooding the link. Hardware advice if spikes recur: 1 nF from GPIO34 to GND at the counter, short twisted signal/GND wires.
+
 ## Wire protocol (for reference, not something `pc/run.py` changes)
 
 ```

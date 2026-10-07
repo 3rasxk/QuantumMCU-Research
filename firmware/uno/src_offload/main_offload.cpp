@@ -31,9 +31,16 @@
 #define RESPONSE_TIMEOUT_MS 5000UL
 #endif
 
-static unsigned long g_latency_us[REPS];
+// 64-bit: micros() wraps every 71.6 min and the long grover requests (n >= 13) take longer than that
+static uint64_t g_latency_us[REPS];
 static uint8_t g_crc_error[REPS];       // 1 = timeout หรือ CRC ของ response ผิด
 static uint8_t g_timed_out[REPS];       // 1 = timeout (ไม่ได้รับ response เลย)
+
+static void print_u64(uint64_t v) {   // Print has no 64-bit overload on AVR
+    char b[21]; int i = 20; b[i] = 0;
+    do { b[--i] = '0' + (char)(v % 10); v /= 10; } while (v);
+    Serial.print(&b[i]);
+}
 
 static const char* circuit_name() {
     switch (CIRCUIT_ID) {
@@ -64,6 +71,8 @@ void setup() {
 
         digitalWrite(GPIO_TIMING_PIN, HIGH);
         unsigned long t0 = micros();
+        unsigned long last_us = t0;
+        uint32_t wraps = 0;   // micros() roll-overs seen while waiting (the wait loop spins far faster than 71 min)
         Serial.write(req, FRAME_REQ_LEN);
         Serial.flush();  // รอส่งออกจริงหมดก่อนเริ่มนับเวลารอ response
 
@@ -72,6 +81,7 @@ void setup() {
         unsigned long deadline = millis() + RESPONSE_TIMEOUT_MS;
         bool timed_out = false;
         while (got < FRAME_RESP_LEN) {
+            { unsigned long now_us = micros(); if (now_us < last_us) wraps++; last_us = now_us; }
             if (millis() > deadline) { timed_out = true; break; }
             if (Serial.available()) {
                 resp[got++] = Serial.read();
@@ -80,7 +90,8 @@ void setup() {
         unsigned long t1 = micros();
         digitalWrite(GPIO_TIMING_PIN, LOW);
 
-        g_latency_us[rep] = t1 - t0;
+        if (t1 < last_us) wraps++;
+        g_latency_us[rep] = ((uint64_t)wraps << 32) + t1 - t0;
         g_timed_out[rep] = timed_out ? 1 : 0;
 
         uint8_t crc_err = 1;
@@ -103,7 +114,7 @@ void setup() {
         Serial.print(',');
         Serial.print(rep);
         Serial.print(',');
-        Serial.print(g_latency_us[rep]);
+        print_u64(g_latency_us[rep]);
         Serial.print(',');
         Serial.print(g_crc_error[rep]);
         Serial.print(',');

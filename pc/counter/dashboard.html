@@ -2,66 +2,148 @@
 <html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Counter live</title>
 <style>
-:root{--bg:#f6f7f9;--card:#fff;--ink:#1b1f24;--mut:#667085;--ok:#12805c;--bad:#c0392b;--warn:#b7791f;--line:#2563eb;--bd:#e4e7ec}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1318;--card:#171c23;--ink:#e8ecf1;--mut:#98a2b3;--ok:#34d399;--bad:#f87171;--warn:#fbbf24;--line:#60a5fa;--bd:#2a313b}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,"Segoe UI",Thonburi,sans-serif}
-header{display:flex;gap:12px;align-items:center;padding:14px 16px;flex-wrap:wrap}
-h1{font-size:18px;margin:0;font-weight:650}.pill{padding:3px 10px;border-radius:99px;font-size:13px;border:1px solid var(--bd);background:var(--card)}
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1b1f24;--mut:#667085;--ok:#12805c;--bad:#c0392b;--warn:#b7791f;--line:#2563eb;--bd:#e4e7ec;--okbg:#e6f4ee;--badbg:#fbe9e7;--warnbg:#fbf1dc;--grid:#e9ecf1}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1318;--card:#171c23;--ink:#e8ecf1;--mut:#98a2b3;--ok:#34d399;--bad:#f87171;--warn:#fbbf24;--line:#60a5fa;--bd:#2a313b;--okbg:#10291f;--badbg:#321816;--warnbg:#2f2610;--grid:#232a33}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"Segoe UI",Thonburi,sans-serif}
+header{display:flex;gap:10px;align-items:center;padding:14px 16px 6px;flex-wrap:wrap}
+h1{font-size:18px;margin:0;font-weight:650}.sub{color:var(--mut);font-size:13px}
+.pill{padding:3px 10px;border-radius:99px;font-size:13px;border:1px solid var(--bd);background:var(--card)}
 .pill.ok{color:var(--ok)}.pill.bad{color:var(--bad)}.pill.warn{color:var(--warn)}
-main{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;padding:0 16px 16px}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px 14px}
+#banner{margin:6px 16px 12px;padding:12px 14px;border-radius:10px;border:1px solid var(--bd);background:var(--card);font-size:16px;font-weight:600}
+#banner.ok{background:var(--okbg);border-color:var(--ok)}#banner.bad{background:var(--badbg);border-color:var(--bad)}#banner.warn{background:var(--warnbg);border-color:var(--warn)}
+#banner small{display:block;font-weight:400;font-size:13px;color:var(--mut);margin-top:2px}
+main{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px;padding:0 16px 20px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px 14px;min-width:0}
 .card h2{margin:0 0 6px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--mut);font-weight:600}
-.big{font-size:26px;font-weight:650}.sub{color:var(--mut);font-size:13px}
-.wide{grid-column:1/-1}canvas{width:100%;height:220px;display:block}
-table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:3px 6px;text-align:left;border-bottom:1px solid var(--bd)}
+.big{font-size:26px;font-weight:650;line-height:1.2}.wide{grid-column:1/-1}
+.bar{height:12px;border-radius:99px;background:var(--grid);overflow:hidden;margin:8px 0 4px}.bar>i{display:block;height:100%;width:0;background:var(--line);transition:width .4s}
+.bar.full>i{background:var(--ok)}
+canvas{width:100%;height:230px;display:block}
+.hint{font-size:12.5px;color:var(--mut);margin:4px 0 0}
+table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:5px 6px;text-align:left;border-bottom:1px solid var(--bd);vertical-align:top}th{color:var(--mut);font-weight:600}
+.chip{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap}
+.chip.ok{background:var(--okbg);color:var(--ok)}.chip.warn{background:var(--warnbg);color:var(--warn)}.chip.bad{background:var(--badbg);color:var(--bad)}.chip.mut{background:var(--grid);color:var(--mut)}
+.scroll{overflow-x:auto}
+details{border-top:1px solid var(--bd);padding:8px 0}details:first-of-type{border-top:0}summary{cursor:pointer;font-weight:600}
+details p,details li{font-size:14px;margin:6px 0}details ul{padding-left:20px;margin:6px 0}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--mut);margin-top:6px}.legend b{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle}
 </style></head><body>
 <header><h1>Counter live</h1><span id="link" class="pill">…</span><span id="state" class="pill">…</span><span id="hb" class="pill">…</span>
 <span class="sub">อ่านอย่างเดียว: หน้านี้สั่ง counter ไม่ได้</span></header>
+<div id="banner">กำลังโหลด…</div>
 <main>
-<div class="card"><h2>จุดที่กำลังรัน</h2><div class="big" id="ctx">–</div><div class="sub" id="ctx2">–</div></div>
-<div class="card"><h2>นาฬิกา counter</h2><div class="big" id="clock">–</div><div class="sub" id="clock2">–</div></div>
-<div class="card"><h2>พัลส์ล่าสุด</h2><div class="big" id="last">–</div><div class="sub" id="lastsub">–</div></div>
-<div class="card"><h2>สถิติ (200 พัลส์ล่าสุด)</h2><div class="big" id="med">–</div><div class="sub" id="iqr">–</div></div>
-<div class="card"><h2>สุขภาพ</h2><div id="health" class="sub">–</div></div>
-<div class="card wide"><h2>ความกว้างพัลส์ (µs) แบบ real-time</h2><canvas id="cv" width="900" height="220"></canvas></div>
-<div class="card wide"><h2>ผลต่อจุด (micros() เทียบ counter, ค่ามัธยฐานของพัลส์ปกติ)</h2><table id="pts"><tr><td class="sub">ยังไม่มี</td></tr></table></div>
-<div class="card wide"><h2>Anomaly ล่าสุด</h2><table id="an"><tr><td class="sub">ยังไม่มี</td></tr></table></div>
+<div class="card"><h2>จุดที่กำลังรัน</h2><div class="big" id="ctx">–</div><div class="sub" id="ctx2">–</div>
+ <div class="bar" id="bar"><i id="barf"></i></div><div class="sub" id="barl">–</div></div>
+<div class="card"><h2>เวลารัน 1 รอบ (พัลส์ปกติ)</h2><div class="big" id="med">–</div><div class="sub" id="iqr">–</div><div class="sub" id="last">–</div></div>
+<div class="card"><h2>สุขภาพการวัด</h2><div id="health" class="sub">–</div></div>
+<div class="card wide"><h2>ความกว้างพัลส์ของจุดนี้ (1 จุด = 1 รอบ)</h2><canvas id="cv" width="1000" height="230"></canvas>
+ <div class="legend"><span><b style="background:var(--line)"></b>พัลส์ปกติ</span><span><b style="background:var(--bad)"></b>glitch (กว้างน้อยกว่า 0.5 µs, วางไว้ที่ขอบล่าง)</span><span>เส้นประ = ค่ามัธยฐาน</span></div>
+ <p class="hint">เส้นควรเรียบเกือบเป็นเส้นตรง ถ้ามีจุดกระโดดหรือจุดแดง แปลว่าสัญญาณหรือ counter มีปัญหาในรอบนั้น</p></div>
+<div class="card wide"><h2>micros() ของบอร์ดต่างจาก counter กี่ % ในแต่ละจุด n</h2><canvas id="cv2" width="1000" height="230"></canvas>
+ <div class="legend"><span><b style="background:var(--ok)"></b>เทียบได้</span><span><b style="background:var(--mut)"></b>เทียบไม่ได้ (พัลส์ไม่ครบ)</span><span>แถบเขียวจาง = ช่วงที่คาดไว้ (ประมาณ −0.5% จาก calibration ของ micros() ที่ช้า ≈ 0.49%)</span></div>
+ <p class="hint">แท่งติดลบ = micros() อ่านเวลาได้น้อยกว่าความจริง ยิ่งใกล้ −0.5% ยิ่งตรงกับที่คาดไว้</p></div>
+<div class="card wide"><h2>ผลต่อจุด (12 จุดล่าสุด)</h2><div class="scroll"><table id="pts"><tr><td class="sub">ยังไม่มี</td></tr></table></div></div>
+<div class="card wide"><h2>เหตุการณ์ผิดปกติล่าสุด (anomaly)</h2><div class="scroll"><table id="an"><tr><td class="sub">ยังไม่มี</td></tr></table></div></div>
+<div class="card wide"><h2>อ่านหน้านี้อย่างไร</h2>
+<details open><summary>พัลส์ (pulse) คืออะไร</summary>
+<p>ระหว่างทดลองบอร์ดที่ทดสอบ (Uno/ESP8266/ESP32) ยกขา pin เป็น HIGH ตอนเริ่มรันวงจรควอนตัม 1 รอบ (1 rep) และลง LOW ตอนจบ <b>1 รอบ = 1 พัลส์</b> ความกว้างของพัลส์ก็คือเวลารันจริงของรอบนั้น</p>
+<ul><li>Counter (ESP32) วัดความกว้างพัลส์ด้วยนาฬิกา hardware 80 MHz (ละเอียด 12.5 ns) เป็น <b>ไม้บรรทัดอ้างอิงอิสระ</b></li>
+<li>บอร์ดวัดเวลาตัวเองด้วย <code>micros()</code> (ละเอียด 4 µs) แล้วส่งผ่าน serial นี่คือข้อมูลหลักของงานวิจัย</li>
+<li>แต่ละจุด n รัน 100 รอบ จึงควรได้ <b>100 พัลส์พอดี</b> ถ้าได้น้อยหรือมากกว่า (หรือมี glitch) จะเทียบไม่ได้ในจุดนั้น</li></ul></details>
+<details open><summary>มีผลต่อการวิจัยแค่ไหน</summary>
+<ul><li><b>ไม่กระทบตัวเลขหลัก:</b> เวลา micros() และผล Memory Wall มาจากบอร์ดล้วน ๆ พัลส์เสียหรือขาดไม่ได้ทำให้ข้อมูลเหล่านี้เปลี่ยน</li>
+<li><b>กระทบความน่าเชื่อถือ:</b> พัลส์ใช้พิสูจน์ว่า micros() วัดได้ตรง จุดที่พัลส์ไม่ครบจึงไม่มีหลักฐานอิสระรองรับ ยืนยันความแม่นยำได้เฉพาะจุดที่เทียบได้ (ตอนนี้ส่วนใหญ่เป็น n เล็ก)</li>
+<li>ความเสี่ยงมากสุดคือจุดที่รันนาน (n ใหญ่) เพราะเป็นจุดที่เทียบไม่ได้บ่อยที่สุด ถ้ายังอ้างว่าตรงต้องระบุว่าอ้างจาก n ที่เทียบได้ ไม่ใช่วัดทุกจุด</li></ul></details>
+<details><summary>ความหมายของสถานะต่อจุด</summary>
+<ul><li><span class="chip ok">ปกติ</span> ได้พัลส์ครบ ไม่มี anomaly</li>
+<li><span class="chip warn">มี anomaly</span> พัลส์ครบ แต่มีเหตุผิดปกติเล็กน้อย (เช่น รอบแรกถูกตัดสั้นเพราะบอร์ด reset ตอนเปิดพอร์ต) ยังเทียบได้</li>
+<li><span class="chip bad">พัลส์ไม่ครบ</span> จำนวนพัลส์ไม่เท่า 100 จึงไม่จับคู่ (ไม่มีทางรู้ว่าพัลส์ไหนคู่กับรอบไหน)</li>
+<li><span class="chip mut">ไม่ได้วัด</span> counter ไม่ได้ arm หรือหลุด</li></ul></details>
+</div>
 </main>
 <script>
-const NAMES={1:"missing pulse",2:"extra pulse",3:"glitch",4:"still high at end",5:"count mismatch",6:"sequence gap",7:"never started / start timeout",8:"clock fault",9:"ring overflow"};
-const STATE=["idle","armed","self-test"];
+const NAMES={1:["missing pulse","พัลส์หายไป (ได้น้อยกว่าที่ควร)"],2:["extra pulse","พัลส์เกิน (มักเป็นรอบแรกที่บอร์ด reset)"],3:["glitch","พัลส์สั้นผิดปกติ (อาจเป็นสัญญาณรบกวน)"],4:["still high at end","สัญญาณค้าง HIGH ตอนจบ"],5:["count mismatch","จำนวนขอบสัญญาณไม่ตรงกัน (ขอบขึ้น ≠ ขอบลง)"],6:["sequence gap","เฟรมข้อมูลหาย (ขอส่งซ้ำแล้ว)"],7:["never started","ไม่มีพัลส์เลยภายในเวลารอ"],8:["clock fault","นาฬิกาผิดพลาด"],9:["ring overflow","buffer ล้น"]};
+const STATE=["ว่าง (idle)","รอวัด (armed)","self-test"];
+const ST={ok:["ปกติ","ok"],anomaly:["มี anomaly","warn"],count_mismatch:["พัลส์ไม่ครบ","bad"],counter_lost:["counter หลุด","bad"],arm_failed:["ไม่ได้วัด","mut"],no_target_run:["ไม่ได้วัด","mut"],aborted:["ไม่ได้วัด","mut"]};
+const EXPECT=-0.49,BAND=0.3;
 const $=id=>document.getElementById(id);
 function pill(el,t,c){el.textContent=t;el.className="pill "+(c||"")}
 function fmt(us){return us>=1e6?(us/1e6).toFixed(3)+" s":us>=1e3?(us/1e3).toFixed(3)+" ms":us.toFixed(1)+" µs"}
-function draw(w){const c=$("cv"),g=c.getContext("2d"),W=c.width,H=c.height;g.clearRect(0,0,W,H);
- const css=getComputedStyle(document.documentElement);g.strokeStyle=css.getPropertyValue("--bd");g.fillStyle=css.getPropertyValue("--mut");g.font="12px sans-serif";
- for(let i=0;i<=4;i++){const y=10+(H-30)*i/4;g.beginPath();g.moveTo(50,y);g.lineTo(W-6,y);g.stroke()}
- if(!w.length){g.fillText("ยังไม่มีพัลส์",60,H/2);return}
- let lo=Math.min(...w),hi=Math.max(...w);if(hi==lo){hi=lo+1}const pad=(hi-lo)*0.1;lo-=pad;hi+=pad;
- for(let i=0;i<=4;i++){const v=hi-(hi-lo)*i/4;g.fillText(v.toPrecision(5),2,14+(H-30)*i/4)}
- g.strokeStyle=css.getPropertyValue("--line");g.lineWidth=1.6;g.beginPath();
- w.forEach((v,i)=>{const x=50+(W-56)*i/Math.max(1,w.length-1),y=10+(H-30)*(1-(v-lo)/(hi-lo));i?g.lineTo(x,y):g.moveTo(x,y)});g.stroke()}
+function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+function setup(c){const r=window.devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*r;c.height=h*r;const g=c.getContext("2d");g.setTransform(r,0,0,r,0,0);g.clearRect(0,0,w,h);g.font="12px sans-serif";return[g,w,h]}
+function nice(v){return v>=1e6?(v/1e6).toPrecision(4)+" s":v>=1e3?(v/1e3).toPrecision(4)+" ms":v.toPrecision(4)+" µs"}
+function drawWidths(w){const[g,W,H]=setup($("cv")),L=70,T=10,B=22;
+ g.strokeStyle=css("--grid");g.fillStyle=css("--mut");for(let i=0;i<=4;i++){const y=T+(H-T-B)*i/4;g.beginPath();g.moveTo(L,y);g.lineTo(W-6,y);g.stroke()}
+ if(!w.length){g.fillText("ยังไม่มีพัลส์ในจุดนี้",L+10,H/2);return}
+ const good=w.filter(v=>v>=0.5);if(!good.length){g.fillText("มีแต่ glitch",L+10,H/2);return}
+ const a=[...good].sort((x,y)=>x-y),med=a[Math.floor(a.length/2)];let lo=a[0],hi=a[a.length-1];if(hi-lo<med*0.002){lo=med*0.999;hi=med*1.001}const pad=(hi-lo)*0.15;lo-=pad;hi+=pad;
+ const X=i=>L+(W-L-8)*i/Math.max(1,w.length-1),Y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo));
+ for(let i=0;i<=4;i++){const v=hi-(hi-lo)*i/4;g.fillText(nice(v),2,T+(H-T-B)*i/4+4)}
+ g.fillText("พัลส์ที่ 1",L,H-6);const e="พัลส์ที่ "+w.length;g.fillText(e,W-8-g.measureText(e).width,H-6);
+ g.setLineDash([5,4]);g.strokeStyle=css("--mut");g.beginPath();g.moveTo(L,Y(med));g.lineTo(W-6,Y(med));g.stroke();g.setLineDash([]);
+ g.strokeStyle=css("--line");g.lineWidth=1.6;g.beginPath();let pen=false;
+ w.forEach((v,i)=>{if(v<0.5){pen=false;return}const x=X(i),y=Math.min(H-B,Math.max(T,Y(v)));pen?g.lineTo(x,y):g.moveTo(x,y);pen=true});g.stroke();
+ g.fillStyle=css("--line");w.forEach((v,i)=>{if(v>=0.5){g.beginPath();g.arc(X(i),Math.min(H-B,Math.max(T,Y(v))),2.2,0,7);g.fill()}});
+ g.fillStyle=css("--bad");w.forEach((v,i)=>{if(v<0.5){g.beginPath();g.moveTo(X(i),H-B);g.lineTo(X(i)-5,H-B+9);g.lineTo(X(i)+5,H-B+9);g.fill()}})}
+function drawDiff(ps){const[g,W,H]=setup($("cv2")),L=60,T=14,B=26;
+ g.fillStyle=css("--mut");
+ if(!ps.length){g.fillText("ยังไม่มีผลต่อจุด",L+10,H/2);return}
+ const vals=ps.filter(p=>p.diff_pct!=null).map(p=>p.diff_pct);
+ let lo=Math.min(-1.2,...vals,EXPECT-BAND)-0.2,hi=Math.max(0.4,...vals)+0.2;
+ const Y=v=>T+(H-T-B)*(1-(v-lo)/(hi-lo)),step=Math.max(0.5,Math.ceil((hi-lo)/5*2)/2);
+ g.strokeStyle=css("--grid");for(let v=Math.ceil(lo/step)*step;v<=hi;v+=step){g.beginPath();g.moveTo(L,Y(v));g.lineTo(W-6,Y(v));g.stroke();g.fillText(v.toFixed(1)+" %",4,Y(v)+4)}
+ g.fillStyle=css("--okbg");g.fillRect(L,Y(EXPECT+BAND),W-L-6,Y(EXPECT-BAND)-Y(EXPECT+BAND));
+ g.strokeStyle=css("--mut");g.beginPath();g.moveTo(L,Y(0));g.lineTo(W-6,Y(0));g.stroke();
+ const bw=Math.min(54,(W-L-10)/ps.length*0.6),sl=(W-L-10)/ps.length;
+ ps.forEach((p,i)=>{const cx=L+sl*(i+0.5);g.fillStyle=css("--mut");const t="n="+p.n;g.fillText(t,cx-g.measureText(t).width/2,H-8);
+  if(p.diff_pct==null){g.fillStyle=css("--mut");g.fillRect(cx-bw/2,Y(0)-2,bw,4);g.fillText("✕",cx-4,Y(0)-8);return}
+  g.fillStyle=css("--ok");const y0=Y(0),y1=Y(p.diff_pct);g.fillRect(cx-bw/2,Math.min(y0,y1),bw,Math.max(2,Math.abs(y1-y0)));
+  g.fillStyle=css("--ink");const s=p.diff_pct.toFixed(2)+"%";g.fillText(s,cx-g.measureText(s).width/2,p.diff_pct<0?y1+13:y1-4)})}
+let fails=0,timer=null,last=null;
+function render(s){
+ const h=s.last_heartbeat,c=s.context||{},w=s.widths_us||[],ps=(s.points||[]);
+ pill($("link"),s.connected?"WiFi เชื่อมอยู่":"counter ไม่ได้เชื่อม",s.connected?"ok":"bad");
+ let age=null;
+ if(h){pill($("state"),"สถานะ: "+(STATE[h.state]||h.state),h.state?"warn":"");age=Date.now()/1000-h.pc_time_utc;pill($("hb"),"heartbeat "+age.toFixed(1)+" s ก่อน",age<3?"ok":"bad")}
+ else{pill($("state"),"ยังไม่มี heartbeat","warn");pill($("hb"),"–","")}
+ const running=!!c.circuit&&h&&h.state===1,reps=c.reps||100,got=c.pulses_this_point||0;
+ const glitches=w.filter(v=>v<0.5).length,nAn=(s.anomalies||[]).length;
+ const healthy=s.connected&&age!=null&&age<3&&!(h&&h.dropped)&&!s.bad_frames;
+ // banner
+ let bt,bs,bc;
+ if(!s.connected||(age!=null&&age>=3)){bt="counter ไม่ตอบสนอง";bs="ตรวจไฟเลี้ยง/WiFi ของ counter ข้อมูลที่เห็นเป็นค่าสุดท้าย";bc="bad"}
+ else if(running){bt="กำลังวัด "+c.board+" "+c.circuit+" n="+c.n+": ได้ "+got+" / "+reps+" พัลส์";bs=got>reps?"พัลส์เกินกว่าที่ควร (อาจเป็นรอบแรกที่บอร์ด reset)":got===reps?"ครบแล้ว รอปิดจุด":"ระบบปกติ กำลังรอบต่อไป";bc=glitches?"warn":"ok"}
+ else{bt="counter พร้อม ไม่มีจุดที่กำลังรัน";bs=ps.length?"จุดล่าสุด n="+ps[ps.length-1].n+": "+(ST[ps[ps.length-1].ref_status]||[ps[ps.length-1].ref_status])[0]:"ยังไม่มีผลจุดใด";bc="ok"}
+ $("banner").className=bc;$("banner").innerHTML=bt+"<small>"+bs+"</small>";
+ // point card
+ $("ctx").textContent=c.circuit?(c.board+" "+c.circuit+" n="+c.n):"ไม่มี run";
+ $("ctx2").textContent=c.phase||"";
+ const pct=Math.min(100,got/reps*100);$("barf").style.width=(c.circuit?pct:0)+"%";$("bar").className="bar"+(got===reps?" full":"");
+ $("barl").textContent=c.circuit?("พัลส์ "+got+" / "+reps+(got>reps?" (เกิน)":"")):"–";
+ // stats
+ const good=w.filter(v=>v>=0.5);
+ if(good.length){const a=[...good].sort((x,y)=>x-y),q=p=>a[Math.min(a.length-1,Math.floor(p*(a.length-1)))];
+  $("med").textContent=fmt(q(.5));$("iqr").textContent="ช่วงกลาง 50%: "+fmt(q(.25))+" – "+fmt(q(.75));
+  $("last").textContent="ล่าสุด "+fmt(w[w.length-1])+" · เล็กสุด "+fmt(a[0])+" · ใหญ่สุด "+fmt(a[a.length-1])}
+ else{$("med").textContent="–";$("iqr").textContent="ยังไม่มีพัลส์ปกติ";$("last").textContent=""}
+ // health
+ if(h){const ok=(b)=>'<span class="chip '+(b?"ok":"bad")+'">'+(b?"ปกติ":"ผิดปกติ")+"</span>";
+  $("health").innerHTML="การเชื่อมต่อ "+ok(s.connected)+"<br>heartbeat "+ok(age!=null&&age<3)+"<br>เฟรมเสีย "+s.bad_frames+" · ข้อมูลหล่น "+h.dropped+" "+ok(!h.dropped&&!s.bad_frames)+
+   "<br>glitch ในจุดนี้ <b>"+glitches+"</b> · anomaly สะสม "+nAn+"<br><span class='sub'>นาฬิกา counter "+(h.counter_us/1e6).toFixed(0)+" s · heap "+h.free_heap+" B · proto v"+h.proto+"</span>"}
+ drawWidths(w);
+ const pr=ps.slice().sort((a,b)=>a.n-b.n);drawDiff(pr);
+ // table
+ $("pts").innerHTML=ps.length?"<tr><th>n</th><th>สถานะ</th><th>พัลส์ (ปกติ)</th><th>micros() µs</th><th>counter µs</th><th>ต่าง µs</th><th>ต่าง %</th></tr>"+ps.slice().reverse().map(p=>{const t=ST[p.ref_status]||[p.ref_status,"mut"];
+  return "<tr><td><b>"+p.n+"</b></td><td><span class='chip "+t[1]+"'>"+t[0]+"</span></td><td>"+p.pulses+(p.reps?" / "+p.reps:"")+" ("+p.clean+")</td><td>"+(p.micros_median_us??"–")+"</td><td>"+(p.counter_median_us??"–")+"</td><td>"+(p.diff_us??"–")+"</td><td>"+(p.diff_pct??"–")+"</td></tr>"}).join(""):'<tr><td class="sub">ยังไม่มี</td></tr>';
+ const an=(s.anomalies||[]).slice(-8).reverse();
+ $("an").innerHTML=an.length?"<tr><th>พัลส์ที่</th><th>ชื่อ</th><th>ความหมาย</th></tr>"+an.map(x=>{const nm=NAMES[x.code]||["?","ไม่รู้จัก"];return "<tr><td>"+x.seq+"</td><td>code "+x.code+" · "+nm[0]+"</td><td>"+nm[1]+"</td></tr>"}).join(""):'<tr><td class="sub">ยังไม่มี</td></tr>';
+}
 async function tick(){
- try{const r=await fetch("/state",{cache:"no-store"});const s=await r.json();
-  pill($("link"),s.connected?"WiFi เชื่อมอยู่ ("+(s.peer||"")+")":"counter ไม่ได้เชื่อม",s.connected?"ok":"bad");
-  const h=s.last_heartbeat;
-  if(h){pill($("state"),"สถานะ: "+(STATE[h.state]||h.state),h.state?"warn":"");
-   const age=(Date.now()/1000-h.pc_time_utc);pill($("hb"),"heartbeat "+age.toFixed(1)+" s ก่อน",age<3?"ok":"bad");
-   $("clock").textContent=(h.counter_us/1e6).toFixed(1)+" s";$("clock2").textContent="heartbeat #"+s.heartbeats+" · heap "+h.free_heap+" B";
-   $("health").innerHTML="ring "+h.ring_depth+" · dropped "+h.dropped+" · เฟรมเสีย "+s.bad_frames+"<br>เฟรมทั้งหมด "+s.frames+" · พัลส์ "+s.pulses+"<br>proto v"+h.proto}
-  else{pill($("state"),"ยังไม่มี heartbeat","warn");pill($("hb"),"–","")}
-  const c=s.context||{};$("ctx").textContent=c.circuit?(c.board+" "+c.circuit+" n="+c.n):"ไม่มี run";$("ctx2").textContent=(c.phase||"")+(c.pulses_this_point!=null?" · พัลส์จุดนี้ "+c.pulses_this_point:"");
-  const ps=(s.points||[]).slice().reverse();$("pts").innerHTML=ps.length?"<tr><th>n</th><th>ref</th><th>พัลส์ (ปกติ)</th><th>micros µs</th><th>counter µs</th><th>ต่าง µs</th><th>%</th></tr>"+ps.map(p=>"<tr><td>"+p.n+"</td><td>"+p.ref_status+"</td><td>"+p.pulses+" ("+p.clean+")</td><td>"+(p.micros_median_us??"–")+"</td><td>"+(p.counter_median_us??"–")+"</td><td>"+(p.diff_us??"–")+"</td><td>"+(p.diff_pct??"–")+"</td></tr>").join(""):'<tr><td class="sub">ยังไม่มี</td></tr>';
-  const w=s.widths_us||[];draw(w);
-  if(w.length){const a=[...w].sort((x,y)=>x-y),q=p=>a[Math.min(a.length-1,Math.floor(p*(a.length-1)))];
-   $("last").textContent=fmt(w[w.length-1]);$("lastsub").textContent="พัลส์ที่ "+s.pulses;
-   $("med").textContent=fmt(q(.5));$("iqr").textContent="IQR "+fmt(q(.25))+" – "+fmt(q(.75))+" · min "+fmt(a[0])+" · max "+fmt(a[a.length-1])}
-  const an=s.anomalies.slice(-8).reverse();$("an").innerHTML=an.length?an.map(x=>"<tr><td>seq "+x.seq+"</td><td>code "+x.code+"</td><td>"+(NAMES[x.code]||"?")+"</td></tr>").join(""):'<tr><td class="sub">ยังไม่มี</td></tr>';
- fails=0;
- }catch(e){fails++;pill($("link"),"เซิร์ฟเวอร์หยุด (ข้อมูลที่เห็นเป็นค่าสุดท้าย) — รอเชื่อมใหม่อัตโนมัติ","bad")}
+ try{const r=await fetch("/state",{cache:"no-store"});last=await r.json();fails=0;render(last)}
+ catch(e){fails++;pill($("link"),"เซิร์ฟเวอร์หยุด (ข้อมูลที่เห็นเป็นค่าสุดท้าย) — รอเชื่อมใหม่อัตโนมัติ","bad")}
  sched();
 }
-let fails=0,timer=null;
 function sched(){clearTimeout(timer);timer=setTimeout(tick,Math.min(5000,500*Math.pow(2,Math.min(fails,4))))}
+window.addEventListener("resize",()=>{if(last)render(last)});
 tick();
 </script></body></html>

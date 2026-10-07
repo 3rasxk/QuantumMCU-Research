@@ -126,8 +126,20 @@ static bool IRAM_ATTR cap_cb(mcpwm_unit_t, mcpwm_capture_channel_id_t ch, const 
     return false;
 }
 
+// Frame budget per point (2026-10-07, grover n=10 noise burst): the anomaly mask and the REPORT always carry every anomaly, but only
+// the first FLAG_FRAMES_MAX ANOMALY frames per code and GLITCH_FRAMES_MAX glitch PULSE frames per point go on the link. A burst of
+// spikes otherwise floods the link (one PULSE + one ANOMALY frame per spike), the WiFi traffic can feed back into the line, and
+// the replay ring overflows over real pulses.
+#define FLAG_FRAMES_MAX 4
+#define GLITCH_FRAMES_MAX 4
+static uint8_t flag_frames[16];
+static uint8_t glitch_frames = 0;
+static uint32_t suppressed_frames = 0;
+
 static void flag(uint8_t code, uint16_t sq, uint32_t detail) {
     anomaly_mask |= (1u << code);
+    if (code < 16 && flag_frames[code] >= FLAG_FRAMES_MAX) { suppressed_frames++; return; }
+    if (code < 16) flag_frames[code]++;
     Frame f; begin(f, T_ANOMALY); put16(f, sq); put8(f, code); put32(f, detail); finish(f); send(f);
 }
 
@@ -160,6 +172,8 @@ static void clear_point() {
     e_tail = e_head; e_overflow = 0;
     seq = 0; anomaly_mask = 0; dropped = 0; w_min = ~0ULL; w_max = 0; w_sum = 0;
     rises = falls = 0; have_rise = false; stuck_flagged = false; start_flagged = false;
+    for (int i = 0; i < 16; i++) flag_frames[i] = 0;
+    glitch_frames = 0; suppressed_frames = 0;
     for (int i = 0; i < REPLAY_N; i++) replay_used[i] = false;
     pcnt_counter_clear(PCNT_UNIT_0);
     t0_us = esp_timer_get_time();
@@ -208,6 +222,8 @@ static void handle_edge(const Edge& e) {
         if (w_ns < w_min) w_min = w_ns;
         if (w_ns > w_max) w_max = w_ns;
         w_sum += w_ns;
+        if ((fl & 1) && glitch_frames >= GLITCH_FRAMES_MAX) { suppressed_frames++; return; }   // counted in the mask/report, no frame
+        if (fl & 1) glitch_frames++;
         emit_pulse(w_ticks, w_ns, wraps, rise_us, fl);
     }
 }
@@ -466,11 +482,11 @@ void loop() {
 #if COUNTER_DEBUG
         int16_t pcv = 0; pcnt_get_counter_value(PCNT_UNIT_0, &pcv);
         char dl[260];
-        int dn = snprintf(dl, sizeof(dl), "\n#D mode=%d isr_r=%lu isr_f=%lu dup=%lu edge_mis=%lu ovf=%u ring=%u rises=%lu falls=%lu pcnt=%d level=%d loop_max_us=%lu send_max_us=%lu seq=%u dropped=%u heap=%lu\n",
+        int dn = snprintf(dl, sizeof(dl), "\n#D mode=%d isr_r=%lu isr_f=%lu dup=%lu edge_mis=%lu ovf=%u ring=%u rises=%lu falls=%lu pcnt=%d level=%d loop_max_us=%lu send_max_us=%lu seq=%u dropped=%u supp=%lu heap=%lu\n",
                       (int)mode, (unsigned long)dbg_isr[0], (unsigned long)dbg_isr[1], (unsigned long)dbg_dup_cap, (unsigned long)dbg_edge_mismatch,
                       (unsigned)e_overflow, (unsigned)((e_head - e_tail) & (EDGE_N - 1)), (unsigned long)rises, (unsigned long)falls, (int)pcv,
                       gpio_get_level((gpio_num_t)cap_pin), (unsigned long)dbg_loop_max_us, (unsigned long)dbg_send_max_us, (unsigned)seq,
-                      (unsigned)dropped, (unsigned long)ESP.getFreeHeap());
+                      (unsigned)dropped, (unsigned long)suppressed_frames, (unsigned long)ESP.getFreeHeap());
         Serial.write((const uint8_t*)dl, dn);
 #ifdef COUNTER_WIFI
         if (net.connected()) net.write((const uint8_t*)dl, dn);   // same line on the TCP link: the sweep's client logs it (QLAB_COUNTER_DEBUGLOG)

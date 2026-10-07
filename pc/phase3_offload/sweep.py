@@ -451,9 +451,13 @@ def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, s
                 continue
 
             point_reps = tm.phase3_point_reps(circuit, n)   # 100, or fewer under the 2 h per-point cap; 0 = skip
+            cap_exceeded = False
             if point_reps == 0 and args.force_infeasible:
-                point_reps = 1   # --force-infeasible: try one request of a point the cap would skip
+                point_reps = 1   # --force-infeasible: one request of a point the 2 h cap would skip (documented exception)
+                cap_exceeded = True
             budget_s = tm.phase3_session_budget_s(circuit, n, point_reps) if point_reps else tm.PHASE3_FLOOR_S
+            if cap_exceeded:   # the session ceiling is the 2 h cap x 2.5; a forced point is longer than that by definition
+                budget_s = int(tm.phase3_rep_time_s(circuit, n) * tm.SAFETY_FACTOR)
             per_req = tm.phase3_rep_time_s(circuit, n)
             expected_s = per_req * (point_reps or tm.REPS)
             response_timeout_ms = tm.phase3_response_timeout_ms(circuit, n)
@@ -481,7 +485,8 @@ def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, s
             if ref.stop_requested():   # previous points are fully written; stop BEFORE starting a new one
                 print("[ref] counter lost for 2 consecutive points -- stopping the run (all latency data so far is intact)")
                 return
-            cap_note = f"reps={point_reps}/{tm.REPS} (2 h cap)  " if point_reps < tm.REPS else ""
+            cap_note = (f"reps={point_reps}/{tm.REPS} (EXCEEDS the 2 h cap, forced)  " if cap_exceeded
+                        else f"reps={point_reps}/{tm.REPS} (2 h cap)  " if point_reps < tm.REPS else "")
             print(f"n={n:2d}  budget={budget_s}s ({per_req:.2f}s/request)  {cap_note}", end="", flush=True)
             # counter: this point's rep count, and a max pulse width above the firmware's response timeout
             ref.arm(n, reps=point_reps, max_width_s=int(response_timeout_ms / 1000) + 60)   # no-op without --ref counter
@@ -588,7 +593,8 @@ def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, s
                 # เท่านั้นสำหรับผลจริง ไม่มี "session_incomplete") — session_log.csv
                 # (meta_f ด้านบน) ยังเก็บ "session_incomplete" แบบเดิมเป็นบันทึกฝั่ง resume
                 # ที่ละเอียดกว่า สองไฟล์นี้ตอบคำถามคนละคำถาม ไม่ต้องใช้ค่าเดียวกัน
-                "failure_message": (f"time_capped reps={point_reps}/{tm.REPS} cap_s={tm.POINT_TIME_CAP_S}"
+                "failure_message": ((f"cap_exceeded reps={point_reps}/{tm.REPS} cap_s={tm.POINT_TIME_CAP_S}" if cap_exceeded
+                                     else f"time_capped reps={point_reps}/{tm.REPS} cap_s={tm.POINT_TIME_CAP_S}")
                                     if point_reps < tm.REPS and status == "ok" and not sim_error_safe else sim_error_safe),
                 "status": "ok" if status == "ok" else "failed",
             }, points_csv)

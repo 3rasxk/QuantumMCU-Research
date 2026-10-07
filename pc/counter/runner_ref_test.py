@@ -120,6 +120,13 @@ def main():
               argv[-6:] == ["--ref", "counter", "--counter-port", "/dev/cu.C", "--counter-cal", "cal.json"])
         argv0 = run_mod.build_command("py", "esp32", "grover", 2, port="/dev/cu.T")
         check("build_command without --ref is exactly the pre-counter command", "--ref" not in argv0 and "--counter-port" not in argv0)
+        argvf = run_mod.build_command("py", "esp8266", "grover", 3, port="/dev/cu.T", n_max=15, force_infeasible=True)
+        check("build_command passes --force-infeasible to the Phase 3 sweep, and only when asked",
+              "--force-infeasible" in argvf and "--force-infeasible" not in run_mod.build_command("py", "esp8266", "grover", 3, port="/dev/cu.T"))
+        with capture() as (o, e):
+            code = run_mod.main(["--board", "esp8266", "--algorithm", "grover", "--phase", "2", "--port", "/dev/cu.T",
+                                 "--force-infeasible", "--dry-run"])
+        check("refused: --force-infeasible in Phase 2", code == 1 and "Phase 3" in e.getvalue())
     finally:
         run_mod.rh.LEDGER_PATH, run_mod.subprocess.run = saved_ledger, saved_run
     n_fail = R.count(False)
