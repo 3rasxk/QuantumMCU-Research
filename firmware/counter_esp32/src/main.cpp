@@ -34,6 +34,11 @@
 #define PIN_LED      2
 #define BAUD         115200   // CH340 USB bridges do not decode 921600 reliably (seen on the first flash, 2026-10-04)
 #define PROTO_VERSION 2
+#ifndef COUNTER_DEBUG
+#define COUNTER_DEBUG 1   // once a second an ASCII "#D ..." line on the USB serial (NOT protocol: frames start with 0xD7, decoders resync)
+#endif
+
+static uint32_t dbg_loop_max_us = 0, dbg_send_max_us = 0, dbg_last_loop_us = 0;
 
 // --------------------------------------------------------------------- frame layer
 enum : uint8_t { M_TO_COUNTER = 0xC7, M_TO_PC = 0xD7 };
@@ -58,10 +63,13 @@ static uint32_t net_retry_ms = 0;
 #endif
 // Frames go to BOTH links: USB serial (always) and the TCP link to the PC when connected.
 static void send(Frame& f) {
+    uint32_t t0 = micros();
     Serial.write(f.b, f.n);
 #ifdef COUNTER_WIFI
     if (net.connected()) net.write(f.b, f.n);
 #endif
+    uint32_t dt = micros() - t0;
+    if (dt > dbg_send_max_us) dbg_send_max_us = dt;
 }
 
 // --------------------------------------------------------------------- state
@@ -99,7 +107,16 @@ static Frame replay[REPLAY_N];
 static uint16_t replay_seq[REPLAY_N];
 static bool replay_used[REPLAY_N];
 
+// diagnostics (2026-10-07, grover n=10 noise burst): what the capture ISR and the main loop really see
+static volatile uint32_t dbg_isr[2] = {0, 0}, dbg_dup_cap = 0, dbg_edge_mismatch = 0;
+static volatile uint32_t dbg_last_cap[2] = {0, 0};
+
 static bool IRAM_ATTR cap_cb(mcpwm_unit_t, mcpwm_capture_channel_id_t ch, const cap_event_data_t* e, void*) {
+    int c = (ch == MCPWM_SELECT_CAP0) ? 0 : 1;
+    dbg_isr[c]++;
+    if (e->cap_value == dbg_last_cap[c]) dbg_dup_cap++;            // same capture value twice in a row on one channel
+    dbg_last_cap[c] = e->cap_value;
+    if ((e->cap_edge == MCPWM_POS_EDGE) != (c == 0)) dbg_edge_mismatch++;
     uint16_t h = e_head, nh = (h + 1) & (EDGE_N - 1);
     if (nh == e_tail) { e_overflow++; return false; }
     edges[h].cap = e->cap_value;
@@ -396,7 +413,10 @@ static void poll_serial() {
 // Non-blocking WiFi + TCP keep-alive: (re)join WiFi, (re)connect to the PC every 2 s. Never blocks capture:
 // the capture ISRs and the frame ring do not depend on this link; lost frames are re-requested by the PC (REPLAY).
 static void wifi_poll() {
-    if (WiFi.status() != WL_CONNECTED) { if (millis() - net_retry_ms > 5000) { net_retry_ms = millis(); WiFi.begin(WIFI_SSID, WIFI_PASS); } return; }
+    // WiFi.begin() would rewrite the credentials to flash (NVS); a flash write stalls the cache and can freeze the capture ISRs for
+    // seconds (grover n=6/n=7 runs lost pulses that way). persistent(false) in setup() stops the writes; autoReconnect does the
+    // rejoining, so this only nudges it slowly with reconnect() instead of calling begin() every 5 s.
+    if (WiFi.status() != WL_CONNECTED) { if (millis() - net_retry_ms > 15000) { net_retry_ms = millis(); WiFi.reconnect(); } return; }
     if (!net.connected() && millis() - net_retry_ms > 2000) {
         net_retry_ms = millis();
         net.stop();
@@ -408,6 +428,8 @@ static void wifi_poll() {
 void setup() {
     Serial.begin(BAUD);
 #ifdef COUNTER_WIFI
+    WiFi.persistent(false);          // never write SSID/password to flash (see wifi_poll)
+    WiFi.setAutoReconnect(true);
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);   // no modem sleep: steadier latency for the serial/TCP side (capture itself is hardware)
     WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -420,6 +442,7 @@ void setup() {
 
 static uint32_t last_hb = 0;
 void loop() {
+    { uint32_t now = micros(); if (dbg_last_loop_us && now - dbg_last_loop_us > dbg_loop_max_us) dbg_loop_max_us = now - dbg_last_loop_us; dbg_last_loop_us = now; }
     poll_serial();
 #ifdef COUNTER_WIFI
     wifi_poll();
@@ -438,5 +461,21 @@ void loop() {
         start_flagged = true; flag(A_NEVER_STARTED, 0, 1);   // no first pulse within the start timeout
     }
     st_poll();
-    if (millis() - last_hb >= 1000) { last_hb = millis(); digitalWrite(PIN_LED, !digitalRead(PIN_LED)); send_heartbeat(); }
+    if (millis() - last_hb >= 1000) {
+        last_hb = millis(); digitalWrite(PIN_LED, !digitalRead(PIN_LED)); send_heartbeat();
+#if COUNTER_DEBUG
+        int16_t pcv = 0; pcnt_get_counter_value(PCNT_UNIT_0, &pcv);
+        char dl[260];
+        int dn = snprintf(dl, sizeof(dl), "\n#D mode=%d isr_r=%lu isr_f=%lu dup=%lu edge_mis=%lu ovf=%u ring=%u rises=%lu falls=%lu pcnt=%d level=%d loop_max_us=%lu send_max_us=%lu seq=%u dropped=%u heap=%lu\n",
+                      (int)mode, (unsigned long)dbg_isr[0], (unsigned long)dbg_isr[1], (unsigned long)dbg_dup_cap, (unsigned long)dbg_edge_mismatch,
+                      (unsigned)e_overflow, (unsigned)((e_head - e_tail) & (EDGE_N - 1)), (unsigned long)rises, (unsigned long)falls, (int)pcv,
+                      gpio_get_level((gpio_num_t)cap_pin), (unsigned long)dbg_loop_max_us, (unsigned long)dbg_send_max_us, (unsigned)seq,
+                      (unsigned)dropped, (unsigned long)ESP.getFreeHeap());
+        Serial.write((const uint8_t*)dl, dn);
+#ifdef COUNTER_WIFI
+        if (net.connected()) net.write((const uint8_t*)dl, dn);   // same line on the TCP link: the sweep's client logs it (QLAB_COUNTER_DEBUGLOG)
+#endif
+        dbg_loop_max_us = 0; dbg_send_max_us = 0;
+#endif
+    }
 }
