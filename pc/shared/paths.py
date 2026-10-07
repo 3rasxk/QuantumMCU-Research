@@ -107,11 +107,13 @@ def figures_dir(board: str, circuit: str = None, ref: bool = False, phase: int =
     algorithm's charts, or data/figures/<board>/{no_ref,with_ref}/
     (circuit=None) for the board's cumulative chart -- timing-only (no_ref)
     and counter-referenced (with_ref) figures are never mixed into the same
-    directory, matching the raw-data split above."""
-    base = REPO_ROOT / "data" / "figures" / board
+    directory, matching the raw-data split above. Phase 3 (offload) is
+    data/figures/phase3/<board>/<circuit>/{no_ref,with_ref}/."""
+    if phase == 3:   # Phase 3 (offload): phase-first like data/raw/phase3/, never mixed with the Phase 2 charts
+        base = REPO_ROOT / "data" / "figures" / "phase3" / board
+    else:
+        base = REPO_ROOT / "data" / "figures" / board
     base = base / circuit if circuit else base
-    if phase == 3 and circuit:   # Phase 3 (offload) charts live beside, never inside, the Phase 2 ones
-        base = base / "phase3"
     return base / _ref_bucket(ref)
 
 

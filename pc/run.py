@@ -662,7 +662,7 @@ def plan_main(argv):
 def generate_figures(python_exe, board, algorithm, ref=False, phase=2):
     """After a completed run, regenerate this algorithm's plots into data/figures/<board>/<algorithm>/<bucket>/
     (Phase 2: analysis/phase2_uno_run_plots.py, plus the cumulative chart) or
-    data/figures/<board>/<algorithm>/phase3/<bucket>/ (Phase 3: analysis/phase3_run_plots.py).
+    data/figures/phase3/<board>/<algorithm>/<bucket>/ (Phase 3: analysis/phase3_run_plots.py).
     Never affects the run's outcome: any failure is printed and swallowed, the returncode of the sweep is unchanged."""
     script = "phase3_run_plots.py" if phase == 3 else "phase2_uno_run_plots.py"
     cmd = [python_exe, str(REPO_ROOT / "analysis" / script),

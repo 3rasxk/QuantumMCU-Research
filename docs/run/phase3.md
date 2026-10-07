@@ -87,7 +87,7 @@ Data goes to `with_ref/` (`ref/` holds the counter pulses and the micros-vs-coun
 column is `e2e_latency_us`, not `exec_time_us`. A timed-out rep (5 s) still produces a pulse.
 
 **Figures** are generated automatically when a Phase 3 run finishes (`pc/run.py` calls `analysis/phase3_run_plots.py`), into
-`data/figures/<board>/<circuit>/phase3/<no_ref|with_ref>/`: `latency_vs_n`, `outcomes_vs_n`, `time_per_point`, and with
+`data/figures/phase3/<board>/<circuit>/<no_ref|with_ref>/`: `latency_vs_n`, `outcomes_vs_n`, `time_per_point`, and with
 `--ref counter` also `micros_vs_counter`. By hand: `.venv/bin/python analysis/phase3_run_plots.py --board esp8266 --circuit h_all --ref`.
 Run `sweep.py` directly and no figures are made; run the command above.
 

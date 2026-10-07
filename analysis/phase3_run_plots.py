@@ -3,7 +3,7 @@
 #
 # Per-run plots for one Phase 3 (offload) algorithm on one board, generated right after its sweep finishes
 # (pc/run.py calls it, like phase2_uno_run_plots.py does for Phase 2). Read-only against data/raw/phase3/.
-# Output: data/figures/<board>/<algorithm>/phase3/<bucket>/*.png, <bucket> = no_ref or with_ref.
+# Output: data/figures/phase3/<board>/<algorithm>/<bucket>/*.png, <bucket> = no_ref or with_ref.
 #
 #   latency_vs_n.png       round-trip latency per request vs n: median + IQR of e2e_latency_us (log y), the PC's
 #                          Aer time per request, and (with_ref) the counter's own median for the same reps
