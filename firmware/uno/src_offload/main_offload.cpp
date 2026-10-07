@@ -22,6 +22,7 @@
 #endif
 
 #define REPS 100
+#define GPIO_TIMING_PIN 7  // same pin as Phase 2: HIGH for exactly one request/response round trip (ESP32 counter, --ref counter)
 #define RESPONSE_TIMEOUT_MS 5000UL
 
 static unsigned long g_latency_us[REPS];
@@ -41,6 +42,8 @@ static const char* circuit_name() {
 }
 
 void setup() {
+    pinMode(GPIO_TIMING_PIN, OUTPUT);
+    digitalWrite(GPIO_TIMING_PIN, LOW);
     Serial.begin(BAUD_RATE);
     delay(200);
 
@@ -53,6 +56,7 @@ void setup() {
 
         while (Serial.available()) Serial.read();  // เคลียร์ byte ค้างจาก rep ก่อนหน้า
 
+        digitalWrite(GPIO_TIMING_PIN, HIGH);
         unsigned long t0 = micros();
         Serial.write(req, FRAME_REQ_LEN);
         Serial.flush();  // รอส่งออกจริงหมดก่อนเริ่มนับเวลารอ response
@@ -68,6 +72,7 @@ void setup() {
             }
         }
         unsigned long t1 = micros();
+        digitalWrite(GPIO_TIMING_PIN, LOW);
 
         g_latency_us[rep] = t1 - t0;
         g_timed_out[rep] = timed_out ? 1 : 0;

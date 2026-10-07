@@ -6,6 +6,7 @@
 #
 # Never shared: the counter port is opened here by one CounterClient and never by the target code.
 
+import os
 import sys
 from pathlib import Path
 
@@ -38,9 +39,11 @@ def ref_active(args):
 class SweepRef:
     """Per-circuit reference handle. `enabled` False = every method does nothing."""
 
-    def __init__(self, session=None):
+    def __init__(self, session=None, micros_col=4):
         self.s = session
+        self.micros_col = micros_col   # CSV column holding the target's own time: 4 = exec_time_us (Phase 2), 5 = e2e_latency_us (Phase 3)
         self.enabled = session is not None
+        self.last = None
 
     def arm(self, n):
         if self.enabled:
@@ -55,24 +58,48 @@ class SweepRef:
             self.s.finish_point(n, None, target_ran=False)   # also records arm_failed points
 
     def finish(self, n, rows, done):
-        """rows: raw trial lines of this attempt ('board,circuit,n,rep,exec_time_us,...'); done: point completed."""
+        """rows: raw trial lines of this attempt (Phase 2 'board,circuit,n,rep,exec_time_us,...', Phase 3
+        'board,circuit,n,baud,rep,e2e_latency_us,...'); done: point completed."""
         if not self.enabled or self.s.armed_n != n:
             return None
         micros = None
         if done and rows:
             try:
-                micros = [float(line.split(",")[4]) for line in rows]
+                micros = [float(line.split(",")[self.micros_col]) for line in rows]
             except (IndexError, ValueError):
                 micros = None
-        st = self.s.finish_point(n, micros, target_ran=bool(rows))
-        print(f"[ref] n={n} reference status: {st}")
+        capped = bool(done and rows and len(rows) < self.s.reps)  # time-capped point: fewer reps than armed for
+        st = self.s.finish_point(n, micros, target_ran=bool(rows), reps_expected=len(rows) if capped else None)
+        self.last = (st, getattr(self.s, "last_result", None))
+        if os.environ.get("QLAB_COMPACT") != "1":   # compact runs fold this into the sweep's single per-point line
+            print(f"[ref] n={n} reference status: {st}")
         return st
+
+    def summary_text(self):
+        """Compact 'ref=... pulses=k/100 micros-counter ...' for the last finished point ('' when the reference is off)."""
+        last = getattr(self, "last", None)
+        if not self.enabled or not last:
+            return ""
+        st, res = last
+        parts = [f"ref={st}"]
+        if res:
+            if res.get("pulses_used") is not None:
+                parts.append(f"pulses={res['pulses_used']}/{self.s.reps}")
+            s = res.get("summary") or {}
+            if res.get("status") == "joined":
+                if str(res.get("notes", "")).startswith("partial"):
+                    parts.append(f"partial join {s['n_pairs']}/{self.s.reps}")
+                parts.append(f"micros-counter med {s['median_diff_us']:+.1f}us ({s['median_diff_pct']:+.2f}%) "
+                             f"sd {s['std_diff_us']:.1f}us{' FLAGGED' if s['flagged'] else ''}")
+            else:
+                parts.append(f"compare {res.get('status')}")
+        return "  ".join(parts)
 
     def stop_requested(self):
         return self.enabled and self.s.should_stop()
 
 
-def from_args(args, board, circuit, session_id=""):
+def from_args(args, board, circuit, session_id="", phase=2):
     """Build the SweepRef for one circuit. Exits (code 2) if --ref counter is requested but the counter is unusable."""
     global _client, _live, _httpd
     if not ref_active(args):
@@ -111,9 +138,10 @@ def from_args(args, board, circuit, session_id=""):
                   "official runs require a working counter", file=sys.stderr)
             shutdown()
             sys.exit(2)
-    sess = CounterSession(_client, board, circuit, sp.ref_dir(board, circuit, phase=2), reps=tm.REPS, session_id=session_id, live=_live)
+    sess = CounterSession(_client, board, circuit, sp.ref_dir(board, circuit, phase=phase), reps=tm.REPS,
+                          session_id=session_id, live=_live, phase=phase)
     _sessions.append(sess)
-    return SweepRef(sess)
+    return SweepRef(sess, micros_col=5 if phase == 3 else 4)
 
 
 def shutdown():

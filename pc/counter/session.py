@@ -25,9 +25,13 @@ MIN_MAX_WIDTH_S = 130
 MAX_CONSECUTIVE_LOST = 2
 
 
-def max_width_for(board, circuit, n):
+def max_width_for(board, circuit, n, phase=2):
     """Longest plausible single pulse (one rep) in seconds for ARM's max_width_s (u32): the model's
-    per-rep time x a safety factor, never below 130 s. The model is an ESTIMATE, hence the factor."""
+    per-rep time x a safety factor, never below 130 s. The model is an ESTIMATE, hence the factor.
+    Phase 3: one pulse is one request/response round trip; the offload firmware gives up after 5 s
+    (RESPONSE_TIMEOUT_MS), so the 130 s floor already covers it and the Phase 2 model does not apply."""
+    if phase == 3:
+        return MIN_MAX_WIDTH_S
     from shared import timing_model as tm
     per_rep = tm.expected_exec_time_us(board, circuit, n) / 1e6
     return max(MIN_MAX_WIDTH_S, int(per_rep * SAFETY_FACTOR) + 10)
@@ -35,8 +39,9 @@ def max_width_for(board, circuit, n):
 
 class CounterSession:
     def __init__(self, client, board, circuit, ref_dir, reps=100, session_id="", counter_session_base=0x10000000,
-                 start_timeout_s=0, live=None):
+                 start_timeout_s=0, live=None, phase=2):
         self.client = client
+        self.phase = phase
         self.board, self.circuit = board, circuit
         self.ref_dir = Path(ref_dir)
         self.reps = reps
@@ -63,7 +68,7 @@ class CounterSession:
         try:
             import statistics as st
             good = [p[3] / 1000.0 for p in pulses if not p[5] & 1]
-            row = {"n": n, "ref_status": status, "pulses": len(pulses), "clean": len(good),
+            row = {"n": n, "ref_status": status, "pulses": len(pulses), "clean": len(good), "reps": self.reps,
                    "counter_median_us": round(st.median(good), 3) if good else None,
                    "micros_median_us": round(st.median(micros_us), 3) if micros_us else None}
             if row["counter_median_us"] and row["micros_median_us"]:
@@ -87,11 +92,20 @@ class CounterSession:
         """ARM the counter for this point. Returns True if armed. A failure is logged and the point
         simply runs without a reference."""
         self.armed_n, self.armed_ok = n, False
-        self._ctx(board=self.board, circuit=self.circuit, n=n, phase="arming", reset_pulses=True, ref_status=None)
+        self._ctx(board=self.board, circuit=self.circuit, n=n, reps=self.reps, phase="arming", reset_pulses=True, ref_status=None)
         self.client.drain()
+        hb = self.client.last_heartbeat
+        if hb is not None and hb[1][2] == 1:   # counter still ARMED from an interrupted run: ARM would be refused (BUSY)
+            try:
+                self.client.send(cp.encode(cp.T_END, self.base + n))
+                self.client.wait_for(cp.T_REPORT, ARM_ACK_TIMEOUT_S)
+                self.client.drain()
+                self.issue(n, "counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM")
+            except Exception as e:  # noqa: BLE001
+                self.issue(n, f"could not clear a stale ARMED state: {e}")
         try:
             frame = cp.encode_arm(self.base + n, self.board, self._circuit_id(), n, self.reps, 500,
-                                  max_width_for(self.board, self.circuit, n), self.start_timeout_s)
+                                  max_width_for(self.board, self.circuit, n, self.phase), self.start_timeout_s)
             self.client.send(frame)
         except Exception as e:  # noqa: BLE001
             self.issue(n, f"ARM send failed: {e}")
@@ -112,12 +126,16 @@ class CounterSession:
         from shared.circuit_ids import CIRCUIT_IDS
         return CIRCUIT_IDS[self.circuit]
 
-    def finish_point(self, n, micros_us=None, target_ran=True, aborted=False):
+    def finish_point(self, n, micros_us=None, target_ran=True, aborted=False, reps_expected=None):
         """Disarm, collect, write reference files, join. `micros_us`: exec_time_us per rep from this
         point's raw.csv (None if the target produced none). Returns the ref_status string."""
+        # a time-capped point (sweep stopped after fewer reps than armed for) compares only the reps it collected;
+        # the board keeps running after the sweep stops reading, so later pulses are not paired
+        reps = self.reps if reps_expected is None else reps_expected
         collected = []
         report = None
         status = "ok"
+        self.last_result = None
         self._ctx(phase="point done: collecting reference")
         if not self.armed_ok:
             status = "arm_failed"
@@ -147,13 +165,16 @@ class CounterSession:
         if len(runs) > 1:
             self.issue(n, f"{len(runs)} target runs seen by the counter ({[len(r) for r in runs]} pulses); pairing the LAST run (the one whose rows the sweep read)")
             pulses = runs[-1]
+        if reps < self.reps:
+            pulses = pulses[:reps]
+            anomalies = [a for a in anomalies if a[0] in {p[0] for p in pulses}]
         codes = sorted({a[1] for a in anomalies})
         if status == "ok":
             if aborted:
                 status = "aborted"
             elif not target_ran:
                 status = "no_target_run"
-            elif len([p for p in pulses if not p[5] & 1]) != self.reps:
+            elif len([p for p in pulses if not p[5] & 1]) != reps:
                 status = "count_mismatch"
             elif codes:
                 status = "anomaly"
@@ -165,13 +186,14 @@ class CounterSession:
             self.issue(n, f"anomaly code {code} ({cp.ANOMALY_NAMES.get(code, '?')})")
         self._write(n, all_pulses, anomalies, report, status, codes, used=pulses)
         if status in ("ok", "anomaly", "count_mismatch") and micros_us is not None:
-            result = cc.join_point(pulses, micros_us, self.reps, self.board)
+            result = cc.join_point(pulses, micros_us, reps, self.board)
+            self.last_result = result
             cc.write_compare(self.ref_dir, self.session_id, self.board, self.circuit, n, result, status)
             if result["status"] != "joined":
                 self.issue(n, f"comparison refused: {result['status']} {result['notes']}")
         elif status in ("arm_failed", "counter_lost", "no_target_run", "aborted"):
-            cc.write_compare(self.ref_dir, self.session_id, self.board, self.circuit, n,
-                             {"status": f"refused_{status}", "summary": {}, "notes": status}, status)
+            self.last_result = {"status": f"refused_{status}", "summary": {}, "notes": status}
+            cc.write_compare(self.ref_dir, self.session_id, self.board, self.circuit, n, self.last_result, status)
         self.armed_ok = False
         self._publish(n, status, pulses, micros_us)
         return status

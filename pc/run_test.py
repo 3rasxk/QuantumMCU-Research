@@ -144,7 +144,7 @@ def test_unsupported_combinations_rejected():
     # (board, phase, ref, settle, counter_port, port)
     cases_should_raise = []
     for board in run_mod.BOARDS:
-        cases_should_raise.append((board, 3, True, None, "/dev/cu.C", "/dev/cu.T"))   # counter on any phase 3
+        cases_should_raise.append((board, 3, True, None, None, "/dev/cu.T"))          # phase 3 --ref counter without --counter-port
         cases_should_raise.append((board, 2, True, None, None, "/dev/cu.T"))          # --ref counter without --counter-port
         cases_should_raise.append((board, 2, True, None, "/dev/cu.T", "/dev/cu.T"))   # counter port == target port
         cases_should_raise.append((board, 2, False, None, "/dev/cu.C", "/dev/cu.T"))  # --counter-port without --ref counter

@@ -32,6 +32,7 @@ import csv
 import glob
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -111,8 +112,9 @@ MIN_VALID_N = {
 }
 
 # --ref counter (ESP32 pulse counter) is implemented in all three Phase 2 sweep scripts through
-# pc/counter/hooks.py; Phase 3 does not use the counter (docs/design/system_design.md, open decision 4).
-REF_SUPPORTED = {(2, "uno"), (2, "esp8266"), (2, "esp32")}
+# pc/counter/hooks.py. Phase 3 (offload) too since 2026-10-07: the offload firmware raises GPIO_TIMING_PIN for one
+# request/response round trip, so the counter measures the end-to-end latency the MCU reports as e2e_latency_us.
+REF_SUPPORTED = {(p, b) for p in (2, 3) for b in ("uno", "esp8266", "esp32")}
 REF_CHOICES = ("none", "counter")
 
 # --upload-retry-settle-s exists ONLY on uno_sweep.py. esp8266/esp32/phase3 use a
@@ -184,8 +186,8 @@ def validate_combination(board, algorithm, phase, ref, upload_retry_settle_s, co
         raise RunnerError(f"unknown phase {phase!r} (choices: 2, 3)")
     if ref and (phase, board) not in REF_SUPPORTED:
         raise RunnerError(
-            "--ref counter is only implemented for Phase 2 (uno, esp8266, esp32); Phase 3 does not use the "
-            f"counter. Not available for board={board!r}, phase={phase}."
+            "--ref counter is implemented for Phase 2 and Phase 3 on uno, esp8266, esp32. "
+            f"Not available for board={board!r}, phase={phase}."
         )
     if ref and not counter_port:
         raise RunnerError("--ref counter requires --counter-port (never auto-guessed)")
@@ -304,6 +306,9 @@ def resume_summary(board, algorithm, phase, ref=False):
         rows = list(csv.DictReader(f))
     if not rows:
         return f"{path} exists but is empty -- fresh start."
+    if "status" not in rows[0] or "n" not in rows[0]:
+        return (f"{path} has no header row (first line looks like data) -- repair it before running "
+                "(prepend the header; see the sweep script's writerow header list)")
     by_status = {}
     for r in rows:
         by_status[r["status"]] = by_status.get(r["status"], 0) + 1
@@ -521,8 +526,14 @@ def check_counter_port(counter_port, target_port):
                                   "wifi_config.h, normally 5055: use --counter-port tcp:5055")
             probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            probe.bind(("0.0.0.0", portno))
-            probe.close()
+            try:
+                probe.bind(("0.0.0.0", portno))
+            except OSError:
+                # our own stand-alone dashboard bridge holds the port; run_main stops it right before the sweep starts
+                if not bridge_ctl.holds_port(portno):
+                    raise
+            finally:
+                probe.close()
         except (ValueError, OSError) as e:
             raise RunnerError(f"counter TCP port {counter_port!r} cannot be used on this PC: {e}")
         print(f"counter link: WiFi/TCP, this PC will listen on port {portno} for the counter (it must join the same "
@@ -845,11 +856,15 @@ def main(argv=None):
     if eta_points:
         record_csv = sp.memory_wall_csv_path(args.board, args.algorithm, args.phase, args.ref) \
             if args.phase == 2 else sp.session_log_csv_path(args.board, args.algorithm, args.phase, args.ref)
+        compact = args.board == "uno" and args.phase == 2   # uno sweep prints one line per point incl. its own ETA
         watcher = eta.PointWatcher(record_csv, eta_points, run_start=eta.now_bangkok(),
-                                   skip_existing=True)
+                                   skip_existing=True, out=(lambda *_: None) if compact else print)
         watcher.start()
     try:
-        result = subprocess.run(argv_cmd, cwd=REPO_ROOT)
+        child_env = dict(os.environ)
+        if args.board == "uno" and args.phase == 2:
+            child_env["QLAB_COMPACT"] = "1"
+        result = subprocess.run(argv_cmd, cwd=REPO_ROOT, env=child_env)
         returncode = result.returncode
     except KeyboardInterrupt:
         print("\ninterrupted -- the delegated script's own resume logic (default, no "

@@ -72,11 +72,23 @@ CRC-8/SMBUS, polynomial `0x07`, init `0x00`
 unanswered so the MCU records a genuine timeout rather than a synthesized
 one.
 
+## Timing the round trip with the counter (`--ref counter`)
+
+Since 2026-10-07 the offload firmware raises `GPIO_TIMING_PIN` (Uno D7, ESP8266 GPIO5, ESP32 GPIO4) for exactly
+one request/response round trip, so the ESP32 counter measures the same interval as `e2e_latency_us`.
+Wiring is the Phase 2 wiring (`docs/design/wiring.md`). UNVERIFIED on hardware.
+
+```bash
+.venv/bin/python pc/run.py --board esp8266 --algorithm h_all --phase 3 \
+    --port /dev/cu.usbserialXXXX --n-max 13 --ref counter --counter-port tcp:5055
+```
+
+Data goes to `with_ref/` (`ref/` holds the counter pulses and the micros-vs-counter comparison). The comparison
+column is `e2e_latency_us`, not `exec_time_us`. A timed-out rep (5 s) still produces a pulse.
+
 ## What to check afterwards
 
-`data/raw/phase3/<board>/<circuit>/no_ref/` — always `no_ref/`, Phase 3 has no
-`--ref counter` (the offload firmware never toggles `GPIO_TIMING_PIN`; `pc/run.py` refuses it for Phase 3,
-see `docs/design/system_design.md` open decision 4):
+`data/raw/phase3/<board>/<circuit>/no_ref/` (or `with_ref/` when run with `--ref counter`, see below):
 - `raw.csv`: 100 rows per `n` for an ok point, same as Phase 2.
 - `session_log.csv` (Phase 3's terminal-record file — **not**
   `memory_wall.csv`, different schema, see `pc/shared/paths.py`'s

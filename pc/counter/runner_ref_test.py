@@ -82,7 +82,11 @@ def main():
         with capture() as (o, e):
             code = run_mod.main(["--board", "esp32", "--algorithm", "h_all", "--phase", "3", "--port", "/dev/cu.T",
                                  "--ref", "counter", "--counter-port", "/dev/cu.C", "--dry-run"])
-        check("refused: --ref counter in Phase 3 (the offload firmware never toggles the timing pin)", code == 1 and "Phase 3" in e.getvalue())
+        check("accepted: --ref counter in Phase 3 (the offload firmware toggles the timing pin around each round trip)", code == 0, e.getvalue().strip()[:90])
+        with capture() as (o, e):
+            code = run_mod.main(["--board", "esp8266", "--algorithm", "h_all", "--phase", "3", "--port", "/dev/cu.T",
+                                 "--ref", "counter", "--dry-run"])
+        check("refused: Phase 3 --ref counter without --counter-port", code == 1 and "error:" in e.getvalue())
         with capture() as (o, e):
             code = run_mod.main(["--board", "uno", "--algorithm", "qpe", "--phase", "2", "--port", "/dev/cu.T",
                                  "--ref", "counter", "--counter-port", "/dev/cu.C", "--dry-run"])

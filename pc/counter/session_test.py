@@ -101,6 +101,25 @@ def main():
               st == "anomaly" and any(r["flags"] == "1" for r in rows(tmp, "ref_pulses.csv")) and len(rows(tmp, "ref_compare.csv")) == REPS)
         cs.close()
 
+    # glitch in place of one rep's pulse: pulse count == reps, one flagged -> partial join, not refused
+    with tempfile.TemporaryDirectory() as tmp:
+        sim, tr, cl, cs = make(tmp)
+        widths = [90_000] * 5 + [100] + [90_000] * (REPS - 6)
+        ok, st = run_point(cs, sim, tr, 4, widths, [90.0] * REPS)
+        c = rows(tmp, "ref_compare_points.csv")[0]
+        check("glitch in a rep slot: status stays count_mismatch, join is PARTIAL (REPS-1 pairs, slot noted)",
+              st == "count_mismatch" and c["n_pairs"] == str(REPS - 1) and "partial" in c["notes"] and len(rows(tmp, "ref_compare.csv")) == REPS - 1)
+        cs.close()
+
+    # stale ARMED state from an interrupted run is cleared before the next ARM
+    with tempfile.TemporaryDirectory() as tmp:
+        sim, tr, cl, cs = make(tmp)
+        check("first ARM ok", cs.arm_point(4) is True)
+        tr.push([sim.heartbeat()]); time.sleep(0.15)          # heartbeat now says ARMED; the run was 'killed' here
+        check("next ARM succeeds although the counter was left ARMED", cs.arm_point(5) is True)
+        check("stale ARMED clearing is logged", "still ARMED" in (Path(tmp) / "ref" / "ref_issues.log").read_text())
+        cs.close()
+
     # counter pcnt mismatch
     with tempfile.TemporaryDirectory() as tmp:
         sim, tr, cl, cs = make(tmp)
@@ -199,6 +218,14 @@ def main():
     runs = cc.split_runs([(i, i * 3000, 0, 100_000, 0, 0) for i in range(5)] + [(5 + i, 2_000_000 + i * 3000, 0, 100_000, 0, 0) for i in range(5)])
     check("split_runs finds one split and keeps pulse order", [len(r) for r in runs] == [5, 5])
     check("split_runs: a uniform stream is one run", len(cc.split_runs([(i, i * 3000, 0, 100_000, 0, 0) for i in range(20)])) == 1)
+    # ESP8266 restart gap measured at ~0.318 s (data/raw/phase2/esp8266): below the old 0.5 s threshold
+    p1 = [(i, i * 600, 0, 100_000, 0, 0) for i in range(29)]
+    p2 = [(29 + i, 29 * 600 + 318_000 + i * 600, 0, 100_000, 0, 0) for i in range(100)]
+    runs = cc.split_runs(p1 + p2)
+    check("split_runs: 0.318 s restart gap splits a partial first run from the full second run",
+          [len(r) for r in runs] == [29, 100], str([len(r) for r in runs]))
+    check("join: capped point (37 micros of 100 armed) joins the first 37 pulses",
+          cc.join_point([(i, i * 3000, 0, 100_000, 0, 0) for i in range(37)], [100.0] * 37, 37, "uno")["status"] == "joined")
 
     # join logic, direct
     pulses = [(i, 0, 0, 90_000, 0, 0) for i in range(REPS)]
@@ -236,6 +263,27 @@ def main():
         check("writers refuse a file holding another schema_version", ok)
     check("reference schema constants are separate from telemetry SCHEMA_VERSION",
           rs.REF_PULSES_SCHEMA_VERSION == 1 and __import__("shared.telemetry", fromlist=["x"]).SCHEMA_VERSION == 2)
+
+    # Phase 3: one pulse = one request/response round trip; the target's own time is column 5 (e2e_latency_us)
+    check("phase 3 max width is the 130 s floor (offload firmware times out after 5 s), not the Phase 2 model",
+          max_width_for("esp8266", "grover", 12, phase=3) == 130 and max_width_for("esp8266", "grover", 12) > 130)
+    from counter import hooks as hk  # noqa: E402
+
+    class _FakeSession:
+        reps, armed_n = 3, 4
+        last_result = None
+
+        def finish_point(self, n, micros, target_ran=True, reps_expected=None):
+            self.got = micros
+            return "ok"
+
+    p3_rows = ["esp8266,h_all,4,115200,0,1500,0,0", "esp8266,h_all,4,115200,1,1600,0,0", "esp8266,h_all,4,115200,2,1700,0,0"]
+    fs = _FakeSession()
+    hk.SweepRef(fs, micros_col=5).finish(4, p3_rows, True)
+    check("phase 3 SweepRef pairs the e2e_latency_us column", fs.got == [1500.0, 1600.0, 1700.0], str(fs.got))
+    fs2 = _FakeSession()
+    hk.SweepRef(fs2).finish(4, ["esp8266,h_all,4,0,1500,1"] * 3, True)
+    check("phase 2 SweepRef still pairs the exec_time_us column", fs2.got == [1500.0] * 3, str(fs2.got))
 
     n_fail = R.count(False)
     print(f"\n{len(R)} checks, {n_fail} failed")

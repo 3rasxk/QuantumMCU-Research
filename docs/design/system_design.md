@@ -189,12 +189,13 @@ if the owner decides it needs the counter (section g).
 1. **Counter required or optional** for official runs (recommended: required; counter-less points in `no_ref/`, excluded from the central analysis).
 2. **Per-point time ceiling.** Current recorded decision: none, run to the memory wall. Facts in `docs/design/ceiling_facts.md` (no value is proposed here beyond the earlier note).
 3. **ESP32 watchdog threshold** (`timing_model.WDT_PER_REP_THRESHOLD_S`, 5.0 s). Finding (section h): the installed Arduino-ESP32 core's own `sdkconfig` has the task watchdog at 5 s but checks only the CPU0 idle task, while the sketch's loop task runs on CPU1; the 5.0 s per-rep rule has no basis there. Recommendation: set the ESP32 threshold to `None` and classify `watchdog_suspected` from a reset signature instead (below).
-4. **Does Phase 3 use the counter?** Phase 3 times a serial round trip with `micros()` on the board
-   (`firmware/*/src_offload/main_offload.cpp`), and the offload firmware does not toggle `GPIO_TIMING_PIN`
-   (`GPIO_TIMING_PIN` appears only in the Phase 2 `main.cpp` files). The counter would therefore see nothing in
-   Phase 3, and giving it something to see needs a firmware change (pulse at request send / response receive),
-   which is out of scope here. Even then it would measure only the board-side interval, not the PC simulation.
-   **Recommendation: no counter in Phase 3**; keep `micros()` round-trip timing and report it as such.
+4. **Does Phase 3 use the counter?** **DECIDED 2026-10-07: yes, optionally (`--ref counter`).** The offload firmware
+   (`firmware/*/src_offload/main_offload.cpp`) now raises `GPIO_TIMING_PIN` (same pin as Phase 2: Uno D7, ESP8266
+   GPIO5, ESP32 GPIO4) just before `t0` and drops it just after `t1`, so one pulse = one request/response round
+   trip, the interval the board reports as `e2e_latency_us` (raw.csv column 6). `pc/phase3_offload/sweep.py` takes
+   the same `--ref`/`--counter-port` flags and pairs the pulses with `e2e_latency_us`; data goes to `with_ref/`.
+   It measures the whole round trip (UART + PC simulation + reply), as before. UNVERIFIED on hardware: the
+   firmware builds for all three boards and the pairing is covered by `pc/counter/session_test.py`, nothing more.
 5. Counter protocol items found in the draft review (`docs/design/counter_design.md` section 13): `max_width_s` is u16
    (18 h limit, plan has 22.8 h reps), heartbeat time is whole seconds (too coarse for calibration), no ARM start timeout.
    **Resolved in protocol v2** (2026-10-04): `max_width_s` is u32, the heartbeat carries a 64-bit microsecond clock, ARM has a

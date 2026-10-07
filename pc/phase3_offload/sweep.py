@@ -73,6 +73,7 @@ from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
 from shared import paths as sp  # noqa: E402
+from counter import hooks as refhooks  # noqa: E402
 
 RESUME_KEY_SPEC = [("circuit", str), ("n", int), ("baud_rate", int)]
 BOOT_WAIT_S = 1.5  # เผื่อบอร์ด reset ตัวเองหลัง upload แล้วเริ่ม setup() ใหม่
@@ -292,6 +293,7 @@ def main():
     ap.add_argument("--fresh", "--no-resume", dest="fresh", action="store_true",
                      help="ไม่ resume จากผลลัพธ์เดิม — ย้ายไฟล์ raw/session_log เดิมไปเป็น "
                           "*.pre-fresh-<timestamp>.csv (ไม่ลบทิ้ง) แล้วเริ่มนับใหม่หมด")
+    refhooks.add_args(ap)   # --ref {none,counter}, --counter-port (pc/counter/hooks.py)
     args = ap.parse_args()
     reject_removed_circuits(args.circuits)
     n_max = args.n_max if args.n_max is not None else N_SAFETY_CAP
@@ -299,12 +301,16 @@ def main():
     from qiskit_aer import AerSimulator
     sim = AerSimulator(method="statevector")
 
-    for circuit in args.circuits:
-        print(f"\n=== circuit={circuit} ===")
-        _run_circuit(args, circuit, n_max, sim)
+    ref_active = refhooks.ref_active(args)
+    try:
+        for circuit in args.circuits:
+            print(f"\n=== circuit={circuit} ===")
+            _run_circuit(args, circuit, n_max, sim, ref_active)
+    finally:
+        refhooks.shutdown()   # disarm the counter and close its port (no-op without --ref counter)
 
 
-def _run_circuit(args, circuit, n_max, sim):
+def _run_circuit(args, circuit, n_max, sim, ref_active=False):
     """One algorithm's directory/files/telemetry session — see pc/shared/paths.py
     and uno_sweep.py's module docstring for the per-board-per-algorithm layout
     this replaced (2026-09-20, run_log.md). Every baud in --bauds is still swept
@@ -319,13 +325,13 @@ def _run_circuit(args, circuit, n_max, sim):
         print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {n_max}]")
         return
 
-    raw_directory = sp.raw_dir(args.board, circuit, phase=3)
+    raw_directory = sp.raw_dir(args.board, circuit, phase=3, ref=ref_active)
     raw_directory.mkdir(parents=True, exist_ok=True)
-    raw_path = sp.raw_csv_path(args.board, circuit, phase=3)
-    meta_path = sp.session_log_csv_path(args.board, circuit, phase=3)
-    points_csv = sp.points_csv_path(args.board, circuit, phase=3)
-    sessions_csv = sp.sessions_csv_path(args.board, circuit, phase=3)
-    env_directory = sp.env_dir(args.board, circuit, phase=3)
+    raw_path = sp.raw_csv_path(args.board, circuit, phase=3, ref=ref_active)
+    meta_path = sp.session_log_csv_path(args.board, circuit, phase=3, ref=ref_active)
+    points_csv = sp.points_csv_path(args.board, circuit, phase=3, ref=ref_active)
+    sessions_csv = sp.sessions_csv_path(args.board, circuit, phase=3, ref=ref_active)
+    env_directory = sp.env_dir(args.board, circuit, phase=3, ref=ref_active)
 
     # resume (ค่าเริ่มต้น): มีแถวใน session_log.csv = จุดนั้น (circuit, n, baud) "เสร็จสิ้น"
     # แล้วไม่ว่าผลจะเป็นอะไร (ok, session_incomplete, build_or_upload_fail,
@@ -348,8 +354,9 @@ def _run_circuit(args, circuit, n_max, sim):
             print(f"resume: purged {removed} orphan raw row(s) from interrupted point(s) "
                   f"{sorted(removed_keys)} — these will be redone from scratch, not topped up")
 
-    raw_is_new = not raw_path.exists()
-    meta_is_new = not meta_path.exists()
+    ref = refhooks.from_args(args, args.board, circuit, phase=3)   # SweepRef; disabled (no-op) unless --ref counter
+    raw_is_new = not raw_path.exists() or raw_path.stat().st_size == 0  # empty file (killed before first flush) still needs its header
+    meta_is_new = not meta_path.exists() or meta_path.stat().st_size == 0  # empty file (killed before first flush) still needs its header
     raw_f = open(raw_path, "a", newline="")
     meta_f = open(meta_path, "a", newline="")
     if raw_is_new:
@@ -399,11 +406,12 @@ def _run_circuit(args, circuit, n_max, sim):
                 BOARDS[args.board]["fw_dir"] / "src_offload",
                 env_dir=env_directory,
                 pio_project_dir=BOARDS[args.board]["fw_dir"],
-                pio_env=BOARDS[args.board]["env"])
+                pio_env=BOARDS[args.board]["env"], ref=ref_active)
             session.env_json_path = str(env_path)
+            refhooks.write_sidecar(env_directory, session.session_id, args, args.board)   # no-op without --ref counter
 
             _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f,
-                        sim, session, points_csv)
+                        sim, session, points_csv, ref=ref)
     finally:
         raw_f.close()
         meta_f.close()
@@ -412,7 +420,9 @@ def _run_circuit(args, circuit, n_max, sim):
     print(f"telemetry -> {sessions_csv}, {points_csv}")
 
 
-def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, sim, session, points_csv):
+def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, sim, session, points_csv, ref=None):
+    if ref is None:
+        ref = refhooks.SweepRef()   # disabled: every ref.* call is a no-op
     for baud in args.bauds:
         print(f"\n########## baud={baud} ##########")
         n_succeeded = 0
@@ -455,7 +465,11 @@ def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, s
                 session.note_point(status="skipped_sim_cost_infeasible")
                 continue
 
+            if ref.stop_requested():   # previous points are fully written; stop BEFORE starting a new one
+                print("[ref] counter lost for 2 consecutive points -- stopping the run (all latency data so far is intact)")
+                return
             print(f"n={n:2d}  budget={budget_s}s ({per_req:.2f}s/request)  ", end="", flush=True)
+            ref.arm(n)   # no-op without --ref counter
 
             attempt_start = datetime.now(timezone.utc).isoformat()
             result = build_and_upload(args.board, circuit, n, baud, args.port, args.build_timeout_s)
@@ -464,6 +478,7 @@ def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, s
             reflash_s = result["compile_s"] + result["upload_s"]
 
             if not result["ok"]:
+                ref.target_failed(n)   # board never ran; reference record only
                 # timeout ของ toolchain ไม่ใช่ความล้มเหลวของบอร์ด และไม่ใช่กำแพง
                 # (Phase 3 ไม่มี known-wall inference อยู่แล้ว แต่ยังต้องแยกให้ชัดในข้อมูล)
                 build_status = rs.classify_build_failure(
@@ -499,6 +514,7 @@ def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, s
                 (done, rows, served, dropped, sim_error,
                  pc_sim_durations, bytes_transferred) = run_offload_session(ser, sim, budget_s)
             device_exec_s = time.perf_counter() - exec_t0
+            ref.finish(n, rows, done)   # disarm, store pulses, join e2e_latency_us with the counter; never changes `done`/`rows`
             attempt_end = datetime.now(timezone.utc).isoformat()
             sim_error_safe = sim_error.replace(",", ";").replace("\n", " ")
 
@@ -565,7 +581,8 @@ def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, s
             error_rows = sum(1 for r in rows if r.split(",")[-1] == "1" or r.split(",")[-2] == "1")
             error_rate = (error_rows / len(rows)) if rows else 1.0
             err_note = f"  sim_error={sim_error_safe}" if sim_error_safe else ""
-            print(f"status={status}  rows={len(rows)}  crc_dropped={dropped}  error_rate={error_rate:.0%}{err_note}")
+            ref_note = f"  {ref.summary_text()}" if ref.enabled else ""
+            print(f"status={status}  rows={len(rows)}  crc_dropped={dropped}  error_rate={error_rate:.0%}{err_note}{ref_note}")
 
             failed = (not done) or error_rate > 0.5
             if failed:
