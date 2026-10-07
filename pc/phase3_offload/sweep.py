@@ -466,9 +466,7 @@ def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, s
             if (circuit, n) in infeasible:
                 # ไม่ใช่ปัญหาของลิงก์ serial หรือของบอร์ด — เป็นต้นทุนการจำลองฝั่ง PC
                 # ล้วน ๆ (ไม่ cache โดยตั้งใจ) บันทึกค่าประมาณไว้ให้อ่านออกว่าทำไมถึงข้าม
-                print(f"n={n:2d}  SKIP: one request needs {tm.human_duration(per_req)} "
-                      f"(PC-side sim, uncached) > the {tm.human_duration(tm.POINT_TIME_CAP_S)} per-point cap; "
-                      f"continuing with the next n")
+                print(f"n={n:2d}  SKIP: {tm.phase3_skip_reason(circuit, n)}; continuing with the next n")
                 meta_f.write(f"{args.board},{circuit},{n},{baud},skipped_sim_cost_infeasible,"
                              f"0,0,0,,{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
                 meta_f.flush()

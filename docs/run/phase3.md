@@ -74,8 +74,8 @@ Same rule as Phase 2 (`timing_model.POINT_TIME_CAP_S = 7200`), applied to the ti
 - Limits: the planned reps come from the UNVERIFIED model (on the first run it was about 20 % above the measured time at
   grover n=8), so a capped point may take a little less than 2 h; the board's `micros()` wraps at 71.6 min, so one request
   must stay below that (model: grover n=13 about 51 min).
-- Model plan for the ESP8266 grover to n=15: n<=10 100 reps, n=11 42, n=12 9, n=13 2, n=14-15 skipped; total about 7 h 9 min.
-  Check with `pc/run.py --plan` / `--dry-run`.
+- Model plan for the ESP8266 grover by the 2 h cap alone: n<=10 100 reps, n=11 42, n=12 9, n=13 2, n=14-15 skipped; but see the
+  PC memory wall below: n>=12 is skipped on an 8.6 GB PC. Check with `pc/run.py --plan` / `--dry-run`.
 - A point already recorded in `session_log.csv` is skipped on resume even if it had a high error rate; use `--fresh` to redo.
 
 Counter noise bursts (2026-10-07, ESP8266 grover n=10): a few minutes into the point the counter reported hundreds of
@@ -98,6 +98,16 @@ than that would have been reported modulo 71.6 min). The session timeout of a fo
 Counter frame budget (firmware, 2026-10-07): per point the counter sends at most 4 ANOMALY frames per code and 4 glitch PULSE frames;
 the anomaly mask / REPORT still carry everything and the debug line `supp=` counts what was not sent. This keeps a burst of line
 spikes from flooding the link. Hardware advice if spikes recur: 1 nF from GPIO34 to GND at the counter, short twisted signal/GND wires.
+
+**PC memory wall (2026-10-08, grover n=12)**: the PC rebuilds the whole gate list as a Qiskit circuit for every request. The
+sweep process was SIGKILLed (returncode -9, the system's low-memory reaper) twice, both times as the first n=12 request started
+(15.75 M gates). Measured: 161 bytes per gate for the circuit alone (grover n=10: 876,660 gates, +142 MB); Aer then copies it.
+On this 8.6 GB Mac: n=11 (3.7 M gates, about 0.6 GB of circuit) ran, n=12 about 2.5 GB circuit and was killed, n=13 about 11 GB,
+n=14 about 46 GB, **n=15 about 195 GB (1.2 billion gates)**. The plan now skips a point whose circuit would need more than 60 % of
+the PC's RAM (`phase3_pc_memory_ok`, factor 4 over the measured 161 B/gate is an ESTIMATE) and says so (`SKIP — PC memory ...`),
+so grover on this PC ends at n=11 whatever `--n-max` says; `--force-infeasible` bypasses the check and will be killed again.
+Reaching n=15 for grover needs a different PC-side circuit (e.g. native multi-controlled gates instead of the gate-by-gate
+list the MCU also executes), which changes what the offload cost measures: an owner decision, not made here.
 
 ## Wire protocol (for reference, not something `pc/run.py` changes)
 

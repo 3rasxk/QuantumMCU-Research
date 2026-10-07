@@ -499,10 +499,50 @@ def phase3_rep_time_s(circuit, n):
     return pc_sim_time_s(circuit, n) + PHASE3_REP_OVERHEAD_S
 
 
+# The PC builds the whole gate list as a Qiskit circuit for every request (uncached, one object per gate). Measured: grover n=10,
+# 876,660 gates -> +142 MB = 161 bytes/gate for the circuit alone; Aer then converts/copies it, so the factor 4 below is an ESTIMATE.
+# Observed: grover n=12 (15.75 M gates, about 2.5 GB of circuit) was SIGKILLed twice (returncode -9, 2026-10-08) on an 8.6 GB Mac
+# while n=11 (3.7 M gates) ran. n=15 would be 1.2 billion gates, about 195 GB for the circuit alone.
+PHASE3_PC_BYTES_PER_GATE = 161 * 4
+PHASE3_PC_RAM_FRACTION = 0.6
+PC_RAM_BYTES_OVERRIDE = None   # tests / unusual hosts
+
+
+def pc_physical_ram_bytes():
+    if PC_RAM_BYTES_OVERRIDE is not None:
+        return PC_RAM_BYTES_OVERRIDE
+    import os
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (ValueError, OSError, AttributeError):
+        return 8 * 1024 ** 3
+
+
+def phase3_pc_memory_bytes(circuit, n):
+    return sum(gate_counts(circuit, n)) * PHASE3_PC_BYTES_PER_GATE
+
+
+def phase3_pc_memory_ok(circuit, n):
+    """False if the PC would need more than PHASE3_PC_RAM_FRACTION of its RAM just to hold this request's circuit"""
+    return phase3_pc_memory_bytes(circuit, n) <= PHASE3_PC_RAM_FRACTION * pc_physical_ram_bytes()
+
+
+def phase3_skip_reason(circuit, n):
+    """'' if the point can run; otherwise why it is skipped"""
+    if not phase3_pc_memory_ok(circuit, n):
+        return (f"PC memory: about {phase3_pc_memory_bytes(circuit, n) / 1e9:.1f} GB for the circuit "
+                f"(> {PHASE3_PC_RAM_FRACTION:.0%} of {pc_physical_ram_bytes() / 1e9:.1f} GB RAM)")
+    if max_reps_under_cap(phase3_rep_time_s(circuit, n)) == 0:
+        return f"one request needs {human_duration(phase3_rep_time_s(circuit, n))} (> the 2 h per-point cap)"
+    return ""
+
+
 def phase3_point_reps(circuit, n, reps=REPS):
     """reps one Phase 3 point collects under the 2 h per-point cap (POINT_TIME_CAP_S): all `reps` if they fit,
-    fewer if not, 0 if even one request would pass the cap (point skipped). Planned from the model, like
-    Phase 2's plan; the board is built with exactly this many reps."""
+    fewer if not, 0 if even one request would pass the cap or its circuit does not fit in the PC's memory (point
+    skipped). Planned from the model, like Phase 2's plan; the board is built with exactly this many reps."""
+    if not phase3_pc_memory_ok(circuit, n):
+        return 0
     return max_reps_under_cap(phase3_rep_time_s(circuit, n), reps=reps)
 
 
@@ -575,7 +615,7 @@ def print_budget_plan(board, circuit_n_pairs, reps=REPS, phase=2):
         if phase == 3 and 0 < k < reps:
             note = f"CAP {k}/{reps} reps (2 h per-point cap)"
         if unreachable:
-            note = (f"SKIP — one request needs {human_duration(phase3_rep_time_s(circuit, n))} (> 2 h cap)" if phase == 3
+            note = (f"SKIP — {phase3_skip_reason(circuit, n)}" if phase == 3
                     else f"INFEASIBLE — needs {human_duration(expected)}, will be SKIPPED")
             infeasible.add((circuit, n))
         elif capped:

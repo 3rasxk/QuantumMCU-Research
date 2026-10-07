@@ -122,9 +122,16 @@ def test_estimates_and_labels():
     check("phase 3 point: ESTIMATE, device = (PC-sim + per-rep overhead) x reps",
           p3.label == "ESTIMATE" and approx(p3.device_s, tm.phase3_rep_time_s("qft", 6) * tm.REPS) and not p3.wall)
     # Phase 3 per-point cap (2 h): fewer reps, or skipped when one request passes the cap
+    tm.PC_RAM_BYTES_OVERRIDE = 1 << 40   # 1 TB: only the 2 h cap matters here
     reps = {n: tm.phase3_point_reps("grover", n) for n in (8, 10, 11, 12, 13, 14, 15)}
-    check("phase 3 grover: 100 reps up to n=10, fewer at n=11-13, skipped (0) from n=14",
+    check("phase 3 grover (2 h cap only): 100 reps up to n=10, fewer at n=11-13, skipped (0) from n=14",
           reps[8] == reps[10] == 100 and 0 < reps[13] < reps[12] < reps[11] < 100 and reps[14] == reps[15] == 0, str(reps))
+    tm.PC_RAM_BYTES_OVERRIDE = int(8.59e9)   # the 8.6 GB Mac where grover n=12 was OOM-killed twice
+    check("phase 3 PC memory: grover n=11 fits an 8.6 GB PC, n=12-15 do not (skipped, with a reason)",
+          tm.phase3_pc_memory_ok("grover", 11) and not any(tm.phase3_pc_memory_ok("grover", n) for n in (12, 13, 14, 15))
+          and all(tm.phase3_point_reps("grover", n) == 0 for n in (12, 13, 14, 15)) and "PC memory" in tm.phase3_skip_reason("grover", 12)
+          and tm.phase3_skip_reason("grover", 11) == "" and tm.phase3_point_reps("qft", 15) == 100)
+    tm.PC_RAM_BYTES_OVERRIDE = 1 << 40
     check("phase 3 capped point never exceeds the cap",
           all(tm.phase3_rep_time_s("grover", n) * reps[n] <= tm.POINT_TIME_CAP_S for n in reps))
     p11 = eta.estimate_point("esp8266", "grover", 11, 3, {})
@@ -135,6 +142,7 @@ def test_estimates_and_labels():
           tm.phase3_response_timeout_ms("h_all", 15) == 5000
           and tm.phase3_response_timeout_ms("grover", 10) == int(3 * tm.pc_sim_time_s("grover", 10) * 1000)
           and all(tm.PHASE3_FLOOR_S <= tm.phase3_session_budget_s("grover", n) <= tm.PHASE3_CEILING_S for n in range(2, 16)))
+    tm.PC_RAM_BYTES_OVERRIDE = None
 
 
 def test_plan_points_filters():
