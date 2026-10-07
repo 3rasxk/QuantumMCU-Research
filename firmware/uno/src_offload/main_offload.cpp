@@ -21,9 +21,15 @@
 #error "ต้องกำหนด BAUD_RATE ผ่าน build_flags"
 #endif
 
+// REPS and RESPONSE_TIMEOUT_MS are set per point by pc/phase3_offload/sweep.py (PLATFORMIO_BUILD_FLAGS): fewer reps when
+// 100 would pass the 2 h per-point cap, and a response timeout longer than the PC's simulation time. Defaults for manual builds.
+#ifndef REPS
 #define REPS 100
+#endif
 #define GPIO_TIMING_PIN 7  // same pin as Phase 2: HIGH for exactly one request/response round trip (ESP32 counter, --ref counter)
+#ifndef RESPONSE_TIMEOUT_MS
 #define RESPONSE_TIMEOUT_MS 5000UL
+#endif
 
 static unsigned long g_latency_us[REPS];
 static uint8_t g_crc_error[REPS];       // 1 = timeout หรือ CRC ของ response ผิด

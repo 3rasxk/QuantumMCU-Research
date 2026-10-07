@@ -88,9 +88,13 @@ class CounterSession:
             pass   # logging must never take the sweep down
 
     # -------------------------------------------------------------- per point
-    def arm_point(self, n):
+    def arm_point(self, n, reps=None, max_width_s=None):
         """ARM the counter for this point. Returns True if armed. A failure is logged and the point
-        simply runs without a reference."""
+        simply runs without a reference. `reps` / `max_width_s` override the session's rep count and the model's max pulse
+        width for this point (Phase 3: the point's reps under the 2 h cap, and a width above the firmware's response timeout)."""
+        if reps is not None:
+            self.reps = reps
+        self.max_width_s = max_width_s
         self.armed_n, self.armed_ok = n, False
         self._ctx(board=self.board, circuit=self.circuit, n=n, reps=self.reps, phase="arming", reset_pulses=True, ref_status=None)
         self.client.drain()
@@ -105,7 +109,7 @@ class CounterSession:
                 self.issue(n, f"could not clear a stale ARMED state: {e}")
         try:
             frame = cp.encode_arm(self.base + n, self.board, self._circuit_id(), n, self.reps, 500,
-                                  max_width_for(self.board, self.circuit, n, self.phase), self.start_timeout_s)
+                                  self.max_width_s or max_width_for(self.board, self.circuit, n, self.phase), self.start_timeout_s)
             self.client.send(frame)
         except Exception as e:  # noqa: BLE001
             self.issue(n, f"ARM send failed: {e}")

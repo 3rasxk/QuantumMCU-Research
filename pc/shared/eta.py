@@ -94,6 +94,8 @@ class PointEst:
     time_limited: bool = False
     per_rep_s: float = 0.0
     wdt_risk: bool = False
+    reps: int = 0  # reps planned under the per-point time cap (phase 2); 0 with skipped=True
+    skipped: bool = False  # even one rep exceeds the cap: the point is not run
 
     @property
     def overhead_s(self):
@@ -120,6 +122,7 @@ def estimate_point(board, circuit, n, phase, measured=None):
     meas_dev = measured.get("device_s", {}).get(circuit, {}).get(n) if have else None
 
     label = "ESTIMATE"
+    overhead = 0.0
     if wall:
         device_s = 0.0
         if have and measured.get("compile_s") is not None and measured.get("upload_s") is not None:
@@ -127,7 +130,7 @@ def estimate_point(board, circuit, n, phase, measured=None):
     elif meas_dev is not None:
         device_s, label = float(meas_dev), "MEASURED"
     elif phase == 3:
-        device_s = tm.pc_sim_time_s(circuit, n) * tm.REPS
+        device_s = tm.phase3_rep_time_s(circuit, n) * tm.REPS
     else:
         overhead = measured["device_overhead_s"] if have and measured.get("device_overhead_s") \
             else tm.DEVICE_OVERHEAD_S_ESTIMATE[board]
@@ -139,9 +142,27 @@ def estimate_point(board, circuit, n, phase, measured=None):
         per_rep = tm.expected_exec_time_us(board, circuit, n) / 1e6
         thr = tm.WDT_PER_REP_THRESHOLD_S.get(board)
         wdt = thr is not None and per_rep > thr
+    reps, skipped = tm.REPS, False
+    if phase == 2 and not wall and meas_dev is None:
+        # per-point time cap (timing_model.POINT_TIME_CAP_S): run as many reps as fit
+        reps = tm.max_reps_under_cap(per_rep)
+        if reps == 0:
+            skipped, device_s, compile_s, upload_s = True, 0.0, 0.0, 0.0
+        elif reps < tm.REPS:
+            device_s = per_rep * reps + overhead
+    elif phase == 3 and not wall and meas_dev is None:
+        # same 2 h per-point cap, applied to the PC's simulation time (timing_model.phase3_point_reps)
+        reps = tm.phase3_point_reps(circuit, n)
+        if reps == 0:
+            skipped, device_s, compile_s, upload_s = True, 0.0, 0.0, 0.0
+        elif reps < tm.REPS:
+            device_s = tm.phase3_rep_time_s(circuit, n) * reps
+    elif wall:
+        reps = 0
     return PointEst(board, circuit, phase, n, device_s, compile_s, upload_s,
                     HANG_BUDGET_S if wall else 0.0, label, wall,
-                    time_limited=device_s > plan.TIME_FLAG_S, per_rep_s=per_rep, wdt_risk=wdt)
+                    time_limited=skipped or reps < tm.REPS and not wall,
+                    per_rep_s=per_rep, wdt_risk=wdt, reps=reps, skipped=skipped)
 
 
 def plan_points(board, circuit, phase, n_start=None, n_max=None, completed=(), measured=None):
@@ -150,7 +171,12 @@ def plan_points(board, circuit, phase, n_start=None, n_max=None, completed=(), m
     wall, so the list ends at the predicted wall n."""
     out = []
     measured = measured if measured is not None else load_measured(board, phase)
-    for n in plan.plan_n_values(board, circuit, phase):
+    ns = plan.plan_n_values(board, circuit, phase)
+    if phase == 3 and n_max is not None:
+        # Phase 3 has no board wall: the sweep runs every n up to the operator's --n-max (points the 2 h cap rules out
+        # are skipped, the rest get fewer reps), not only the plan's own n range
+        ns = list(range(plan.MIN_N[circuit], n_max + 1))
+    for n in ns:
         if n_start is not None and n < n_start:
             continue
         if n_max is not None and n > n_max:
@@ -214,6 +240,22 @@ def _d(s):
     return tm.human_duration(s)
 
 
+def _c(s):
+    """Compact base-60 duration for table cells: 4.6s, 26s, 3m02s, 1h59m, 11d02h."""
+    if s <= 0:
+        return "-"
+    if s < 10:
+        return f"{s:.1f}s"
+    t = int(round(s))
+    if t < 60:
+        return f"{t}s"
+    if t < 3600:
+        return f"{t // 60}m{t % 60:02d}s"
+    if t < 86400:
+        return f"{t // 3600}h{t % 3600 // 60:02d}m"
+    return f"{t // 86400}d{t % 86400 // 3600:02d}h"
+
+
 def format_table(board, circuit, phase, points, start, title_extra=""):
     lines = []
     wall = plan.wall_n(board)
@@ -228,34 +270,50 @@ def format_table(board, circuit, phase, points, start, title_extra=""):
         lines.append("Phase 3: device time = PC-side Aer simulation of 100 requests; "
                      "no board memory wall (state lives on the PC)")
     lines.append(f"start {start.astimezone(BANGKOK).strftime('%a %d %b %H:%M')} (Asia/Bangkok)")
-    lines.append(f"{'n':>3s} {'per-rep':>9s} {'device':>9s} {'compile':>9s} {'upload':>9s} {'hang':>7s} "
-                 f"{'total':>9s} {'cumul':>9s} {'finish':>14s}  {'src':8s} note")
+    total_ram = tm.TOTAL_RAM_BYTES[board]
+    lines.append(f"board memory: {board} total RAM = {total_ram} B ({total_ram / 1024:.1f} KB)")
+    lines.append("state vector = 8 x 2^n B; %RAM = state / total RAM; free_B = total RAM - state "
+                 "(before program/stack/heap overhead, so less is really free)")
+    lines.append(f"{'n':>3s} {'state_B':>8s} {'%RAM':>6s} {'free_B':>7s} {'per-rep':>7s} {'reps':>4s} "
+                 f"{'device':>7s} {'build':>6s} {'total':>7s} {'cumul':>7s} {'finish':>12s}  {'src':4s} note")
     for r in table_rows(points, start):
         p = r["p"]
         note = []
         if p.wall:
             note.append("WALL (predicted)")
-        if p.time_limited:
-            note.append(f"TIME-LIMITED (device > {_d(plan.TIME_FLAG_S)})")
+        if p.skipped:
+            note.append("SKIP")
+        elif p.time_limited:
+            note.append(f"CAP {p.reps}/{tm.REPS}")
         tier = duration_tier(p.device_s)
         if tier:
             note.append(tier)
         if p.wdt_risk:
-            note.append(f"WATCHDOG RISK (per rep > {tm.WDT_PER_REP_THRESHOLD_S[p.board]:.1f}s, UNVERIFIED threshold)")
-        lines.append(f"{p.n:3d} {(_d(p.per_rep_s) if p.per_rep_s else '-'):>9s} {_d(p.device_s):>9s} {_d(p.compile_s):>9s} {_d(p.upload_s):>9s} "
-                     f"{_d(p.hang_s) if p.hang_s else '-':>7s} {_d(p.total_s):>9s} "
-                     f"{_d(r['cum_s']):>9s} {r['finish']:>14s}  {p.label:8s} {'; '.join(note)}")
+            note.append("WDT")
+        state_b = 8 << p.n
+        if state_b > total_ram and p.phase != 3:   # Phase 3: the state vector lives on the PC, not on the board
+            note.append("state>RAM")
+        build_s = p.compile_s + p.upload_s + p.hang_s
+        lines.append(f"{p.n:3d} {state_b:8d} {state_b / total_ram * 100:5.1f}% {max(total_ram - state_b, 0):7d} "
+                     f"{(_c(p.per_rep_s) if p.per_rep_s else '-'):>7s} {(str(p.reps) if p.reps else '-'):>4s} "
+                     f"{_c(p.device_s):>7s} {_c(build_s):>6s} {_c(p.total_s):>7s} {_c(r['cum_s']):>7s} "
+                     f"{r['finish']:>12s}  {('est' if p.label == 'ESTIMATE' else 'meas'):4s} {' '.join(note)}")
+    lines.append("columns: build = compile + upload (+ 90 s hang budget at a wall point); "
+                 "1h59m = 1 h 59 min, 26m03s = 26 min 3 s")
+    lines.append(f"notes: CAP k/{tm.REPS} = only k reps fit in {_d(tm.POINT_TIME_CAP_S)} of board run time; "
+                 f"SKIP = 1 rep exceeds it, not run")
+    lines.append("       WDT = watchdog risk (UNVERIFIED threshold); est = model estimate, meas = measured")
     t = totals(points)
     if points:
         end = format_clock(finish_clock(start, t["total_s"]), start)
         lines.append(f"total {_d(t['total_s'])} over {t['points']} point(s); whole run finishes ~{end}")
         if t["n_limited"]:
-            lines.append(f"  of which {t['n_limited']} TIME-LIMITED point(s) = {_d(t['limited_s'])} "
-                         f"(excluding them: {_d(t['excl_limited_s'])}); no ceiling is set -- owner decision")
+            lines.append(f"  of which {t['n_limited']} time-capped/skipped point(s) = {_d(t['limited_s'])} "
+                         f"(excluding them: {_d(t['excl_limited_s'])}); per-point cap {_d(tm.POINT_TIME_CAP_S)} of board run time")
     else:
         lines.append("nothing to run (every planned point is already recorded)")
     lines.append("src: MEASURED = measured in the new run (points.csv, this board+phase); "
-                 "ESTIMATE = timing_model.py model (hang column is the 90 s budget, not a measurement)")
+                 "ESTIMATE = timing_model.py model (the 90 s hang budget is not a measurement)")
     return "\n".join(lines)
 
 
@@ -282,7 +340,7 @@ def plan_report(boards=None, circuits=None, phases=None, start=None, brief=False
             out("")
     out("=== plan summary (every point from the minimum n to the predicted wall) ===")
     out(f"{'ph':>2s} {'board':8s} {'circuit':9s} {'pts':>3s} {'wall n':>6s} {'evidence':14s} "
-        f"{'total':>9s} {'time-limited':>14s} {'excl. limited':>13s}")
+        f"{'total':>11s} {'time-capped':>20s} {'excl. capped':>13s}")
     per_board = {}
     grand = {"total_s": 0.0, "limited_s": 0.0, "excl_s": 0.0, "points": 0, "n_limited": 0}
     for b, c, p, pts, t in summary:
@@ -290,7 +348,7 @@ def plan_report(boards=None, circuits=None, phases=None, start=None, brief=False
         ev = plan.wall_evidence(b) if p == 2 else "(offload)"
         lim = f"{t['n_limited']} pt / {_d(t['limited_s'])}" if t["n_limited"] else "-"
         out(f"{p:2d} {b:8s} {c:9s} {t['points']:3d} {wall:>6s} {ev:14s} "
-            f"{_d(t['total_s']):>9s} {lim:>14s} {_d(t['excl_limited_s']):>13s}")
+            f"{_d(t['total_s']):>11s} {lim:>20s} {_d(t['excl_limited_s']):>13s}")
         pb = per_board.setdefault(b, {"total_s": 0.0, "excl_s": 0.0, "limited_s": 0.0,
                                       "points": 0, "n_limited": 0})
         for d in (pb, grand):
@@ -318,12 +376,12 @@ def plan_report(boards=None, circuits=None, phases=None, start=None, brief=False
                     last = ps_[-1].n if ps_ else 0
                     out(f"  {b:8s} phase {ph}: n=2..{last}: {_d(t['total_s'])}")
     out("")
-    out("per-board totals (all points | excluding TIME-LIMITED points):")
+    out("per-board totals (all points | excluding time-capped points):")
     for b, d in per_board.items():
         out(f"  {b:8s} {d['points']:4d} pts  {_d(d['total_s']):>10s} | {_d(d['excl_s']):>10s}")
     out(f"GRAND TOTAL {grand['points']} points: {_d(grand['total_s'])} all | "
-        f"{_d(grand['excl_s'])} excluding {grand['n_limited']} TIME-LIMITED point(s) "
-        f"(device > {_d(plan.TIME_FLAG_S)}, flag only; no ceiling set -- owner decision)")
+        f"{_d(grand['excl_s'])} excluding {grand['n_limited']} time-capped/skipped point(s) "
+        f"(per-point cap {_d(tm.POINT_TIME_CAP_S)} of board run time; fewer reps, or skipped if 1 rep exceeds it)")
     out("estimates are sequential single-operator wall time; the finish clock of a whole "
         "plan = start + total")
     return {"per_board": per_board, "grand": grand, "rows": summary}
@@ -342,10 +400,13 @@ class LiveEta:
 
     def __init__(self, points):
         self.points = list(points)
-        self.actual = {}  # n -> measured seconds
+        self.actual = {}  # n -> measured seconds (whole point: compile + upload + boot + board run)
+        self.device_actual = {}  # n -> measured board run seconds (sum of exec time), when known
 
-    def record(self, n, actual_s):
+    def record(self, n, actual_s, device_s=None):
         self.actual[n] = float(actual_s)
+        if device_s is not None:
+            self.device_actual[n] = float(device_s)
 
     def remaining(self):
         return [p for p in self.points if p.n not in self.actual]
@@ -367,16 +428,23 @@ class LiveEta:
         s_o, s_d = self.scales()
         return sum(s_o * p.overhead_s + s_d * p.device_s for p in self.remaining())
 
+    def _took(self, n):
+        """'1 h 5 min (board run 59 min 41 s)' -- the point's real time, board part when known."""
+        t = _d(self.actual[n])
+        if n in self.device_actual:
+            t += f" (board run {_d(self.device_actual[n])})"
+        return t
+
     def line(self, n, status, now=None):
         now = now or now_bangkok()
         rem = self.remaining()
         secs = self.remaining_seconds()
         if not rem:
-            return (f"[ETA] n={n} {status} in {_d(self.actual[n])} | all planned points done "
+            return (f"[ETA] n={n} {status} in {self._took(n)} | all planned points done "
                     f"({now.astimezone(BANGKOK).strftime('%H:%M')})")
         fin = format_clock(finish_clock(now, secs), now)
         s_o, s_d = self.scales()
-        return (f"[ETA] n={n} {status} in {_d(self.actual[n])} | {len(rem)} point(s) left "
+        return (f"[ETA] n={n} {status} in {self._took(n)} | {len(rem)} point(s) left "
                 f"(next n={rem[0].n}) ~{_d(secs)} | finish ~{fin} Asia/Bangkok "
                 f"(scale overhead x{s_o:.2f}, device x{s_d:.2f} vs estimate)")
 
@@ -393,6 +461,7 @@ class PointWatcher:
         self.eta = LiveEta(points)
         self.seen = 0
         self.last_t = run_start  # aware datetime of previous completion (or run start)
+        self.run_start = run_start
         self.out = out
         self.now_fn = now_fn
         self._stop = False
@@ -409,6 +478,29 @@ class PointWatcher:
         except OSError:
             return []
 
+    def _point_times(self, n):
+        """(point seconds, board-run seconds) summed over this run's attempts of n in points.csv,
+        or None. wall_s = compile + upload + boot wait + board run; device_exec_s = board run."""
+        path = self.csv_path.with_name("points.csv")
+        if not path.exists():
+            return None
+        wall = dev = 0.0
+        found = False
+        try:
+            with open(path, newline="", encoding="utf-8") as f:
+                for r in csv.DictReader(f):
+                    try:
+                        if int(r["n"]) != n or datetime.fromisoformat(r["start_utc"]) < self.run_start:
+                            continue
+                        wall += float(r["wall_s"] or 0)
+                        dev += float(r["device_exec_s"] or 0)
+                        found = True
+                    except (KeyError, ValueError):
+                        continue
+        except OSError:
+            return None
+        return (wall, dev) if found else None
+
     def poll(self):
         rows = self._rows()
         lines = []
@@ -419,7 +511,12 @@ class PointWatcher:
             except (KeyError, ValueError):
                 self.seen += 1
                 continue
-            self.eta.record(n, max((t - self.last_t).total_seconds(), 0.0))
+            took = self._point_times(n)
+            if took is not None:
+                # real time of this point from points.csv (wall_s / device_exec_s of its attempts)
+                self.eta.record(n, took[0], took[1])
+            else:  # fallback (no points.csv row): gap between terminal-record timestamps
+                self.eta.record(n, max((t - self.last_t).total_seconds(), 0.0))
             self.last_t = t
             self.seen += 1
             line = self.eta.line(n, r.get("status", "?"), self.now_fn())

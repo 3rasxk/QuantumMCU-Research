@@ -250,7 +250,7 @@ def session_total_s(board, points, phase=2):
             continue
         n_run += 1
         reflash += REFLASH_COST_S[board]
-        device += (pc_sim_time_s(circuit, n) * REPS if phase == 3
+        device += (phase3_rep_time_s(circuit, n) * phase3_point_reps(circuit, n) if phase == 3
                    else expected_point_time_s(board, circuit, n))
     return device, reflash, n_run, n_skipped
 
@@ -308,7 +308,8 @@ def finish_clock_estimate(board, circuit, n, n_values, completed=()):
     เป็นขอบบน: sweep หยุดที่กำแพงแรก อาจเสร็จเร็วกว่านี้ รูปแบบ 'HH:MM' หรือมีวันที่ถ้าข้ามวัน"""
     total = TOTAL_RAM_BYTES[board]
     secs = sum(point_wall_estimate_s(board, circuit, m) for m in n_values
-               if m >= n and (circuit, m) not in completed and (1 << m) * 8 <= total)
+               if m >= n and (circuit, m) not in completed and (1 << m) * 8 <= total
+               and max_reps_under_cap(expected_exec_time_us(board, circuit, m) / 1e6) > 0)
     try:
         end = datetime.now() + timedelta(seconds=secs)
     except OverflowError:
@@ -321,6 +322,8 @@ def point_wall_estimate_s(board, circuit, n, reps=REPS):
     """wall-clock ต่อจุดที่ควรคาดจริง = เวลารันบนบอร์ด + compile/upload (REFLASH_COST_S,
     ยังเป็นค่าประมาณ ไม่ได้วัด) — expected_point_time_s เดี่ยว ๆ ไม่รวม reflash จึงทำให้
     ETA ของจุดเล็ก ๆ (ที่บอร์ดรันเสร็จในเสี้ยววินาที) ต่ำกว่าความจริงหลายเท่า"""
+    per_rep_s = expected_exec_time_us(board, circuit, n) / 1e6
+    reps = max_reps_under_cap(per_rep_s, reps=reps)  # 2 h per-point cap (POINT_TIME_CAP_S)
     return expected_point_time_s(board, circuit, n, reps) + REFLASH_COST_S[board]
 
 
@@ -370,14 +373,58 @@ def is_compute_infeasible(board, circuit, n, reps=REPS):
 
 
 def human_duration(seconds):
-    """ทำให้ตัวเลขวินาทีอ่านออกในบรรทัด log (95 วัน กับ 8208961 วินาที คนละความรู้สึก)"""
+    """เวลาในรูปเลขฐานเวลา (วัน/ชม./นาที/วินาที) ไม่ใช้ทศนิยมของหน่วยใหญ่
+    (3 h 6 min ไม่ใช่ 3.1h; 1 d 4 h ไม่ใช่ 1.2days): แสดงสองหน่วยที่ใหญ่ที่สุดที่ไม่เป็นศูนย์
+    ต่ำกว่า 1 นาทีเป็นวินาทีทศนิยม 1 ตำแหน่ง"""
     if seconds < 60:
         return f"{seconds:.1f}s"
-    if seconds < 3600:
-        return f"{seconds / 60:.1f}min"
-    if seconds < 86400:
-        return f"{seconds / 3600:.1f}h"
-    return f"{seconds / 86400:.1f}days"
+    total = int(round(seconds))
+    d, rem = divmod(total, 86400)
+    h, rem = divmod(rem, 3600)
+    m, s = divmod(rem, 60)
+    if d:
+        parts = [(d, "d"), (h, "h")]
+    elif h:
+        parts = [(h, "h"), (m, "min")]
+    else:
+        parts = [(m, "min"), (s, "s")]
+    shown = [f"{v} {u}" for v, u in parts if v]
+    if not shown:  # only when the smaller unit rounds to zero, e.g. exactly 2 h
+        v, u = parts[0]
+        shown = [f"{v} {u}"]
+    return " ".join(shown)
+
+
+# ---------------------------------------------------------------------------
+# เพดานเวลาต่อจุด (Phase 2) — 2026-10-05, ผู้ควบคุมกำหนด: เวลาที่บอร์ดรันต่อจุดห้ามเกิน
+# 2 ชั่วโมง ถ้า 100 reps เกิน ให้เก็บเท่าที่ได้มากที่สุดโดยไม่เกิน (เช่น 80 reps = 1 h 54 min
+# ส่วน 81 reps = 2 h+ ก็เก็บแค่ 80) ถ้าแม้ 1 rep เดียวก็เกิน 2 ชม. ให้ข้ามจุดนั้น นับเฉพาะ
+# เวลาบอร์ดรัน (ผลรวม exec_time_us ของ rep) ไม่รวม compile/upload/boot
+# ---------------------------------------------------------------------------
+POINT_TIME_CAP_S = 7200
+
+
+def max_reps_under_cap(per_rep_s, reps=REPS, cap_s=POINT_TIME_CAP_S, overhead_s=0.0):
+    """จำนวน rep สูงสุด (<= reps) ที่เวลารวมไม่เกิน cap_s; 0 ถ้า 1 rep ก็เกิน (ข้ามจุด)"""
+    if per_rep_s <= 0:
+        return reps
+    return int(max(0, min(reps, (cap_s - overhead_s) // per_rep_s)))
+
+
+def point_reps_under_cap(board, circuit, n):
+    """reps a point is expected to collect under the per-point cap (>= 1; a point whose single rep
+    exceeds the cap is skipped before this is used). For ETA/budget display only."""
+    return max(1, max_reps_under_cap(expected_exec_time_us(board, circuit, n) / 1e6))
+
+
+def time_cap_reached(exec_us_list, cap_s=POINT_TIME_CAP_S):
+    """True ถ้า rep ถัดไป (เวลาเท่าค่าเฉลี่ยของที่ได้แล้ว) จะทำให้ผลรวมเกิน cap_s
+    — ใช้ตัดสินใจหยุดเก็บระหว่างรันจริงจากเวลาที่วัดได้ ไม่ใช่ค่าประเมิน"""
+    k = len(exec_us_list)
+    if k == 0:
+        return False
+    total_s = sum(exec_us_list) / 1e6
+    return total_s + total_s / k > cap_s
 
 
 def retry_allowed(budget_s):
@@ -429,12 +476,16 @@ PC_FIXED_OVERHEAD_S = 0.05  # ค่าเริ่มต้นของ AerSimu
 # มีการแลกเฟรม request/response ตลอดเวลา (ทุก trial) ลิงก์จึงไม่ได้เงียบยาว ๆ แบบ
 # Phase 2 และตรวจจับการตายกลางคันได้เร็วกว่ามาก
 #
-# 2 ชั่วโมงเลือกให้ "ครอบ grover n=10 พอดี" (ประเมิน 4050 วินาที = 67 นาที ต่อจุด
-# ต่อบอร์ด) ซึ่งเป็นจุด grover ที่แพงที่สุดที่ยังทำได้จริงแบบไม่ cache ส่วน n=12
-# (ประเมิน ~20 ชั่วโมงต่อจุด) จะชนเพดานและถูกบันทึกเป็น session_incomplete ตามจริง
-# — จงใจไม่เพิ่ม cache เพื่อให้ตัวเลขดูดีขึ้น เพราะจะเปลี่ยนความหมายของสิ่งที่ Phase 3 วัด
-PHASE3_CEILING_S = 7200
+# 2026-10-07: เพดาน 2 ชั่วโมงต่อจุดใช้แบบเดียวกับ Phase 2 (POINT_TIME_CAP_S): ถ้า 100 reps เกิน
+# ให้เก็บเท่าที่พอดี (phase3_point_reps) ถ้า 1 request ก็เกินให้ข้ามจุดแล้วไปต่อ n ถัดไป
+# (เดิมข้ามทั้งจุดเมื่อ 100 reps เกิน) จงใจไม่เพิ่ม cache เพื่อให้ตัวเลขดูดีขึ้น
+# เพราะจะเปลี่ยนความหมายของสิ่งที่ Phase 3 วัด
 PHASE3_FLOOR_S = 300  # เท่ากับ SESSION_TIMEOUT_S เดิม — วงจรถูก ๆ ไม่ควรได้ timeout สั้นลง
+# hard cutoff of one Phase 3 session: the per-point cap (2 h of serving requests) x the usual safety factor
+PHASE3_CEILING_S = int(POINT_TIME_CAP_S * SAFETY_FACTOR)
+PHASE3_REP_OVERHEAD_S = 0.03   # firmware delay(20) between reps + UART frames; negligible except for the cheapest circuits
+PHASE3_MIN_RESPONSE_TIMEOUT_S = 5.0
+PHASE3_TIMEOUT_FACTOR = 3.0    # response timeout = this x the model's per-request simulation time (the model is an ESTIMATE)
 
 
 def pc_sim_time_s(circuit, n):
@@ -443,23 +494,43 @@ def pc_sim_time_s(circuit, n):
     return PC_FIXED_OVERHEAD_S + (n_h + n_cnot + n_cphase) * PC_SECONDS_PER_GATE
 
 
-def phase3_session_budget_s(circuit, n, reps=REPS):
-    """timeout ของ 1 session (= 1 จุดข้อมูล = reps คำขอ) ใน Phase 3"""
-    raw = pc_sim_time_s(circuit, n) * reps * SAFETY_FACTOR
+def phase3_rep_time_s(circuit, n):
+    """one request/response round trip as the model sees it: PC simulation + the board's own per-rep overhead"""
+    return pc_sim_time_s(circuit, n) + PHASE3_REP_OVERHEAD_S
+
+
+def phase3_point_reps(circuit, n, reps=REPS):
+    """reps one Phase 3 point collects under the 2 h per-point cap (POINT_TIME_CAP_S): all `reps` if they fit,
+    fewer if not, 0 if even one request would pass the cap (point skipped). Planned from the model, like
+    Phase 2's plan; the board is built with exactly this many reps."""
+    return max_reps_under_cap(phase3_rep_time_s(circuit, n), reps=reps)
+
+
+def phase3_response_timeout_ms(circuit, n):
+    """firmware RESPONSE_TIMEOUT_MS for this point: the old fixed 5 s, or PHASE3_TIMEOUT_FACTOR x the model's request
+    time when that is longer (a fixed 5 s turned every grover n=9 request into a timeout, 2026-10-07)"""
+    return int(max(PHASE3_MIN_RESPONSE_TIMEOUT_S, PHASE3_TIMEOUT_FACTOR * pc_sim_time_s(circuit, n)) * 1000)
+
+
+def phase3_session_budget_s(circuit, n, reps=None):
+    """timeout ของ 1 session (= 1 จุดข้อมูล = reps คำขอ) ใน Phase 3; reps default = the reps planned under the cap"""
+    reps = phase3_point_reps(circuit, n) if reps is None else reps
+    raw = phase3_rep_time_s(circuit, n) * reps * SAFETY_FACTOR
     return int(min(max(raw, PHASE3_FLOOR_S), PHASE3_CEILING_S))
 
 
-def phase3_budget_is_capped(circuit, n, reps=REPS):
-    return pc_sim_time_s(circuit, n) * reps * SAFETY_FACTOR > PHASE3_CEILING_S
+def phase3_budget_is_capped(circuit, n, reps=None):
+    reps = phase3_point_reps(circuit, n) if reps is None else reps
+    return phase3_rep_time_s(circuit, n) * reps * SAFETY_FACTOR > PHASE3_CEILING_S
 
 
 def phase3_is_infeasible(circuit, n, reps=REPS):
-    """เวลาจำลองฝั่ง PC ล้วน ๆ เกินเพดาน session — เก็บครบ reps ไม่ได้ในทางปฏิบัติ
+    """a single request already passes the 2 h per-point cap: the point is skipped (the run goes on to the next n)
 
     ข้อสังเกตสำคัญ: เกณฑ์นี้ "ไม่ขึ้นกับบอร์ด" เพราะ Phase 3 ให้ PC เป็นคนจำลอง
     ผลคือ grover n=10 ที่ local บน ESP8266 ทำไม่ได้เลย (1.3 วันต่อจุด) กลับ offload
     ได้สบายใน ~1.1 ชั่วโมงต่อจุด — ความไม่สมมาตรนี้คือ crossover ที่ชัดที่สุดในชุดข้อมูล"""
-    return pc_sim_time_s(circuit, n) * reps > PHASE3_CEILING_S
+    return phase3_point_reps(circuit, n, reps) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -489,10 +560,11 @@ def print_budget_plan(board, circuit_n_pairs, reps=REPS, phase=2):
     print(f"{'circuit':14s} {'n':>3s} {'expected':>11s} {'finish@':>14s} {'budget_s':>9s}{mem_hdr}  note")
     for circuit, n in circuit_n_pairs:
         if phase == 3:
-            expected = pc_sim_time_s(circuit, n) * reps
-            budget = phase3_session_budget_s(circuit, n, reps)
-            capped = phase3_budget_is_capped(circuit, n, reps)
-            unreachable = phase3_is_infeasible(circuit, n, reps)
+            k = phase3_point_reps(circuit, n, reps)
+            expected = phase3_rep_time_s(circuit, n) * (k if k else reps)   # skipped point: show what 100 reps would need
+            budget = phase3_session_budget_s(circuit, n, k) if k else FLOOR_S
+            capped = bool(k) and phase3_budget_is_capped(circuit, n, k)
+            unreachable = k == 0
         else:
             expected = point_wall_estimate_s(board, circuit, n, reps)
             budget = timeout_budget_s(board, circuit, n, reps)
@@ -500,11 +572,14 @@ def print_budget_plan(board, circuit_n_pairs, reps=REPS, phase=2):
             unreachable = is_compute_infeasible(board, circuit, n, reps)
 
         note = ""
+        if phase == 3 and 0 < k < reps:
+            note = f"CAP {k}/{reps} reps (2 h per-point cap)"
         if unreachable:
-            note = f"INFEASIBLE — needs {human_duration(expected)}, will be SKIPPED"
+            note = (f"SKIP — one request needs {human_duration(phase3_rep_time_s(circuit, n))} (> 2 h cap)" if phase == 3
+                    else f"INFEASIBLE — needs {human_duration(expected)}, will be SKIPPED")
             infeasible.add((circuit, n))
         elif capped:
-            note = "capped at ceiling (still above expected, should complete)"
+            note = (note + "  " if note else "") + "capped at ceiling (still above expected, should complete)"
         elif phase == 2 and not retry_allowed(budget):
             note = "retry disabled (budget above RETRY_MAX_BUDGET_S)"
 

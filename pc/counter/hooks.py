@@ -45,9 +45,9 @@ class SweepRef:
         self.enabled = session is not None
         self.last = None
 
-    def arm(self, n):
+    def arm(self, n, reps=None, max_width_s=None):
         if self.enabled:
-            ok = self.s.arm_point(n)
+            ok = self.s.arm_point(n, reps=reps, max_width_s=max_width_s)
             if not ok:
                 print(f"[ref] counter not armed for n={n} (see ref_issues.log) -- this point runs WITHOUT a reference")
             return ok

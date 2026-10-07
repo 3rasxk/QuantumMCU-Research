@@ -119,8 +119,22 @@ def test_estimates_and_labels():
           f"{pg.device_s:.0f}s")
     check("esp32 grover n=9 NOT flagged (about 12 min)", not eta.estimate_point("esp32", "grover", 9, 2, {}).time_limited)
     p3 = eta.estimate_point("esp32", "qft", 6, 3, {})
-    check("phase 3 point: ESTIMATE, device = PC-sim x reps",
-          p3.label == "ESTIMATE" and approx(p3.device_s, tm.pc_sim_time_s("qft", 6) * tm.REPS) and not p3.wall)
+    check("phase 3 point: ESTIMATE, device = (PC-sim + per-rep overhead) x reps",
+          p3.label == "ESTIMATE" and approx(p3.device_s, tm.phase3_rep_time_s("qft", 6) * tm.REPS) and not p3.wall)
+    # Phase 3 per-point cap (2 h): fewer reps, or skipped when one request passes the cap
+    reps = {n: tm.phase3_point_reps("grover", n) for n in (8, 10, 11, 12, 13, 14, 15)}
+    check("phase 3 grover: 100 reps up to n=10, fewer at n=11-13, skipped (0) from n=14",
+          reps[8] == reps[10] == 100 and 0 < reps[13] < reps[12] < reps[11] < 100 and reps[14] == reps[15] == 0, str(reps))
+    check("phase 3 capped point never exceeds the cap",
+          all(tm.phase3_rep_time_s("grover", n) * reps[n] <= tm.POINT_TIME_CAP_S for n in reps))
+    p11 = eta.estimate_point("esp8266", "grover", 11, 3, {})
+    p14 = eta.estimate_point("esp8266", "grover", 14, 3, {})
+    check("phase 3 ETA: n=11 capped (reps<100, TIME-LIMITED), n=14 skipped with no time",
+          p11.reps == reps[11] and p11.time_limited and p14.skipped and p14.device_s == 0.0)
+    check("phase 3 response timeout: 5 s floor, 3x the model's request time above that, session budget bounded",
+          tm.phase3_response_timeout_ms("h_all", 15) == 5000
+          and tm.phase3_response_timeout_ms("grover", 10) == int(3 * tm.pc_sim_time_s("grover", 10) * 1000)
+          and all(tm.PHASE3_FLOOR_S <= tm.phase3_session_budget_s("grover", n) <= tm.PHASE3_CEILING_S for n in range(2, 16)))
 
 
 def test_plan_points_filters():
@@ -225,6 +239,30 @@ def test_watcher_live_update_with_mock_csv():
         check("skip_existing ignores rows from earlier runs (resume)", w2.poll() == [])
 
 
+def test_watcher_uses_real_point_time_from_points_csv():
+    """[ETA] must show the point's real time (points.csv wall_s / device_exec_s), not the gap between
+    terminal-record start timestamps (that printed 'n=8 ok in 31.0s' for a 40 min point)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        csv_path = Path(tmp) / "memory_wall.csv"
+        with open(csv_path, "w", newline="") as f:
+            csv.writer(f).writerow(["board", "circuit", "n", "status", "timestamp_utc"])
+        with open(Path(tmp) / "points.csv", "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["n", "start_utc", "wall_s", "device_exec_s"])
+        start = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
+        pts = eta.plan_points("esp8266", "grover", 2, n_start=8, n_max=9)
+        out = []
+        w = eta.PointWatcher(csv_path, pts, run_start=start, out=out.append,
+                             now_fn=lambda: datetime(2026, 10, 3, 19, 0, tzinfo=BKK))
+        with open(Path(tmp) / "points.csv", "a", newline="") as f:
+            csv.writer(f).writerow([8, (start + timedelta(seconds=31)).isoformat(), 2409.163, 2380.577])
+        with open(csv_path, "a", newline="") as f:  # terminal record carries the point START time
+            csv.writer(f).writerow(["esp8266", "grover", 8, "ok", (start + timedelta(seconds=31)).isoformat()])
+        lines = w.poll()
+        check("real time shown: 40 min 9 s, board run 39 min 41 s",
+              len(lines) == 1 and "n=8 ok in 40 min 9 s (board run 39 min 41 s)" in lines[0], str(lines))
+
+
 # ------------------------------------------------------ plan-wide / run.py
 
 def test_plan_report():
@@ -304,9 +342,12 @@ def test_real_run_prints_live_eta_with_mocked_subprocess():
         run_mod.rh.LEDGER_PATH = root / "ledger.jsonl"
         run_mod.generate_figures = lambda *a, **k: None
         calls = []
+        envs = []
 
         def fake_run(argv, *a, **k):
             calls.append(argv)
+            if isinstance(argv, list) and "uno_sweep.py" in " ".join(map(str, argv)):
+                envs.append(k.get("env") or {})
             if isinstance(argv, list) and "uno_sweep.py" in " ".join(map(str, argv)):
                 path = sp.memory_wall_csv_path("uno", "h_all", 2, False)
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -330,9 +371,10 @@ def test_real_run_prints_live_eta_with_mocked_subprocess():
         text = out.getvalue()
         etas = [ln for ln in text.splitlines() if ln.startswith("[ETA]")]
         check("real run exits 0", code == 0, f"code={code}")
-        check("one [ETA] line per recorded point (3 rows written)", len(etas) == 3, str(etas))
-        check("last ETA line shows the remaining point count", "point(s) left" in etas[-1] if etas else False,
-              etas[-1] if etas else "")
+        # uno phase 2 runs compact: the sweep prints its own single per-point line (with ETA), so the runner's
+        # watcher stays silent and the sweep is told so via QLAB_COMPACT
+        check("uno phase 2: runner prints no separate [ETA] lines (sweep line carries the ETA)", len(etas) == 0, str(etas))
+        check("uno phase 2: sweep launched with QLAB_COMPACT=1", bool(envs) and envs[0].get("QLAB_COMPACT") == "1", str(envs))
 
 
 def test_tiers_and_watchdog():
@@ -344,17 +386,47 @@ def test_tiers_and_watchdog():
     check("uno has no WDT threshold", not eta.estimate_point("uno", "grover", 7, 2).wdt_risk)
     check("phase 3 and wall points are never watchdog risk",
           not eta.estimate_point("esp8266", "grover", 9, 3).wdt_risk and not eta.estimate_point("esp8266", "grover", 13, 2).wdt_risk)
-    text = eta.format_table("esp8266", "grover", 2, eta.plan_points("esp8266", "grover", 2),
+    text = eta.format_table("esp8266", "grover", 2, eta.plan_points("esp8266", "grover", 2, measured={}),  # model only, not the repo's live data
                             datetime(2026, 10, 3, 9, 0, tzinfo=BKK))
-    check("table shows >72h and WATCHDOG RISK notes and a per-rep column", ">72h" in text and "WATCHDOG RISK" in text and "per-rep" in text)
+    check("table shows CAP, SKIP and WDT notes and per-rep/reps columns",
+          "CAP 55/100" in text and "SKIP" in text and "WDT" in text and "per-rep" in text and "reps" in text)
+    check("table fits in 130 columns (data rows)", max(len(l) for l in text.splitlines() if l[:3].strip().isdigit()) <= 130)
     buf = []
     eta.plan_report(brief=True, out=buf.append)
     t = "\n".join(buf)
     check("plan report lists tier counts and grover time to wall",
-          ">72h 2" in t and "grover, time to complete up to the predicted wall" in t and "n=2..13" in t)
+          ">72h 0" in t and "grover, time to complete up to the predicted wall" in t and "n=2..13" in t)
+
+
+def test_time_cap():
+    cap = tm.POINT_TIME_CAP_S
+    check("cap is 2 h", cap == 7200)
+    # user's example: 80 reps = 1.9 h fits, 81 reps would exceed 2 h
+    per = 1.9 * 3600 / 80
+    check("max reps: 80 reps at 1.9 h fits, more would not exceed only if 81 > cap",
+          tm.max_reps_under_cap(per) == min(tm.REPS, int(cap // per)) and tm.max_reps_under_cap(per) * per <= cap)
+    check("max reps never above REPS", tm.max_reps_under_cap(0.001) == tm.REPS)
+    check("1 rep over the cap -> 0 (skip)", tm.max_reps_under_cap(cap + 1) == 0)
+    check("exactly cap per rep -> 1 rep", tm.max_reps_under_cap(cap) == 1)
+    us = [90e6] * 79  # 79 reps of 90 s = 1 h 58 min 30 s; next 90 s -> 2 h exactly, allowed
+    check("time_cap_reached: 79 x 90 s, next fits exactly -> keep going", not tm.time_cap_reached(us))
+    check("time_cap_reached: 80 x 90 s = 2 h, next exceeds -> stop", tm.time_cap_reached([90e6] * 80))
+    check("time_cap_reached: no reps yet -> False", not tm.time_cap_reached([]))
+    p9 = eta.estimate_point("esp8266", "grover", 9, 2, {})
+    p11 = eta.estimate_point("esp8266", "grover", 11, 2, {})
+    p8 = eta.estimate_point("esp8266", "grover", 8, 2, {})
+    check("esp8266 grover n=9 capped to fewer reps, device <= 2 h + overhead",
+          p9.time_limited and 0 < p9.reps < tm.REPS and p9.device_s <= cap + 10, f"{p9.reps} {p9.device_s}")
+    check("esp8266 grover n=11: 1 rep > 2 h -> skipped, costs nothing", p11.skipped and p11.total_s == 0.0)
+    check("esp8266 grover n=8 under the cap: all reps, not capped", p8.reps == tm.REPS and not p8.time_limited)
+    d = tm.human_duration
+    check("human_duration uses base-60 units", d(3 * 3600 + 6 * 60) == "3 h 6 min" and d(7200) == "2 h"
+          and d(125) == "2 min 5 s" and d(29 * 3600) == "1 d 5 h" and d(1.2) == "1.2s")
 
 
 def main():
+    test_time_cap()
+    test_watcher_uses_real_point_time_from_points_csv()
     test_tiers_and_watchdog()
     test_plan_scope_and_ranges()
     test_estimates_and_labels()

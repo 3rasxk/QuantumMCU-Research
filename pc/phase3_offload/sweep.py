@@ -123,7 +123,7 @@ def find_port(board: str, hint: str) -> str:
 
 
 def build_and_upload(board: str, circuit: str, n: int, baud: int, port_hint: str,
-                      build_timeout_s=None):
+                      build_timeout_s=None, reps=None, response_timeout_ms=None):
     """แยก compile กับ upload เป็นสอง subprocess (เดิมเป็นคำสั่งเดียว `-t upload`) เพื่อ
     จับเวลาแยกกันได้จริง — ดู uno_sweep.py::build_and_upload สำหรับเหตุผลเต็ม
 
@@ -134,6 +134,15 @@ def build_and_upload(board: str, circuit: str, n: int, baud: int, port_hint: str
     port = find_port(board, port_hint)
     env = os.environ.copy()
     env.update({"N_QUBITS": str(n), "CIRCUIT_ID": str(CIRCUIT_IDS[circuit]), "BAUD_RATE": str(baud)})
+    # per-point firmware settings (defaults in main_offload.cpp: 100 reps, 5 s): the reps that fit the 2 h cap, and a
+    # response timeout longer than the PC's simulation time
+    extra = []
+    if reps is not None:
+        extra.append(f"-D REPS={int(reps)}")
+    if response_timeout_ms is not None:
+        extra.append(f"-D RESPONSE_TIMEOUT_MS={int(response_timeout_ms)}UL")
+    if extra:
+        env["PLATFORMIO_BUILD_FLAGS"] = " ".join(filter(None, [env.get("PLATFORMIO_BUILD_FLAGS", ""), *extra]))
 
     timed_out = False
     t0 = time.perf_counter()
@@ -379,7 +388,7 @@ def _run_circuit(args, circuit, n_max, sim, ref_active=False):
         planned_with_baud = [(circuit, n, b) for b in args.bauds for n in n_values]
         remaining_preview = [p for p in planned_with_baud if p not in completed]
         real_remaining = [(c, n) for c, n, b in remaining_preview if (c, n) not in infeasible]
-        est_s = sum(tm.pc_sim_time_s(c, n) * tm.REPS for c, n in real_remaining)
+        est_s = sum(tm.phase3_rep_time_s(c, n) * tm.phase3_point_reps(c, n) for c, n in real_remaining)
         n_inf_remaining = len(remaining_preview) - len(real_remaining)
         remaining_human = tm.human_duration(est_s)
         if n_inf_remaining:
@@ -441,17 +450,21 @@ def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, s
                 session.note_point(status="skipped_resume")
                 continue
 
-            budget_s = tm.phase3_session_budget_s(circuit, n)
-            per_req = tm.pc_sim_time_s(circuit, n)
-            expected_s = per_req * tm.REPS
+            point_reps = tm.phase3_point_reps(circuit, n)   # 100, or fewer under the 2 h per-point cap; 0 = skip
+            if point_reps == 0 and args.force_infeasible:
+                point_reps = 1   # --force-infeasible: try one request of a point the cap would skip
+            budget_s = tm.phase3_session_budget_s(circuit, n, point_reps) if point_reps else tm.PHASE3_FLOOR_S
+            per_req = tm.phase3_rep_time_s(circuit, n)
+            expected_s = per_req * (point_reps or tm.REPS)
+            response_timeout_ms = tm.phase3_response_timeout_ms(circuit, n)
             ts = datetime.now(timezone.utc).isoformat()
 
             if (circuit, n) in infeasible:
                 # ไม่ใช่ปัญหาของลิงก์ serial หรือของบอร์ด — เป็นต้นทุนการจำลองฝั่ง PC
                 # ล้วน ๆ (ไม่ cache โดยตั้งใจ) บันทึกค่าประมาณไว้ให้อ่านออกว่าทำไมถึงข้าม
-                print(f"n={n:2d}  SKIP: PC-side sim needs {tm.human_duration(expected_s)} "
-                      f"for {tm.REPS} reps ({per_req:.1f}s/request, uncached) "
-                      f"> ceiling {tm.PHASE3_CEILING_S}s")
+                print(f"n={n:2d}  SKIP: one request needs {tm.human_duration(per_req)} "
+                      f"(PC-side sim, uncached) > the {tm.human_duration(tm.POINT_TIME_CAP_S)} per-point cap; "
+                      f"continuing with the next n")
                 meta_f.write(f"{args.board},{circuit},{n},{baud},skipped_sim_cost_infeasible,"
                              f"0,0,0,,{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
                 meta_f.flush()
@@ -468,11 +481,14 @@ def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, s
             if ref.stop_requested():   # previous points are fully written; stop BEFORE starting a new one
                 print("[ref] counter lost for 2 consecutive points -- stopping the run (all latency data so far is intact)")
                 return
-            print(f"n={n:2d}  budget={budget_s}s ({per_req:.2f}s/request)  ", end="", flush=True)
-            ref.arm(n)   # no-op without --ref counter
+            cap_note = f"reps={point_reps}/{tm.REPS} (2 h cap)  " if point_reps < tm.REPS else ""
+            print(f"n={n:2d}  budget={budget_s}s ({per_req:.2f}s/request)  {cap_note}", end="", flush=True)
+            # counter: this point's rep count, and a max pulse width above the firmware's response timeout
+            ref.arm(n, reps=point_reps, max_width_s=int(response_timeout_ms / 1000) + 60)   # no-op without --ref counter
 
             attempt_start = datetime.now(timezone.utc).isoformat()
-            result = build_and_upload(args.board, circuit, n, baud, args.port, args.build_timeout_s)
+            result = build_and_upload(args.board, circuit, n, baud, args.port, args.build_timeout_s,
+                                      reps=point_reps, response_timeout_ms=response_timeout_ms)
             args.port = result["port"]
             ts = datetime.now(timezone.utc).isoformat()
             reflash_s = result["compile_s"] + result["upload_s"]
@@ -572,7 +588,8 @@ def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, s
                 # เท่านั้นสำหรับผลจริง ไม่มี "session_incomplete") — session_log.csv
                 # (meta_f ด้านบน) ยังเก็บ "session_incomplete" แบบเดิมเป็นบันทึกฝั่ง resume
                 # ที่ละเอียดกว่า สองไฟล์นี้ตอบคำถามคนละคำถาม ไม่ต้องใช้ค่าเดียวกัน
-                "failure_message": sim_error_safe,
+                "failure_message": (f"time_capped reps={point_reps}/{tm.REPS} cap_s={tm.POINT_TIME_CAP_S}"
+                                    if point_reps < tm.REPS and status == "ok" and not sim_error_safe else sim_error_safe),
                 "status": "ok" if status == "ok" else "failed",
             }, points_csv)
             session.note_point(device_s=device_exec_s, reflash_s=reflash_s,

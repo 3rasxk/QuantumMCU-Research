@@ -59,6 +59,25 @@ cost* — the number that does vary by board is round-trip *latency*, not
 simulation time. No latency value is stated here: it is not yet collected in the
 restarted dataset (`docs/design/system_design.md` discusses what the counter would add).
 
+## Per-point cap: 2 h, and running to `--n-max` (2026-10-07)
+
+Same rule as Phase 2 (`timing_model.POINT_TIME_CAP_S = 7200`), applied to the time the PC spends serving requests:
+
+- Reps per point are planned from the model (`phase3_point_reps`): 100 if they fit in 2 h, otherwise as many as fit, and
+  the board firmware is built with exactly that many (`-D REPS=k`). The point is recorded `ok` with
+  `failure_message = time_capped reps=k/100 cap_s=7200` in `points.csv`.
+- If even one request would pass 2 h (grover n>=14 on the model), the point is skipped
+  (`skipped_sim_cost_infeasible`) and the run **continues with the next n**, up to `--n-max`.
+- The firmware response timeout is no longer a fixed 5 s: `max(5 s, 3 x the model's request time)`
+  (`phase3_response_timeout_ms`, built in as `-D RESPONSE_TIMEOUT_MS`). A fixed 5 s turned half of the grover n=9
+  requests into timeouts (first run, 2026-10-07). The counter's max pulse width follows (timeout + 60 s).
+- Limits: the planned reps come from the UNVERIFIED model (on the first run it was about 20 % above the measured time at
+  grover n=8), so a capped point may take a little less than 2 h; the board's `micros()` wraps at 71.6 min, so one request
+  must stay below that (model: grover n=13 about 51 min).
+- Model plan for the ESP8266 grover to n=15: n<=10 100 reps, n=11 42, n=12 9, n=13 2, n=14-15 skipped; total about 7 h 9 min.
+  Check with `pc/run.py --plan` / `--dry-run`.
+- A point already recorded in `session_log.csv` is skipped on resume even if it had a high error rate; use `--fresh` to redo.
+
 ## Wire protocol (for reference, not something `pc/run.py` changes)
 
 ```
