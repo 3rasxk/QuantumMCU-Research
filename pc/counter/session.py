@@ -161,10 +161,15 @@ class CounterSession:
         anomalies = [(f[0], f[1], f[2]) for t, f in collected if t == cp.T_ANOMALY]
         pulses = self._dedupe(pulses)
         all_pulses = pulses
-        runs = cc.split_runs(pulses)
+        # Phase 3: between two reps the line is idle only ~20 ms (the firmware's delay(20); the wait for the PC is INSIDE
+        # the pulse), so the restart gap (~0.32 s on the ESP8266) is only ~16x the median gap, not 50x: lower the factor
+        runs = cc.split_runs(pulses, gap_factor=5) if self.phase == 3 else cc.split_runs(pulses)
         if len(runs) > 1:
             self.issue(n, f"{len(runs)} target runs seen by the counter ({[len(r) for r in runs]} pulses); pairing the LAST run (the one whose rows the sweep read)")
             pulses = runs[-1]
+            if len([p for p in pulses if not p[5] & 1]) == reps:
+                # the counter's own 'extra pulse' flag (code 2) came from the earlier, cut-short run: not an anomaly of the paired run
+                anomalies = [x for x in anomalies if x[1] != cp.A_EXTRA]
         if reps < self.reps:
             pulses = pulses[:reps]
             anomalies = [a for a in anomalies if a[0] in {p[0] for p in pulses}]

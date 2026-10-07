@@ -83,6 +83,13 @@ def memory_wall_csv_path(board: str, circuit: str, phase: int = 2, ref: bool = F
     return raw_dir(board, circuit, phase, ref) / "memory_wall.csv"
 
 
+def predicted_csv_path(board: str, circuit: str, phase: int = 2, ref: bool = False) -> Path:
+    """.../<circuit>/{no_ref,with_ref}/predicted.csv -- model/extrapolated values for points that
+    were NOT run because one rep alone exceeds the per-point time cap (pc/shared/predicted.py).
+    ESTIMATES, never mixed into raw.csv."""
+    return raw_dir(board, circuit, phase, ref) / "predicted.csv"
+
+
 def session_log_csv_path(board: str, circuit: str, phase: int = 3, ref: bool = False) -> Path:
     return raw_dir(board, circuit, phase, ref) / "session_log.csv"
 
@@ -95,7 +102,7 @@ def sessions_csv_path(board: str, circuit: str, phase: int = 2, ref: bool = Fals
     return raw_dir(board, circuit, phase, ref) / "sessions.csv"
 
 
-def figures_dir(board: str, circuit: str = None, ref: bool = False) -> Path:
+def figures_dir(board: str, circuit: str = None, ref: bool = False, phase: int = 2) -> Path:
     """data/figures/<board>/<circuit>/{no_ref,with_ref}/ for a single
     algorithm's charts, or data/figures/<board>/{no_ref,with_ref}/
     (circuit=None) for the board's cumulative chart -- timing-only (no_ref)
@@ -103,6 +110,8 @@ def figures_dir(board: str, circuit: str = None, ref: bool = False) -> Path:
     directory, matching the raw-data split above."""
     base = REPO_ROOT / "data" / "figures" / board
     base = base / circuit if circuit else base
+    if phase == 3 and circuit:   # Phase 3 (offload) charts live beside, never inside, the Phase 2 ones
+        base = base / "phase3"
     return base / _ref_bucket(ref)
 
 

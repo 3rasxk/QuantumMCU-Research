@@ -390,7 +390,7 @@ def _archive_sources(board, algorithm, phase, ref=False):
     raw_src = sp.raw_dir(board, algorithm, phase, ref)
     if raw_src.exists() and any(raw_src.iterdir()):
         sources.append(("raw", raw_src))
-    figures_src = sp.figures_dir(board, algorithm, ref)
+    figures_src = sp.figures_dir(board, algorithm, ref, phase=phase)
     if figures_src.exists() and any(figures_src.iterdir()):
         sources.append(("figures", figures_src))
     doc_src = sp.analysis_doc_path(board, algorithm)
@@ -659,18 +659,18 @@ def plan_main(argv):
     return 0
 
 
-def generate_figures(python_exe, board, algorithm, ref=False):
-    """After a completed Phase 2 run, regenerate this algorithm's plots (plus the
-    cumulative chart) into data/figures/<board>/<algorithm>/<bucket>/ via
-    analysis/phase2_uno_run_plots.py. Never affects the run's outcome: any
-    failure is printed and swallowed, the returncode of the sweep is unchanged."""
-    cmd = [python_exe, str(REPO_ROOT / "analysis" / "phase2_uno_run_plots.py"),
+def generate_figures(python_exe, board, algorithm, ref=False, phase=2):
+    """After a completed run, regenerate this algorithm's plots into data/figures/<board>/<algorithm>/<bucket>/
+    (Phase 2: analysis/phase2_uno_run_plots.py, plus the cumulative chart) or
+    data/figures/<board>/<algorithm>/phase3/<bucket>/ (Phase 3: analysis/phase3_run_plots.py).
+    Never affects the run's outcome: any failure is printed and swallowed, the returncode of the sweep is unchanged."""
+    script = "phase3_run_plots.py" if phase == 3 else "phase2_uno_run_plots.py"
+    cmd = [python_exe, str(REPO_ROOT / "analysis" / script),
            "--board", board, "--circuit", algorithm]
     if ref:
         cmd.append("--ref")
     print("\n--- generating figures ---\n" + " ".join(cmd))
-    (REPO_ROOT / "data" / "figures" / board / algorithm / ("with_ref" if ref else "no_ref")
-     ).mkdir(parents=True, exist_ok=True)
+    sp.figures_dir(board, algorithm, ref, phase=phase).mkdir(parents=True, exist_ok=True)
     try:
         r = subprocess.run(cmd, cwd=REPO_ROOT)
         if r.returncode != 0:
@@ -884,8 +884,8 @@ def main(argv=None):
             print(f"dashboard bridge restarted (pid {pid}): http://localhost:8080/ keeps showing the counter between runs")
         except Exception as e:  # noqa: BLE001
             print(f"note: could not restart the dashboard bridge: {e}")
-    if returncode == 0 and args.phase == 2:
-        generate_figures(argv_cmd[0], args.board, args.algorithm, args.ref)
+    if returncode == 0 and args.phase in (2, 3):
+        generate_figures(argv_cmd[0], args.board, args.algorithm, args.ref, phase=args.phase)
 
     if archive_dest is not None:
         print(f"\n--- fresh run summary ---")

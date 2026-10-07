@@ -86,6 +86,15 @@ Wiring is the Phase 2 wiring (`docs/design/wiring.md`). UNVERIFIED on hardware.
 Data goes to `with_ref/` (`ref/` holds the counter pulses and the micros-vs-counter comparison). The comparison
 column is `e2e_latency_us`, not `exec_time_us`. A timed-out rep (5 s) still produces a pulse.
 
+**Figures** are generated automatically when a Phase 3 run finishes (`pc/run.py` calls `analysis/phase3_run_plots.py`), into
+`data/figures/<board>/<circuit>/phase3/<no_ref|with_ref>/`: `latency_vs_n`, `outcomes_vs_n`, `time_per_point`, and with
+`--ref counter` also `micros_vs_counter`. By hand: `.venv/bin/python analysis/phase3_run_plots.py --board esp8266 --circuit h_all --ref`.
+Run `sweep.py` directly and no figures are made; run the command above.
+
+Counter pairing note (2026-10-07, first real run): the ESP8266 restarts when the sweep opens the serial port, so the
+counter sees one cut-short pulse (~1.9 s) before the 100 real ones; `CounterSession` splits the runs with
+`gap_factor=5` in Phase 3 (reps are ~20 ms apart) and pairs the last run.
+
 ## What to check afterwards
 
 `data/raw/phase3/<board>/<circuit>/no_ref/` (or `with_ref/` when run with `--ref counter`, see below):

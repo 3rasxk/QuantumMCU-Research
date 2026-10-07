@@ -264,6 +264,10 @@ def main():
     check("reference schema constants are separate from telemetry SCHEMA_VERSION",
           rs.REF_PULSES_SCHEMA_VERSION == 1 and __import__("shared.telemetry", fromlist=["x"]).SCHEMA_VERSION == 2)
 
+    # Phase 3 gaps: 20 ms idle between reps, 0.318 s restart gap (measured on the ESP8266): default factor 50 misses it
+    ph3 = [(0, 0, 0, 1_900_000_000, 0, 0)] + [(1 + i, 1_900_000 + 318_000 + i * 22_000 + i * 2_000, 0, 2_000_000, 0, 0) for i in range(30)]
+    check("split_runs gap_factor=5 splits the ESP8266 Phase 3 restart gap, the default factor does not",
+          [len(r) for r in cc.split_runs(ph3, gap_factor=5)] == [1, 30] and len(cc.split_runs(ph3)) == 1)
     # Phase 3: one pulse = one request/response round trip; the target's own time is column 5 (e2e_latency_us)
     check("phase 3 max width is the 130 s floor (offload firmware times out after 5 s), not the Phase 2 model",
           max_width_for("esp8266", "grover", 12, phase=3) == 130 and max_width_for("esp8266", "grover", 12) > 130)
