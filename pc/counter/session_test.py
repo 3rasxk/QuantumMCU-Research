@@ -268,6 +268,23 @@ def main():
     ph3 = [(0, 0, 0, 1_900_000_000, 0, 0)] + [(1 + i, 1_900_000 + 318_000 + i * 22_000 + i * 2_000, 0, 2_000_000, 0, 0) for i in range(30)]
     check("split_runs gap_factor=5 splits the ESP8266 Phase 3 restart gap, the default factor does not",
           [len(r) for r in cc.split_runs(ph3, gap_factor=5)] == [1, 30] and len(cc.split_runs(ph3)) == 1)
+    # Phase 3 noise burst (ESP8266 grover n=10): extra ~0 and 2^32-tick pulses between the real ones; width alignment recovers
+    import random
+    rnd = random.Random(7)
+    lat = [round(rnd.uniform(33e6, 56e6)) for _ in range(20)]               # board e2e_latency_us
+    pl, seq_i = [], 0
+    for i, m in enumerate(lat):
+        for junk in ([0.0, 53_687_091.2] if i in (3, 4, 11) else []):       # junk before the real pulse
+            pl.append((seq_i, seq_i * 1000, 0, int(junk * 1000), 1 if junk else 0, 0 if junk else 1)); seq_i += 1
+        pl.append((seq_i, seq_i * 1000, 0, int((m - 250) * 1000), 0, 0)); seq_i += 1   # counter reads 250 us shorter
+    res = cc.join_point(pl, [float(x) for x in lat], 20, "esp8266", align_widths=True)
+    check("noise burst: plain join is refused, width alignment pairs all 20 reps",
+          cc.join_point(pl, [float(x) for x in lat], 20, "esp8266")["status"] == "refused_count_mismatch"
+          and res["status"] == "joined" and res["summary"]["n_pairs"] == 20 and abs(res["summary"]["median_diff_us"] - 250) < 1e-6
+          and res["notes"].startswith("partial: aligned by width"), str(res["notes"]))
+    check("width alignment refuses when under 90 % of the reps match",
+          cc.join_point([(0, 0, 0, 1_000_000, 0, 0)] * 3, [float(x) for x in lat], 20, "esp8266", align_widths=True)["status"]
+          == "refused_count_mismatch")
     # Phase 3: one pulse = one request/response round trip; the target's own time is column 5 (e2e_latency_us)
     check("phase 3 max width is the 130 s floor (offload firmware times out after 5 s), not the Phase 2 model",
           max_width_for("esp8266", "grover", 12, phase=3) == 130 and max_width_for("esp8266", "grover", 12) > 130)

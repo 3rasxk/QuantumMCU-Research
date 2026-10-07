@@ -195,7 +195,7 @@ class CounterSession:
             self.issue(n, f"anomaly code {code} ({cp.ANOMALY_NAMES.get(code, '?')})")
         self._write(n, all_pulses, anomalies, report, status, codes, used=pulses)
         if status in ("ok", "anomaly", "count_mismatch") and micros_us is not None:
-            result = cc.join_point(pulses, micros_us, reps, self.board)
+            result = cc.join_point(pulses, micros_us, reps, self.board, align_widths=self.phase == 3)
             self.last_result = result
             cc.write_compare(self.ref_dir, self.session_id, self.board, self.circuit, n, result, status)
             if result["status"] != "joined":

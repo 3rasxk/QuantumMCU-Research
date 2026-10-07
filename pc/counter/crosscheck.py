@@ -46,11 +46,12 @@ def _iqr(xs):
     return q[2] - q[0]
 
 
-def split_runs(pulses, min_gap_s=0.5, gap_factor=50):
+def split_runs(pulses, min_gap_s=0.2, gap_factor=50):
     """The Uno restarts its firmware when the sweep opens the serial port (DTR reset) after the restart caused by the
     upload, so the counter can see two runs (the first one usually cut short). Pulses are split where the idle gap
     between the end of one pulse and the next rise is longer than `min_gap_s` AND `gap_factor` times the median in-run
-    gap. The sweep reads the rows of the LAST run, so only the last run is paired. -> list of runs (lists of PULSE tuples)."""
+    gap. min_gap_s is 0.2 s since 2026-10-06: the ESP8266 restart gap measured in data/raw/phase2/esp8266 is ~0.318 s
+    (reset to first pulse), below the old 0.5 s, so its runs were never split (129, 105, 156 ... pulses for 100 reps). The sweep reads the rows of the LAST run, so only the last run is paired. -> list of runs (lists of PULSE tuples)."""
     if len(pulses) < 3:
         return [list(pulses)]
     gaps = []
@@ -67,7 +68,29 @@ def split_runs(pulses, min_gap_s=0.5, gap_factor=50):
     return runs
 
 
-def join_point(pulses, micros_us, reps, board, max_relative_pct=DEFAULT_MAX_RELATIVE_PCT):
+MAX_PARTIAL_SLOTS = 2   # at most this many glitch-occupied rep slots may be skipped in a join
+ALIGN_MIN_MATCHED = 0.9  # width alignment must pair at least this fraction of the reps, else the point is refused
+
+
+def align_by_width(pulses, micros_us, reps, tol_us=1000.0, tol_rel=2e-4):
+    """Phase 3 only. The counter may see extra pulses (noise bursts: width ~0 or a stale 2^32-tick width, observed on the
+    ESP8266 grover n=10 run) that make the plain sequence join impossible. The board's own round trips are long and
+    distinct, so walk the reps in order and take, for each, the next clean counter pulse whose width is within
+    max(tol_us, tol_rel x latency) of the board's e2e_latency_us (observed micros()-counter difference: well under 0.01 %).
+    Pulses that match no rep are ignored; reps with no match are skipped. -> [(rep, pulse)] in rep order."""
+    cand = [p for p in pulses if not (p[5] & 1)]
+    out, j = [], 0
+    for rep, m in enumerate(micros_us[:reps]):
+        tol = max(tol_us, tol_rel * m)
+        for k in range(j, len(cand)):
+            if abs(cand[k][3] / 1000.0 - m) <= tol:
+                out.append((rep, cand[k]))
+                j = k + 1
+                break
+    return out
+
+
+def join_point(pulses, micros_us, reps, board, max_relative_pct=DEFAULT_MAX_RELATIVE_PCT, align_widths=False):
     """pulses: list of PULSE field tuples (seq, rise_us, width_ticks, width_ns, wraps, flags) in seq order.
     -> {"status", "pairs": [(rep, micros_us, counter_us, diff_us, diff_pct)], "summary": {...}, "notes"}"""
     used = [p for p in pulses if not (p[5] & 1)]
@@ -77,11 +100,30 @@ def join_point(pulses, micros_us, reps, board, max_relative_pct=DEFAULT_MAX_RELA
         return {**base, "status": "refused_no_micros", "notes": "no raw.csv rows for this point"}
     if len(micros_us) < reps:
         return {**base, "status": "refused_short_raw", "notes": f"raw.csv has {len(micros_us)} reps, need {reps}"}
-    if len(used) != reps:
-        return {**base, "status": "refused_count_mismatch",
-                "notes": f"{len(used)} usable pulses ({glitches} glitch) for {reps} reps; refusing rep-order join"}
+    partial = ""
+    aligned = None
+    if len(used) != reps and align_widths:
+        aligned = align_by_width(pulses, micros_us, reps)
+        if len(aligned) < ALIGN_MIN_MATCHED * reps:
+            return {**base, "status": "refused_count_mismatch",
+                    "notes": f"{len(used)} usable pulses ({glitches} glitch) for {reps} reps; width alignment matched only "
+                             f"{len(aligned)}/{reps}"}
+        partial = (f"partial: aligned by width, {len(aligned)}/{reps} reps matched, {len(used) - len(aligned)} extra/unmatched "
+                   "counter pulses ignored")
+    elif len(used) != reps:
+        # a glitch pulse that took the place of one rep's pulse: the pulse COUNT is still `reps`, only flagged slots are
+        # unusable. Pair by slot and skip them (n_pairs < reps, noted); any other count mismatch stays refused.
+        if len(pulses) == reps and 1 <= glitches <= MAX_PARTIAL_SLOTS:
+            slots = [i for i, p in enumerate(pulses) if p[5] & 1]
+            partial = (f"partial: rep slot(s) {slots} skipped (glitch pulse in place of the rep's pulse); "
+                       "slot alignment assumes the glitch replaced that rep")
+        else:
+            return {**base, "status": "refused_count_mismatch",
+                    "notes": f"{len(used)} usable pulses ({glitches} glitch) for {reps} reps; refusing rep-order join"}
     pairs = []
-    for rep, (p, m) in enumerate(zip(used, micros_us[:reps])):
+    src = aligned if aligned is not None else ([(i, p) for i, p in enumerate(pulses) if not (p[5] & 1)] if partial else list(enumerate(used)))
+    for rep, p in src:
+        m = micros_us[rep]
         c_us = p[3] / 1000.0
         d = m - c_us
         pairs.append((rep, m, c_us, d, (d / c_us * 100.0) if c_us > 0 else float("nan")))
@@ -96,7 +138,8 @@ def join_point(pulses, micros_us, reps, board, max_relative_pct=DEFAULT_MAX_RELA
                "max_abs_diff_us": max(abs(x) for x in diffs), "median_diff_pct": med_pct,
                "flagged": flagged, "micros_quantization_us": q}
     return {**base, "status": "joined", "pairs": pairs, "summary": summary,
-            "notes": "" if not flagged else f"median diff {med_pct:.2f} % and {med_d:.1f} us exceed threshold ({max_relative_pct} %, {q} us)"}
+            "notes": "; ".join(x for x in (partial, "" if not flagged else
+                     f"median diff {med_pct:.2f} % and {med_d:.1f} us exceed threshold ({max_relative_pct} %, {q} us)") if x)}
 
 
 def write_compare(ref_dir, session_id, board, circuit, n, result, ref_status):

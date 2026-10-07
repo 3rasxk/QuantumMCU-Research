@@ -78,6 +78,14 @@ Same rule as Phase 2 (`timing_model.POINT_TIME_CAP_S = 7200`), applied to the ti
   Check with `pc/run.py --plan` / `--dry-run`.
 - A point already recorded in `session_log.csv` is skipped on resume even if it had a high error rate; use `--fresh` to redo.
 
+Counter noise bursts (2026-10-07, ESP8266 grover n=10): a few minutes into the point the counter reported hundreds of
+extra pulses (width ~0 or exactly 2^32 ticks = 53.687 s, anomaly codes 3/5/9, dropped frames) while the real 33-56 s
+round trips were still measured correctly (the counter handles pulses longer than the 53.7 s timer wrap). Cause not found
+(not verified: line noise vs capture-path artefact; counter firmware not reflashed, its USB port was not connected). Phase 3
+joins now fall back to `crosscheck.align_by_width`: each board round trip is matched in order to the next counter pulse of
+the same width (1 ms / 0.02 %), extra pulses are ignored, and the point is joined if at least 90 % of the reps match
+(`partial: aligned by width` in the notes); `ref_status` stays `count_mismatch`.
+
 ## Wire protocol (for reference, not something `pc/run.py` changes)
 
 ```
