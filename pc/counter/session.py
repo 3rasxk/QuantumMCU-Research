@@ -165,9 +165,10 @@ class CounterSession:
         anomalies = [(f[0], f[1], f[2]) for t, f in collected if t == cp.T_ANOMALY]
         pulses = self._dedupe(pulses)
         all_pulses = pulses
-        # Phase 3: between two reps the line is idle only ~20 ms (the firmware's delay(20); the wait for the PC is INSIDE
-        # the pulse), so the restart gap (~0.32 s on the ESP8266) is only ~16x the median gap, not 50x: lower the factor
-        runs = cc.split_runs(pulses, gap_factor=5) if self.phase == 3 else cc.split_runs(pulses)
+        # Phase 3: no gap-based run splitting. Reps are ~20 ms apart and a noise spike at the end of a long pulse can leave a
+        # tens-of-seconds hole that looks like a restart (grover n=10, 2026-10-07: pulses split 14 + 86, 14 reps lost);
+        # the width alignment in cc.join_point drops the cut-short first-run pulse and any junk by itself.
+        runs = [list(pulses)] if self.phase == 3 else cc.split_runs(pulses)
         if len(runs) > 1:
             self.issue(n, f"{len(runs)} target runs seen by the counter ({[len(r) for r in runs]} pulses); pairing the LAST run (the one whose rows the sweep read)")
             pulses = runs[-1]
@@ -177,13 +178,20 @@ class CounterSession:
         if reps < self.reps:
             pulses = pulses[:reps]
             anomalies = [a for a in anomalies if a[0] in {p[0] for p in pulses}]
+        aligned_all = False
+        if self.phase == 3 and micros_us is not None and len(micros_us) >= reps:
+            # every board round trip found its counter pulse by width: extra pulses (the cut-short run before the restart, noise)
+            # are ignored, and the counter's own 'extra pulse' flag (code 2) is just the same extra pulse
+            aligned_all = len(cc.align_by_width(pulses, micros_us, reps)) == reps
+            if aligned_all:
+                anomalies = [x for x in anomalies if x[1] != cp.A_EXTRA]
         codes = sorted({a[1] for a in anomalies})
         if status == "ok":
             if aborted:
                 status = "aborted"
             elif not target_ran:
                 status = "no_target_run"
-            elif len([p for p in pulses if not p[5] & 1]) != reps:
+            elif len([p for p in pulses if not p[5] & 1]) != reps and not aligned_all:
                 status = "count_mismatch"
             elif codes:
                 status = "anomaly"

@@ -72,11 +72,11 @@ MAX_PARTIAL_SLOTS = 2   # at most this many glitch-occupied rep slots may be ski
 ALIGN_MIN_MATCHED = 0.9  # width alignment must pair at least this fraction of the reps, else the point is refused
 
 
-def align_by_width(pulses, micros_us, reps, tol_us=1000.0, tol_rel=2e-4):
+def align_by_width(pulses, micros_us, reps, tol_us=200.0, tol_rel=2e-4):
     """Phase 3 only. The counter may see extra pulses (noise bursts: width ~0 or a stale 2^32-tick width, observed on the
     ESP8266 grover n=10 run) that make the plain sequence join impossible. The board's own round trips are long and
     distinct, so walk the reps in order and take, for each, the next clean counter pulse whose width is within
-    max(tol_us, tol_rel x latency) of the board's e2e_latency_us (observed micros()-counter difference: well under 0.01 %).
+    max(tol_us, tol_rel x latency) of the board's e2e_latency_us (observed micros()-counter difference: 2-1100 us, under 0.01 %).
     Pulses that match no rep are ignored; reps with no match are skipped. -> [(rep, pulse)] in rep order."""
     cand = [p for p in pulses if not (p[5] & 1)]
     out, j = [], 0
@@ -102,14 +102,19 @@ def join_point(pulses, micros_us, reps, board, max_relative_pct=DEFAULT_MAX_RELA
         return {**base, "status": "refused_short_raw", "notes": f"raw.csv has {len(micros_us)} reps, need {reps}"}
     partial = ""
     aligned = None
-    if len(used) != reps and align_widths:
+    if align_widths:
+        # Phase 3: match every board round trip to a counter pulse of the same width (see align_by_width). A clean join
+        # (all reps matched, no counter pulse left over) is not 'partial'; anything else is, and says so.
         aligned = align_by_width(pulses, micros_us, reps)
         if len(aligned) < ALIGN_MIN_MATCHED * reps:
             return {**base, "status": "refused_count_mismatch",
                     "notes": f"{len(used)} usable pulses ({glitches} glitch) for {reps} reps; width alignment matched only "
                              f"{len(aligned)}/{reps}"}
-        partial = (f"partial: aligned by width, {len(aligned)}/{reps} reps matched, {len(used) - len(aligned)} extra/unmatched "
-                   "counter pulses ignored")
+        if len(aligned) != reps:
+            partial = (f"partial: aligned by width, {len(aligned)}/{reps} reps matched, {len(used) - len(aligned)} extra/unmatched "
+                       "counter pulses ignored")
+        elif len(used) != reps:
+            partial = f"aligned by width, all {reps} reps matched, {len(used) - len(aligned)} extra counter pulse(s) ignored"
     elif len(used) != reps:
         # a glitch pulse that took the place of one rep's pulse: the pulse COUNT is still `reps`, only flagged slots are
         # unusable. Pair by slot and skip them (n_pairs < reps, noted); any other count mismatch stays refused.

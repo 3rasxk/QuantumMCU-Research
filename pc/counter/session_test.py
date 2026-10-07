@@ -281,10 +281,15 @@ def main():
     check("noise burst: plain join is refused, width alignment pairs all 20 reps",
           cc.join_point(pl, [float(x) for x in lat], 20, "esp8266")["status"] == "refused_count_mismatch"
           and res["status"] == "joined" and res["summary"]["n_pairs"] == 20 and abs(res["summary"]["median_diff_us"] - 250) < 1e-6
-          and res["notes"].startswith("partial: aligned by width"), str(res["notes"]))
+          and res["notes"].startswith("aligned by width, all 20 reps matched"), str(res["notes"]))
     check("width alignment refuses when under 90 % of the reps match",
           cc.join_point([(0, 0, 0, 1_000_000, 0, 0)] * 3, [float(x) for x in lat], 20, "esp8266", align_widths=True)["status"]
           == "refused_count_mismatch")
+    lat_ok = [round(random.Random(3).uniform(33e6, 56e6)) + i * 1000 for i in range(20)]
+    pl_ok = [(i + 1, (i + 1) * 1000, 0, int((m - 250) * 1000), 0, 0) for i, m in enumerate(lat_ok)]
+    check("width alignment: a clean join with one extra pulse is not 'partial', and not refused",
+          (lambda r: r["status"] == "joined" and not r["notes"].startswith("partial") and "extra counter pulse" in r["notes"])(
+              cc.join_point([(0, 0, 0, 1_900_000_000, 0, 0)] + pl_ok, [float(x) for x in lat_ok], 20, "esp8266", align_widths=True)))
     # Phase 3: one pulse = one request/response round trip; the target's own time is column 5 (e2e_latency_us)
     check("phase 3 max width is the 130 s floor (offload firmware times out after 5 s), not the Phase 2 model",
           max_width_for("esp8266", "grover", 12, phase=3) == 130 and max_width_for("esp8266", "grover", 12) > 130)

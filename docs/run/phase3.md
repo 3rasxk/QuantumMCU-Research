@@ -83,8 +83,11 @@ extra pulses (width ~0 or exactly 2^32 ticks = 53.687 s, anomaly codes 3/5/9, dr
 round trips were still measured correctly (the counter handles pulses longer than the 53.7 s timer wrap). Cause not found
 (not verified: line noise vs capture-path artefact; counter firmware not reflashed, its USB port was not connected). Phase 3
 joins now fall back to `crosscheck.align_by_width`: each board round trip is matched in order to the next counter pulse of
-the same width (1 ms / 0.02 %), extra pulses are ignored, and the point is joined if at least 90 % of the reps match
-(`partial: aligned by width` in the notes); `ref_status` stays `count_mismatch`.
+the same width (200 µs / 0.02 %), extra pulses (the cut-short pulse before the ESP8266 restart, noise) are ignored, and the
+point is joined if at least 90 % of the reps match (`partial: aligned by width` in the notes when some reps found no pulse).
+Phase 3 no longer splits the counter's pulses into runs by gap (a noise spike at the end of a 26 s pulse once split grover n=10
+into 14 + 86 pulses). `ref_status` is `ok` when every rep matched. Real data (grover n=2-10, h_all n=2-15) all re-joined this way:
+100/100 reps, micros() minus counter -2 us (h_all) to -1.1 ms (grover n=10, -0.004 %).
 
 ## Wire protocol (for reference, not something `pc/run.py` changes)
 

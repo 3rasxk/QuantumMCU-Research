@@ -7,6 +7,7 @@
 # for tests and dry flows, no hardware).
 
 import queue
+import os
 import socket
 import threading
 import time
@@ -52,6 +53,8 @@ class TcpServerTransport:
         self.peer = None
         self._lock = threading.Lock()
         self._stop = False
+        self._dbg_path = os.environ.get("QLAB_COUNTER_DEBUGLOG")
+        self._dbg_buf = b""
         self._th = threading.Thread(target=self._accept_loop, daemon=True)
         self._th.start()
 
@@ -112,7 +115,24 @@ class TcpServerTransport:
             return b""
         if data == b"":          # peer closed
             self._drop(c)
+        elif self._dbg_path:
+            self._tee_debug(data)
         return data
+
+    def _tee_debug(self, data):
+        """Diagnostic counter firmware (COUNTER_DEBUG) also sends one ASCII '#D ...' line per second on this link. They are not
+        frames (the Decoder skips them); with QLAB_COUNTER_DEBUGLOG=<file> they are appended there with the PC time."""
+        self._dbg_buf += data
+        while b"\n" in self._dbg_buf:
+            line, _, self._dbg_buf = self._dbg_buf.partition(b"\n")
+            i = line.find(b"#D ")
+            if i >= 0:
+                try:
+                    with open(self._dbg_path, "a") as f:
+                        f.write(f"{time.strftime('%H:%M:%S')} {line[i:].decode('ascii', 'replace')}\n")
+                except OSError:
+                    pass
+        self._dbg_buf = self._dbg_buf[-4096:]
 
     def close(self):
         self._stop = True
