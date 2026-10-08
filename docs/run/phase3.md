@@ -105,7 +105,7 @@ sweep process was SIGKILLed (returncode -9, the system's low-memory reaper) twic
 On this 8.6 GB Mac: n=11 (3.7 M gates, about 0.6 GB of circuit) ran, n=12 about 2.5 GB circuit and was killed, n=13 about 11 GB,
 n=14 about 46 GB, **n=15 about 195 GB (1.2 billion gates)**. The plan now skips a point whose circuit would need more than 60 % of
 the PC's RAM (`phase3_pc_memory_ok`, factor 4 over the measured 161 B/gate is an ESTIMATE) and says so (`SKIP — PC memory ...`),
-so grover on this PC ends at n=11 whatever `--n-max` says; `--force-infeasible` bypasses the check and will be killed again.
+so grover on this PC ends at n=11 (n=12 was then attempted 3 times and n=13 twice with the check off: every attempt SIGKILLed, after 6-7 min for n=12 and 20 / 36 min for n=13; the rows in `predicted.csv` keep that reason) whatever `--n-max` says; `--force-infeasible` bypasses the check and will be killed again.
 Reaching n=15 for grover needs a different PC-side circuit (e.g. native multi-controlled gates instead of the gate-by-gate
 list the MCU also executes), which changes what the offload cost measures: an owner decision, not made here.
 
