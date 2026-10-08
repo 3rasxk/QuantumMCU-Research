@@ -73,6 +73,7 @@ from shared import timing_model as tm  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
 from shared import paths as sp  # noqa: E402
+from shared import predicted as pred  # noqa: E402
 from counter import hooks as refhooks  # noqa: E402
 
 RESUME_KEY_SPEC = [("circuit", str), ("n", int), ("baud_rate", int)]
@@ -467,6 +468,11 @@ def _sweep_body(args, circuit, n_values, completed, infeasible, raw_f, meta_f, s
                 # ไม่ใช่ปัญหาของลิงก์ serial หรือของบอร์ด — เป็นต้นทุนการจำลองฝั่ง PC
                 # ล้วน ๆ (ไม่ cache โดยตั้งใจ) บันทึกค่าประมาณไว้ให้อ่านออกว่าทำไมถึงข้าม
                 print(f"n={n:2d}  SKIP: {tm.phase3_skip_reason(circuit, n)}; continuing with the next n")
+                prow = pred.record_skipped_point_phase3(
+                    args.board, circuit, n, sp.raw_csv_path(args.board, circuit, phase=3, ref=ref.enabled),
+                    sp.predicted_csv_path(args.board, circuit, phase=3, ref=ref.enabled))
+                print(f"      predicted (ESTIMATE, not measured): {prow['per_request_calibrated_s'] or prow['per_request_model_s']} s per request, "
+                      f"100 reps = {prow['reps_100_total_human']}, circuit about {prow['pc_circuit_gb_est']} GB of {prow['pc_ram_gb']} GB RAM")
                 meta_f.write(f"{args.board},{circuit},{n},{baud},skipped_sim_cost_infeasible,"
                              f"0,0,0,,{ts},{budget_s},{expected_s:.1f},{per_req:.3f}\n")
                 meta_f.flush()
