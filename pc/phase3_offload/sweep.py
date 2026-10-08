@@ -67,6 +67,7 @@ sys.path.insert(0, str(REPO_ROOT / "analysis"))
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from protocol import FRAME_REQ_START, parse_request, pack_response  # noqa: E402
+import chunked_sim  # noqa: E402
 from phase1_compare import build_qiskit_circuit  # noqa: E402
 from shared.circuit_ids import CIRCUIT_IDS, CIRCUIT_NAMES, n_values_for_sweep, EXPERIMENT_CIRCUITS, reject_removed_circuits  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
@@ -196,10 +197,14 @@ def simulate_and_sample(sim, n_qubits: int, circuit_id: int) -> int:
     """จำลองวงจรใหม่ทั้งหมดทุกครั้ง (ไม่ cache) แล้วสุ่มตัวอย่างผลวัด 1 shot จาก
     การแจกแจงความน่าจะเป็นที่ได้ — เทียบเท่าการวัดจริง 1 ครั้ง"""
     circuit_name = CIRCUIT_NAMES[circuit_id]
-    qc = build_qiskit_circuit(circuit_name, n_qubits)
-    qc.save_statevector()
-    result = sim.run(qc).result()
-    sv = np.asarray(result.get_statevector(qc).data)
+    if circuit_name == "grover" and sum(tm.gate_counts("grover", n_qubits)) > chunked_sim.CHUNK_THRESHOLD_GATES:
+        # grover n >= 12: same gates, built and run in slices so the whole gate list is never in memory (see chunked_sim.py)
+        sv = chunked_sim.simulate_grover_chunked(sim, n_qubits)
+    else:
+        qc = build_qiskit_circuit(circuit_name, n_qubits)
+        qc.save_statevector()
+        result = sim.run(qc).result()
+        sv = np.asarray(result.get_statevector(qc).data)
     probs = np.abs(sv) ** 2
     probs = probs / probs.sum()
     outcome = int(np.random.choice(len(probs), p=probs))

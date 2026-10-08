@@ -501,8 +501,8 @@ def phase3_rep_time_s(circuit, n):
 
 # The PC builds the whole gate list as a Qiskit circuit for every request (uncached, one object per gate). Measured: grover n=10,
 # 876,660 gates -> +142 MB = 161 bytes/gate for the circuit alone; Aer then converts/copies it, so the factor 4 below is an ESTIMATE.
-# Observed: grover n=12 (15.75 M gates, about 2.5 GB of circuit) was SIGKILLed twice (returncode -9, 2026-10-08) on an 8.6 GB Mac
-# while n=11 (3.7 M gates) ran. n=15 would be 1.2 billion gates, about 195 GB for the circuit alone.
+# Observed: grover n=12 (15.75 M gates, about 2.5 GB of circuit) was SIGKILLed 3 times and n=13 twice (returncode -9, 2026-10-08) on an
+# 8.6 GB Mac while n=11 (3.7 M gates) ran, when the whole gate list was built at once; that is why n >= 12 is now simulated in slices.
 PHASE3_PC_BYTES_PER_GATE = 161 * 4
 PHASE3_PC_RAM_FRACTION = 0.6
 PC_RAM_BYTES_OVERRIDE = None   # tests / unusual hosts
@@ -512,14 +512,26 @@ def pc_physical_ram_bytes():
     if PC_RAM_BYTES_OVERRIDE is not None:
         return PC_RAM_BYTES_OVERRIDE
     import os
+    if os.environ.get("QLAB_PC_RAM_BYTES"):   # operator override: e.g. 1000000000000 to attempt points the memory check would skip
+        return int(float(os.environ["QLAB_PC_RAM_BYTES"]))
     try:
         return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
     except (ValueError, OSError, AttributeError):
         return 8 * 1024 ** 3
 
 
+# grover n >= 12 is simulated in slices (pc/phase3_offload/chunked_sim.py): the peak is one slice, not the whole gate list.
+# Keep these two in step with chunked_sim.CHUNK_THRESHOLD_GATES; one slice = one multi-controlled phase (about 0.48 M gates at n=13,
+# it doubles per +1 qubit; 1 M gates is used as the per-slice bound for n <= 14).
+PHASE3_CHUNK_THRESHOLD_GATES = 4_000_000
+PHASE3_CHUNK_SLICE_GATES = 1_000_000
+
+
 def phase3_pc_memory_bytes(circuit, n):
-    return sum(gate_counts(circuit, n)) * PHASE3_PC_BYTES_PER_GATE
+    gates = sum(gate_counts(circuit, n))
+    if circuit == "grover" and gates > PHASE3_CHUNK_THRESHOLD_GATES:
+        gates = min(gates, PHASE3_CHUNK_SLICE_GATES * (1 << max(n - 13, 0)))
+    return gates * PHASE3_PC_BYTES_PER_GATE
 
 
 def phase3_pc_memory_ok(circuit, n):

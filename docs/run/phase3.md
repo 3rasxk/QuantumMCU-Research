@@ -99,6 +99,12 @@ Counter frame budget (firmware, 2026-10-07): per point the counter sends at most
 the anomaly mask / REPORT still carry everything and the debug line `supp=` counts what was not sent. This keeps a burst of line
 spikes from flooding the link. Hardware advice if spikes recur: 1 nF from GPIO34 to GND at the counter, short twisted signal/GND wires.
 
+**Sliced grover for n >= 12 (2026-10-08)**: the PC now builds and runs grover n >= 12 step by step (`pc/phase3_offload/chunked_sim.py`),
+never holding the whole gate list. Same gates, same uncached per-request work, statevector bit-identical to the one-shot run
+(max difference 0.0 at n=6, 8, 9); 5-30 % slower. Measured on the 8.6 GB Mac, PC side only: n=10 18 s, peak 131 MB; **n=12 384 s
+(6.4 min), peak 620 MB** (the one-shot run was SIGKILLed 3 times). n <= 11 keep the one-shot path their data was measured with.
+The numbers below describe the one-shot path.
+
 **PC memory wall (2026-10-08, grover n=12)**: the PC rebuilds the whole gate list as a Qiskit circuit for every request. The
 sweep process was SIGKILLed (returncode -9, the system's low-memory reaper) twice, both times as the first n=12 request started
 (15.75 M gates). Measured: 161 bytes per gate for the circuit alone (grover n=10: 876,660 gates, +142 MB); Aer then copies it.

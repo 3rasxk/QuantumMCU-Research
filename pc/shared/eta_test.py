@@ -127,10 +127,15 @@ def test_estimates_and_labels():
     check("phase 3 grover (2 h cap only): 100 reps up to n=10, fewer at n=11-13, skipped (0) from n=14",
           reps[8] == reps[10] == 100 and 0 < reps[13] < reps[12] < reps[11] < 100 and reps[14] == reps[15] == 0, str(reps))
     tm.PC_RAM_BYTES_OVERRIDE = int(8.59e9)   # the 8.6 GB Mac where grover n=12 was OOM-killed twice
-    check("phase 3 PC memory: grover n=11 fits an 8.6 GB PC, n=12-15 do not (skipped, with a reason)",
-          tm.phase3_pc_memory_ok("grover", 11) and not any(tm.phase3_pc_memory_ok("grover", n) for n in (12, 13, 14, 15))
-          and all(tm.phase3_point_reps("grover", n) == 0 for n in (12, 13, 14, 15)) and "PC memory" in tm.phase3_skip_reason("grover", 12)
-          and tm.phase3_skip_reason("grover", 11) == "" and tm.phase3_point_reps("qft", 15) == 100)
+    check("phase 3 PC memory (sliced grover): n=11-13 fit an 8.6 GB PC and run (n=12: 9 reps, n=13: 2), n=14-15 are skipped by the 2 h cap, not by memory",
+          all(tm.phase3_pc_memory_ok("grover", n) for n in (11, 12, 13)) and tm.phase3_point_reps("grover", 12) == 9
+          and tm.phase3_point_reps("grover", 13) == 2 and tm.phase3_point_reps("grover", 14) == 0
+          and "2 h" in tm.phase3_skip_reason("grover", 14) and tm.phase3_skip_reason("grover", 12) == ""
+          and tm.phase3_point_reps("qft", 15) == 100)
+    tm.PC_RAM_BYTES_OVERRIDE = int(1e9)   # a 1 GB PC: slices of n=13 no longer fit
+    check("phase 3 PC memory: a 1 GB PC skips grover n>=12 with a memory reason",
+          not tm.phase3_pc_memory_ok("grover", 12) and "PC memory" in tm.phase3_skip_reason("grover", 12))
+    tm.PC_RAM_BYTES_OVERRIDE = int(8.59e9)
     tm.PC_RAM_BYTES_OVERRIDE = 1 << 40
     check("phase 3 capped point never exceeds the cap",
           all(tm.phase3_rep_time_s("grover", n) * reps[n] <= tm.POINT_TIME_CAP_S for n in reps))
