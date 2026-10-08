@@ -1,0 +1,21 @@
+{
+ "schema_version": 1,
+ "timestamp_utc": "2026-10-07T21:53:54.328850+00:00",
+ "counter_port": "tcp:5055",
+ "counter_fw_sha256": "de8c90c716dbc668d1c048bc784a3115a4e57159834ce2f5f50b29362661d15d",
+ "counter_proto": 2,
+ "pin_map": {
+  "IN_DUT": "GPIO34",
+  "GND": "common with the target",
+  "SELFTEST_OUT": "GPIO25",
+  "SELFTEST_IN": "GPIO35"
+ },
+ "divider": {
+  "series_ohm": 330,
+  "pulldown_ohm": 10000,
+  "note": "3.3 V direct"
+ },
+ "calibration": {},
+ "selftest": "self-loopback only",
+ "counter_wifi": "off"
+}

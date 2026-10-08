@@ -1,0 +1,3 @@
+board,circuit,n,kind,reason,gates,per_request_model_s,per_request_calibrated_s,calibration_ratio,calibration_n,reps_100_total_human,pc_circuit_gb_est,pc_ram_gb,ts_utc
+esp8266,grover,14,ESTIMATE_not_measured,PC memory: about 182.5 GB for the circuit (> 60% of 8.6 GB RAM),283445814,13038.59,10852.03,0.832,9 10 11,12 d 13 h,182.5,8.6,2026-10-08T00:20:55.260113+00:00
+esp8266,grover,15,ESTIMATE_not_measured,PC memory: about 777.6 GB for the circuit (> 60% of 8.6 GB RAM),1207450155,55542.79,46228.31,0.832,9 10 11,53 d 12 h,777.6,8.6,2026-10-08T00:20:55.261750+00:00

@@ -1,0 +1,11 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,esp8266,grover,2,100,-2.219,-2.281,0.532,0.694,5.113,-0.0525,ok,False,1.0,
+1,,esp8266,grover,3,100,-2.444,-2.669,1.136,0.572,10.763,-0.0333,ok,False,1.0,
+1,,esp8266,grover,4,100,-2.469,-2.557,0.664,0.741,5.925,-0.0256,ok,False,1.0,
+1,,esp8266,grover,5,100,-3.138,-3.401,1.334,0.925,12.375,-0.011,ok,False,1.0,
+1,,esp8266,grover,6,100,-5.582,-6.554,2.517,1.55,19.038,-0.0056,ok,False,1.0,
+1,,esp8266,grover,7,100,-15.025,-16.328,3.709,2.472,38.675,-0.0041,ok,False,1.0,
+1,,esp8266,grover,8,100,-71.094,-82.011,31.142,34.169,194.488,-0.0036,ok,False,1.0,
+1,,esp8266,grover,9,100,-308.45,-343.065,103.096,131.172,843.375,-0.0035,ok,False,1.0,
+1,,esp8266,grover,10,0,,,,,,,refused_count_mismatch,True,1.0,86 usable pulses (0 glitch) for 100 reps; width alignment matched only 85/100
+1,,esp8266,grover,11,42,-4860.638,-4926.072,224.893,117.356,5779.263,-0.0035,ok,False,1.0,

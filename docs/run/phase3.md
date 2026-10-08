@@ -103,6 +103,11 @@ spikes from flooding the link. Hardware advice if spikes recur: 1 nF from GPIO34
 never holding the whole gate list. Same gates, same uncached per-request work, statevector bit-identical to the one-shot run
 (max difference 0.0 at n=6, 8, 9); 5-30 % slower. Measured on the 8.6 GB Mac, PC side only: n=10 18 s, peak 131 MB; **n=12 384 s
 (6.4 min), peak 620 MB** (the one-shot run was SIGKILLed 3 times). n <= 11 keep the one-shot path their data was measured with.
+**Result (2026-10-08, ESP8266, `--ref counter`)**: grover n=12 ran 9 reps (373-726 s per request; the last two slower, the PC was in use) and n=13 ran
+2 reps (3232 s and 3152 s), no timeout, CRC error or kill, PC process about 270 MB. The counter again saw bursts of line noise during the long
+pulses (154 pulses for 9 reps at n=12, 371 for 2 reps at n=13; PCNT counted thousands of rising edges, so the line itself was noisy) and the
+width alignment pairs 6/9 (n=12) and 1/2 (n=13) reps: micros() minus counter -0.0035 % at both, as at n=7-11. n=14-15 are skipped by the
+2 h cap (one request 3-13 h) and carry calculated values in `predicted.csv`.
 The numbers below describe the one-shot path.
 
 **PC memory wall (2026-10-08, grover n=12)**: the PC rebuilds the whole gate list as a Qiskit circuit for every request. The

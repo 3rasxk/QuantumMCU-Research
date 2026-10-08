@@ -69,7 +69,7 @@ def split_runs(pulses, min_gap_s=0.2, gap_factor=50):
 
 
 MAX_PARTIAL_SLOTS = 2   # at most this many glitch-occupied rep slots may be skipped in a join
-ALIGN_MIN_MATCHED = 0.9  # width alignment must pair at least this fraction of the reps, else the point is refused
+ALIGN_MIN_MATCHED = 0.5  # width alignment must pair at least this fraction of the reps, else the point is refused (noise can destroy some real pulses; each match is by exact width, so a partial join is still sound and says so)
 
 
 def align_by_width(pulses, micros_us, reps, tol_us=200.0, tol_rel=2e-4):

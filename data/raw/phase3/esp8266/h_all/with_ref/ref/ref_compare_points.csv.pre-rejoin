@@ -1,0 +1,15 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,esp8266,h_all,2,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,3,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,4,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,5,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,6,0,,,,,,,refused_count_mismatch,True,1.0,123 usable pulses (7 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,7,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,8,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,9,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,10,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,11,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,12,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,13,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,14,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,15,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
