@@ -1,0 +1,8 @@
+board,circuit,n,theoretical_bytes,compile_ram_used_bytes,compile_ram_pct,status,timestamp_utc,retry_count,timeout_budget_s,expected_point_s,retry_policy
+uno,grover,2,32,236,11.5,ok,2026-10-05T02:52:26.667703+00:00,0,90,0.2,allowed
+uno,grover,3,64,268,13.1,ok,2026-10-05T02:52:46.801618+00:00,0,90,1.2,allowed
+uno,grover,4,128,332,16.2,ok,2026-10-05T02:53:02.821987+00:00,0,90,6.9,allowed
+uno,grover,5,256,460,22.5,ok,2026-10-05T02:53:27.542765+00:00,0,98,39.4,allowed
+uno,grover,6,512,716,35.0,ok,2026-10-05T02:54:44.212855+00:00,0,732,292.8,skipped_high_budget
+uno,grover,7,1024,1228,60.0,ok,2026-10-05T03:02:13.891696+00:00,0,5344,2137.8,skipped_high_budget
+uno,grover,8,2048,2252,110.0,build_overflow,2026-10-05T03:52:27.290159+00:00,0,46257,18503.2,skipped_high_budget

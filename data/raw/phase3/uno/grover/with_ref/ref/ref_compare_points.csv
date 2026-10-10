@@ -1,0 +1,10 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,uno,grover,2,97,-26.6,-34.477,24.801,14.938,176.263,-0.6148,count_mismatch,False,4.0,"partial: aligned by width, 97/100 reps matched, 4 extra/unmatched counter pulses ignored"
+1,,uno,grover,3,99,-53.338,-52.971,14.044,22.275,106.1,-0.5506,count_mismatch,False,4.0,"partial: aligned by width, 99/100 reps matched, 2 extra/unmatched counter pulses ignored"
+1,,uno,grover,4,100,-68.394,-70.337,14.3,15.066,128.025,-0.5322,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,grover,5,100,-73.376,-76.819,12.738,3.763,174.7,-0.5266,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,grover,6,0,,,,,,,refused_count_mismatch,True,4.0,101 usable pulses (0 glitch) for 100 reps; width alignment matched only 17/100
+1,,uno,grover,7,0,,,,,,,refused_count_mismatch,True,4.0,101 usable pulses (0 glitch) for 100 reps; width alignment matched only 5/100
+1,,uno,grover,8,0,,,,,,,refused_count_mismatch,True,4.0,101 usable pulses (0 glitch) for 100 reps; width alignment matched only 5/100
+1,,uno,grover,9,0,,,,,,,refused_count_mismatch,True,4.0,101 usable pulses (0 glitch) for 100 reps; width alignment matched only 7/100
+1,,uno,grover,10,0,,,,,,,refused_count_mismatch,True,4.0,101 usable pulses (0 glitch) for 100 reps; width alignment matched only 4/100

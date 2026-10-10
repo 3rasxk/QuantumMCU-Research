@@ -1,0 +1,8 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,uno,qft,2,100,-6.738,-7.622,1.623,2.088,16.675,-2.2555,anomaly,False,4.0,
+1,,uno,qft,3,100,-14.763,-536866.826,5341604.364,0.325,53685159.188,-0.7583,anomaly,False,4.0,
+1,,uno,qft,4,100,-28.613,-536852.974,5341327.964,2.1,53682395.188,-0.6066,anomaly,False,4.0,
+1,,uno,qft,5,100,-61.088,-60.134,1.862,2.125,65.413,-0.5517,anomaly,False,4.0,
+1,,uno,qft,7,100,-305.338,-306.918,1.932,3.822,309.338,-0.4946,anomaly,False,4.0,
+1,,uno,qft,8,0,,,,,,,refused_no_target_run,True,4.0,no_target_run
+1,,uno,qft,6,100,-133.625,-132.686,2.044,3.972,136.05,-0.513,anomaly,False,4.0,

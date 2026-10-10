@@ -1,0 +1,13 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,esp8266,h_all,2,100,-7.675,-7.654,1.589,0.0,23.013,-24.2305,anomaly,True,1.0,"median diff -24.23 % and -7.7 us exceed threshold (5.0 %, 1.0 us)"
+1,,esp8266,h_all,3,0,,,,,,,refused_counter_lost,True,1.0,counter_lost
+1,,esp8266,h_all,4,100,-6.925,-7.323,1.663,0.478,23.338,-3.571,anomaly,False,1.0,
+1,,esp8266,h_all,5,100,-7.225,-7.422,1.54,0.013,22.638,-1.5564,anomaly,False,1.0,
+1,,esp8266,h_all,6,100,-7.163,-7.611,1.571,1.0,22.6,-0.6589,anomaly,False,1.0,
+1,,esp8266,h_all,7,100,-7.694,-7.631,1.552,1.0,22.375,-0.3074,anomaly,False,1.0,
+1,,esp8266,h_all,8,100,-7.938,-7.823,2.088,1.0,28.05,-0.1403,anomaly,False,1.0,
+1,,esp8266,h_all,9,100,-8.144,-8.242,3.198,0.475,39.838,-0.0641,anomaly,False,1.0,
+1,,esp8266,h_all,10,0,,,,,,,refused_count_mismatch,True,1.0,169 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,11,0,,,,,,,refused_arm_failed,True,1.0,arm_failed
+1,,esp8266,h_all,12,0,,,,,,,refused_count_mismatch,True,1.0,115 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,h_all,13,0,,,,,,,refused_no_target_run,True,1.0,no_target_run

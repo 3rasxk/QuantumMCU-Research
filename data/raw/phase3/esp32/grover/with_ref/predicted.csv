@@ -1,0 +1,6 @@
+board,circuit,n,kind,reason,gates,per_request_model_s,per_request_calibrated_s,calibration_ratio,calibration_n,reps_100_total_human,pc_circuit_gb_est,pc_ram_gb,ts_utc
+esp32,grover,14,ESTIMATE_not_measured,one request needs 3 h 37 min (> the 2 h per-point cap),283445814,13038.59,7709.42,0.591,11 12 13,8 d 22 h,1.3,8.6,2026-10-09T17:34:56.299464+00:00
+esp32,grover,15,ESTIMATE_not_measured,one request needs 15 h 25 min (> the 2 h per-point cap),1207450155,55542.79,32841.21,0.591,11 12 13,38 d,2.6,8.6,2026-10-09T17:34:56.302299+00:00
+esp32,grover,16,ESTIMATE_not_measured,one request needs 2 d 17 h (> the 2 h per-point cap),5127367306,235858.98,139458.13,0.591,11 12 13,161 d 9 h,5.2,8.6,2026-10-09T17:34:56.304765+00:00
+esp32,grover,17,ESTIMATE_not_measured,PC memory: about 10.3 GB for the circuit (> 60% of 8.6 GB RAM),21733848073,999757.09,591133.97,0.591,11 12 13,684 d 4 h,10.3,8.6,2026-10-09T17:34:56.307200+00:00
+esp32,grover,18,ESTIMATE_not_measured,PC memory: about 20.6 GB for the circuit (> 60% of 8.6 GB RAM),92292225318,4245442.44,2510235.02,0.591,11 12 13,2905 d 8 h,20.6,8.6,2026-10-09T17:34:56.309724+00:00

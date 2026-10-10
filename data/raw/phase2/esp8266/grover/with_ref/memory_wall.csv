@@ -1,0 +1,16 @@
+board,circuit,n,theoretical_bytes,compile_ram_used_bytes,compile_ram_pct,status,timestamp_utc,retry_count,timeout_budget_s,expected_point_s,retry_policy
+esp8266,grover,2,32,,,ok,2026-10-05T12:20:48.683969+00:00,0,90,0.0,allowed
+esp8266,grover,3,64,,,ok,2026-10-05T12:21:33.611691+00:00,0,90,0.1,allowed
+esp8266,grover,4,128,,,ok,2026-10-05T12:22:20.197385+00:00,0,90,0.6,allowed
+esp8266,grover,5,256,,,ok,2026-10-05T12:23:06.387247+00:00,0,90,3.4,allowed
+esp8266,grover,6,512,,,ok,2026-10-05T12:24:23.364471+00:00,0,90,25.0,allowed
+esp8266,grover,7,1024,,,ok,2026-10-05T12:26:18.502761+00:00,0,452,181.0,allowed
+esp8266,grover,8,2048,,,ok,2026-10-06T08:43:55.572634+00:00,0,3903,1561.6,skipped_high_budget
+esp8266,grover,9,4096,,,ok,2026-10-06T10:29:38.980270+00:00,0,32625,13050.2,skipped_high_budget
+esp8266,grover,10,8192,,,ok,2026-10-06T12:30:14.595865+00:00,0,285996,114398.5,skipped_high_budget
+esp8266,grover,11,16384,,,skipped_compute_infeasible,2026-10-06T14:22:33.924918+00:00,0,2396466,958586.8,n/a
+esp8266,grover,12,32768,,,skipped_compute_infeasible,2026-10-06T14:22:33.930634+00:00,0,20522401,8208960.8,n/a
+esp8266,grover,13,65536,,,skipped_compute_infeasible,2026-10-06T14:22:33.933603+00:00,0,174792294,69916917.9,n/a
+esp8266,grover,14,131072,,,skipped_compute_infeasible,2026-10-06T14:22:33.936670+00:00,0,1476937910,590775164.4,n/a
+esp8266,grover,15,262144,,,skipped_compute_infeasible,2026-10-06T14:22:33.939446+00:00,0,12582956644,5033182657.7,n/a
+esp8266,grover,16,524288,,,skipped_compute_infeasible,2026-10-06T14:22:33.941970+00:00,0,106864827974,42745931189.7,n/a

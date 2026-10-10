@@ -1,0 +1,12 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,esp32,grover,2,100,-0.663,-0.977,0.6,0.987,4.925,-2.4866,ok,False,1.0,
+1,,esp32,grover,3,100,-0.975,-0.941,0.879,1.0,8.25,-0.848,ok,False,1.0,
+1,,esp32,grover,4,100,-0.875,-0.955,1.2,0.95,9.325,-0.1786,ok,False,1.0,
+1,,esp32,grover,5,100,-0.801,-0.887,0.844,0.647,8.4,-0.0338,ok,False,1.0,
+1,,esp32,grover,6,100,-0.569,-0.673,0.915,0.553,9.0,-0.0036,ok,False,1.0,
+1,,esp32,grover,7,100,1.45,1.4,0.914,0.647,6.675,0.0013,ok,False,1.0,
+1,,esp32,grover,8,100,18.124,18.03,0.887,0.687,19.25,0.002,ok,False,1.0,
+1,,esp32,grover,9,100,147.112,147.804,2.235,2.897,155.2,0.002,ok,False,1.0,
+1,,esp32,grover,10,0,,,,,,,refused_count_mismatch,True,1.0,24 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp32,grover,11,13,10638.612,10637.984,14.093,14.706,10672.525,0.002,ok,False,1.0,
+1,,esp32,grover,12,1,4517864906.337,4517864906.337,0.0,0.0,4517864906.337,264064.3146,anomaly,True,1.0,"median diff 264064.31 % and 4517864906.3 us exceed threshold (5.0 %, 1.0 us)"

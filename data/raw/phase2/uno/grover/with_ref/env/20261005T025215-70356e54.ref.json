@@ -1,0 +1,22 @@
+{
+ "schema_version": 1,
+ "timestamp_utc": "2026-10-05T02:52:17.374653+00:00",
+ "counter_port": "tcp:5055",
+ "counter_fw_sha256": "2609e5d04463c75a5298563cac8920578ea52cbac753b68b13a1b510c5e4fb25",
+ "counter_proto": 2,
+ "pin_map": {
+  "IN_DUT": "GPIO34",
+  "GND": "common with the target",
+  "SELFTEST_OUT": "GPIO25",
+  "SELFTEST_IN": "GPIO35"
+ },
+ "divider": {
+  "r_top_ohm": 2200,
+  "r_bottom_ohm": 3900,
+  "series_ohm": 330,
+  "note": "5 V Uno pin 7 -> 3.2 V"
+ },
+ "calibration": {},
+ "selftest": "self-loopback only",
+ "counter_wifi": "off"
+}

@@ -1,0 +1,22 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,uno,bell_ghz,2,99,-22.713,-22.25,4.217,6.112,29.813,-0.6745,count_mismatch,False,4.0,"partial: aligned by width, 99/100 reps matched, 2 extra/unmatched counter pulses ignored"
+1,,uno,bell_ghz,3,100,-23.582,-24.839,9.366,5.059,94.963,-0.6584,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,bell_ghz,4,100,-23.988,-25.457,10.045,5.522,98.363,-0.6554,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,bell_ghz,5,100,-25.256,-25.699,9.479,7.782,102.038,-0.6504,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,bell_ghz,6,0,,,,,,,refused_arm_failed,True,4.0,arm_failed
+1,,uno,bell_ghz,7,100,-18.788,-22.438,19.387,5.053,188.225,-0.709,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,bell_ghz,8,100,-24.431,-27.642,20.484,5.488,175.863,-0.6399,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,bell_ghz,9,100,-23.726,-25.332,8.697,6.091,73.738,-0.6544,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,bell_ghz,10,100,-25.188,-25.168,7.393,6.078,73.05,-0.6488,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,bell_ghz,11,100,-26.381,-27.3,7.449,6.241,85.238,-0.6331,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,bell_ghz,12,99,-25.45,-28.913,18.519,9.925,186.3,-0.6477,count_mismatch,False,4.0,"partial: aligned by width, 99/100 reps matched, 2 extra/unmatched counter pulses ignored"
+1,,uno,bell_ghz,13,99,-27.025,-28.502,10.101,8.825,77.963,-0.6364,count_mismatch,False,4.0,"partial: aligned by width, 99/100 reps matched, 2 extra/unmatched counter pulses ignored"
+1,,uno,bell_ghz,14,99,-26.925,-28.728,11.524,13.225,83.85,-0.6267,count_mismatch,False,4.0,"partial: aligned by width, 99/100 reps matched, 2 extra/unmatched counter pulses ignored"
+1,,uno,bell_ghz,15,98,-24.332,-27.141,10.462,5.968,80.375,-0.6359,count_mismatch,False,4.0,"partial: aligned by width, 98/100 reps matched, 3 extra/unmatched counter pulses ignored"
+1,,uno,bell_ghz,16,100,-28.9,-30.86,9.384,4.528,110.913,-0.6113,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,bell_ghz,17,100,-43.231,-49.635,20.222,5.878,185.163,-0.5628,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,bell_ghz,18,99,-76.713,-85.05,22.526,10.65,192.15,-0.5246,count_mismatch,False,4.0,"partial: aligned by width, 99/100 reps matched, 2 extra/unmatched counter pulses ignored"
+1,,uno,bell_ghz,19,98,-134.381,-137.677,12.086,10.191,186.975,-0.5067,count_mismatch,False,4.0,"partial: aligned by width, 98/100 reps matched, 3 extra/unmatched counter pulses ignored"
+1,,uno,bell_ghz,20,0,,,,,,,refused_count_mismatch,True,4.0,101 usable pulses (0 glitch) for 100 reps; width alignment matched only 9/100
+1,,uno,bell_ghz,21,0,,,,,,,refused_count_mismatch,True,4.0,101 usable pulses (0 glitch) for 100 reps; width alignment matched only 6/100
+1,,uno,bell_ghz,22,0,,,,,,,refused_count_mismatch,True,4.0,101 usable pulses (0 glitch) for 100 reps; width alignment matched only 5/100

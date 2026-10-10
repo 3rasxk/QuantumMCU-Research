@@ -1,0 +1,15 @@
+2026-10-09T04:57:35.454406+00:00  esp32/h_all/n=2  sequence gap: missing [101]; requesting REPLAY from 101
+2026-10-09T04:57:38.481583+00:00  esp32/h_all/n=2  sequence gap: missing [101]; requesting REPLAY from 101
+2026-10-09T04:57:41.507578+00:00  esp32/h_all/n=2  anomaly code 5 (count mismatch)
+2026-10-09T04:57:41.508507+00:00  esp32/h_all/n=2  anomaly code 6 (sequence gap)
+2026-10-09T04:58:49.664459+00:00  esp32/h_all/n=4  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T04:59:58.350103+00:00  esp32/h_all/n=5  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:01:06.686702+00:00  esp32/h_all/n=6  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:02:14.810725+00:00  esp32/h_all/n=7  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:03:23.564268+00:00  esp32/h_all/n=8  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:04:31.743271+00:00  esp32/h_all/n=9  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:05:39.890424+00:00  esp32/h_all/n=10  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:06:48.035323+00:00  esp32/h_all/n=11  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:07:56.484936+00:00  esp32/h_all/n=12  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:09:04.797113+00:00  esp32/h_all/n=13  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:10:13.340320+00:00  esp32/h_all/n=14  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM

@@ -1,0 +1,14 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,esp32,qft,2,100,-0.431,-0.919,1.0,1.0,9.563,-11.7647,ok,False,1.0,
+1,,esp32,qft,3,100,-0.838,-0.894,0.367,0.0,4.4,-7.0789,ok,False,1.0,
+1,,esp32,qft,4,100,-0.513,-0.87,0.561,1.0,4.1,-2.1818,ok,False,1.0,
+1,,esp32,qft,5,100,-0.513,-0.879,0.615,0.987,5.063,-1.0574,ok,False,1.0,
+1,,esp32,qft,6,100,-0.625,-0.87,0.573,0.438,5.163,-0.6031,ok,False,1.0,
+1,,esp32,qft,7,100,-0.681,-0.905,0.616,0.437,5.575,-0.2954,ok,False,1.0,
+1,,esp32,qft,8,100,-0.769,-0.873,0.532,0.757,4.35,-0.1468,ok,False,1.0,
+1,,esp32,qft,9,100,-0.825,-0.951,0.605,0.988,5.3,-0.0643,ok,False,1.0,
+1,,esp32,qft,10,100,-1.063,-0.913,0.545,0.025,4.563,-0.0353,ok,False,1.0,
+1,,esp32,qft,11,100,-0.406,-0.744,0.576,0.975,4.363,-0.0058,ok,False,1.0,
+1,,esp32,qft,12,100,-0.681,-0.593,0.586,0.703,4.663,-0.0044,ok,False,1.0,
+1,,esp32,qft,13,100,0.062,-0.114,0.563,0.087,4.325,0.0002,ok,False,1.0,
+1,,esp32,qft,14,0,,,,,,,refused_no_target_run,True,1.0,no_target_run

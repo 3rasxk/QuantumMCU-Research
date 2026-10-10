@@ -1,0 +1,8 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,uno,grover,2,99,-26.688,-27.461,1.637,2.088,35.138,-0.6191,count_mismatch,False,4.0,partial: rep slot(s) [42] skipped (glitch pulse in place of the rep's pulse); slot alignment assumes the glitch replaced that rep
+1,,uno,grover,3,100,-118.288,-117.049,1.885,3.987,120.363,-0.52,anomaly,False,4.0,
+1,,uno,grover,4,100,-601.469,-602.361,3.138,3.988,611.163,-0.493,anomaly,False,4.0,
+1,,uno,grover,5,0,,,,,,,refused_count_mismatch,True,4.0,5 usable pulses (1 glitch) for 100 reps; refusing rep-order join
+1,,uno,grover,6,100,-21199.675,-21200.182,2.963,4.572,21208.15,-0.488,anomaly,False,4.0,
+1,,uno,grover,7,100,-146314.488,-146307.657,35.975,58.119,146372.0,-0.4881,anomaly,False,4.0,
+1,,uno,grover,8,0,,,,,,,refused_no_target_run,True,4.0,no_target_run

@@ -1,0 +1,8 @@
+schema_version,session_id,board,circuit,n,reps_expected,pulses_received,pulses_used,ref_status,anomaly_mask,anomaly_codes,min_ns,median_ns,max_ns,report_pulses,pcnt_count,overruns,counter_proto,timestamp_utc
+1,,uno,bell_ghz,2,100,201,100,anomaly,36,2 5 6,164125,164138,922537713,202,201,0,2,2026-10-04T19:21:49.284107+00:00
+1,,uno,bell_ghz,3,100,200,100,anomaly,4,2,354738,354763,361163,200,200,0,2,2026-10-04T19:21:58.539629+00:00
+1,,uno,bell_ghz,4,100,200,100,anomaly,4,2,777488,783588,783913,200,200,0,2,2026-10-04T19:22:07.848230+00:00
+1,,uno,bell_ghz,5,100,200,100,anomaly,4,2,1713300,1719400,1719713,200,200,0,2,2026-10-04T19:22:16.916041+00:00
+1,,uno,bell_ghz,8,100,0,0,no_target_run,128,7,,,,0,0,0,2,2026-10-04T19:22:47.565985+00:00
+1,,uno,bell_ghz,6,100,200,100,anomaly,36,2 5 6,3575750,3581850,3761875,201,200,0,2,2026-10-05T02:32:45.927013+00:00
+1,,uno,bell_ghz,7,100,200,100,anomaly,4,2,5786288,7597388,7909650,200,200,0,2,2026-10-05T02:32:56.269190+00:00

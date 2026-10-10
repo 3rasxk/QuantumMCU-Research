@@ -1,0 +1,22 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,uno,h_all,2,99,-21.925,-23.677,10.726,6.375,117.25,-0.6847,count_mismatch,False,4.0,"partial: aligned by width, 99/100 reps matched, 2 extra/unmatched counter pulses ignored"
+1,,uno,h_all,3,0,,,,,,,refused_arm_failed,True,4.0,arm_failed
+1,,uno,h_all,4,100,-20.894,-22.687,11.635,8.565,110.063,-0.6828,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,h_all,5,97,-22.088,-23.156,7.752,6.562,62.25,-0.6909,count_mismatch,False,4.0,"partial: aligned by width, 97/100 reps matched, 4 extra/unmatched counter pulses ignored"
+1,,uno,h_all,6,100,-21.969,-25.021,13.951,6.525,132.325,-0.664,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,h_all,7,99,-22.163,-26.953,21.967,6.363,184.138,-0.6735,count_mismatch,False,4.0,"partial: aligned by width, 99/100 reps matched, 2 extra/unmatched counter pulses ignored"
+1,,uno,h_all,8,100,-22.982,-25.771,15.838,6.771,173.525,-0.6575,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,h_all,9,99,-26.313,-26.833,6.302,6.837,59.375,-0.6427,count_mismatch,False,4.0,"partial: aligned by width, 99/100 reps matched, 2 extra/unmatched counter pulses ignored"
+1,,uno,h_all,10,100,-24.738,-26.144,10.398,4.225,111.313,-0.6493,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,h_all,11,100,-26.094,-26.091,7.37,5.547,81.063,-0.6365,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,h_all,12,100,-29.794,-30.365,7.582,9.172,67.025,-0.6171,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,h_all,13,100,-33.082,-32.735,10.575,12.541,69.225,-0.6039,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,h_all,14,100,-47.744,-46.328,14.206,17.209,117.788,-0.564,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,h_all,15,100,-20.913,-22.14,9.092,3.319,108.725,-0.6956,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,h_all,16,100,-25.194,-27.431,13.436,4.078,131.95,-0.6416,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,h_all,17,100,-35.231,-37.824,12.784,5.137,153.988,-0.5817,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,h_all,18,100,-55.469,-59.014,14.688,4.478,179.35,-0.5414,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,h_all,19,100,-97.175,-102.07,15.419,6.184,171.425,-0.5159,ok,False,4.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,uno,h_all,20,0,,,,,,,refused_count_mismatch,True,4.0,101 usable pulses (0 glitch) for 100 reps; width alignment matched only 21/100
+1,,uno,h_all,21,0,,,,,,,refused_count_mismatch,True,4.0,101 usable pulses (0 glitch) for 100 reps; width alignment matched only 8/100
+1,,uno,h_all,22,0,,,,,,,refused_count_mismatch,True,4.0,101 usable pulses (0 glitch) for 100 reps; width alignment matched only 10/100

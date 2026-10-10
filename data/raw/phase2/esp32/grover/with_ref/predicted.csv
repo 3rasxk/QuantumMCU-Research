@@ -1,0 +1,4 @@
+board,circuit,n,kind,reason,cap_s,state_bytes,ram_pct,per_rep_model_us,per_rep_calibrated_us,calibration_ratio,calibration_n,per_rep_used_us,per_rep_human,reps_100_total_human,watchdog_risk,max_reps_in_cap,ts_utc
+esp32,grover,13,ESTIMATE_not_measured,1_rep_exceeds_time_cap,7200,65536,20.0,37764073640,38637851193,1.0231,10 11 12,38637851193,10 h 43 min,44 d 17 h,True,0,2026-10-09T08:46:36.419897+00:00
+esp32,grover,14,ESTIMATE_not_measured,1_rep_exceeds_time_cap,7200,131072,40.0,319111175714,326494706024,1.0231,10 11 12,326494706024,3 d 18 h,377 d 21 h,True,0,2026-10-09T08:46:36.423764+00:00
+esp32,grover,15,ESTIMATE_not_measured,1_rep_exceeds_time_cap,7200,262144,80.0,2718759970007,2781666092301,1.0231,10 11 12,2781666092301,32 d 4 h,3219 d 12 h,True,0,2026-10-09T08:46:36.427211+00:00

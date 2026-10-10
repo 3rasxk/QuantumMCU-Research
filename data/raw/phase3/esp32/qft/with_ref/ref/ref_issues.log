@@ -1,0 +1,14 @@
+2026-10-09T05:27:27.640824+00:00  esp32/qft/n=3  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:28:35.587722+00:00  esp32/qft/n=4  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:29:44.478375+00:00  esp32/qft/n=5  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:30:53.156860+00:00  esp32/qft/n=6  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:32:01.721222+00:00  esp32/qft/n=7  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:33:10.308998+00:00  esp32/qft/n=8  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:34:19.058349+00:00  esp32/qft/n=9  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:35:27.917197+00:00  esp32/qft/n=10  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:36:37.980307+00:00  esp32/qft/n=11  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:37:47.840661+00:00  esp32/qft/n=12  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:38:54.387703+00:00  esp32/qft/n=12  anomaly code 3 (glitch)
+2026-10-09T05:38:54.388389+00:00  esp32/qft/n=12  anomaly code 5 (count mismatch)
+2026-10-09T05:38:57.434440+00:00  esp32/qft/n=13  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-09T05:40:08.278536+00:00  esp32/qft/n=14  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM

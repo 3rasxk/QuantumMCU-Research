@@ -1,0 +1,12 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,esp8266,grover,2,100,-7.138,-7.57,2.016,0.472,27.2,-1.0557,anomaly,False,1.0,
+1,,esp8266,grover,3,100,-7.738,-7.616,2.876,1.0,35.85,-0.2571,anomaly,False,1.0,
+1,,esp8266,grover,4,100,-7.813,-8.069,1.95,0.634,27.013,-0.0561,anomaly,False,1.0,
+1,,esp8266,grover,5,0,,,,,,,refused_count_mismatch,True,1.0,129 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,grover,6,0,,,,,,,refused_count_mismatch,True,1.0,105 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,grover,7,0,,,,,,,refused_count_mismatch,True,1.0,133 usable pulses (24 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,grover,8,0,,,,,,,refused_no_target_run,True,1.0,no_target_run
+1,,esp8266,grover,8,0,,,,,,,refused_count_mismatch,True,1.0,101 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,grover,9,0,,,,,,,refused_no_target_run,True,1.0,no_target_run
+1,,esp8266,grover,9,0,,,,,,,refused_short_raw,True,1.0,"raw.csv has 37 reps, need 100"
+1,,esp8266,grover,10,0,,,,,,,refused_short_raw,True,1.0,"raw.csv has 4 reps, need 100"

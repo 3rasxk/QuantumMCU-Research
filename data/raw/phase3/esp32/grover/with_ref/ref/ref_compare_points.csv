@@ -1,0 +1,15 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,esp32,grover,2,100,-1.044,-1.011,0.432,0.422,4.05,-0.0125,anomaly,False,1.0,"aligned by width, all 100 reps matched, 2 extra counter pulse(s) ignored"
+1,,esp32,grover,3,100,-0.575,-0.545,0.421,0.509,3.575,-0.0045,anomaly,False,1.0,"aligned by width, all 100 reps matched, 43 extra counter pulse(s) ignored"
+1,,esp32,grover,4,100,-0.788,-0.758,0.411,0.435,3.6,-0.0041,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp32,grover,5,100,-0.244,-0.346,0.449,0.606,3.613,-0.001,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp32,grover,6,100,0.569,0.547,0.359,0.587,1.313,0.0006,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp32,grover,7,100,5.8,5.668,0.917,0.472,6.362,0.0017,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp32,grover,8,100,29.819,30.118,1.825,1.116,42.45,0.0019,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp32,grover,9,100,134.981,138.695,10.787,5.959,195.7,0.002,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp32,grover,10,0,,,,,,,refused_counter_lost,True,1.0,counter_lost
+1,,esp32,grover,10,100,639.55,659.242,67.258,54.243,1055.375,0.002,anomaly,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp32,grover,11,39,1818.062,2278.626,637.075,1230.5,3422.237,0.002,count_mismatch,False,1.0,"partial: aligned by width, 39/42 reps matched, 728 extra/unmatched counter pulses ignored"
+1,,esp32,grover,12,9,7276.125,7255.509,46.619,62.981,7291.787,0.002,ok,False,1.0,"aligned by width, all 9 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp32,grover,13,0,,,,,,,refused_counter_lost,True,1.0,counter_lost
+1,,esp32,grover,13,0,,,,,,,refused_count_mismatch,True,1.0,57 usable pulses (4 glitch) for 2 reps; width alignment matched only 0/2

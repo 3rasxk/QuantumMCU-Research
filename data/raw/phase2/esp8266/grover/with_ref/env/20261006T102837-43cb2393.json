@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "session_id": "20261006T102837-43cb2393",
+  "pio_env": "nodemcuv2",
+  "pio_packages": {
+    "espressif8266": "4.2.1",
+    "framework-arduinoespressif8266": "3.30102.0",
+    "tool-esptool": "1.413.0",
+    "tool-esptoolpy": "1.30000.201119",
+    "tool-mklittlefs": "1.203.210628",
+    "tool-mkspiffs": "1.200.0",
+    "toolchain-xtensa": "2.100300.220621"
+  },
+  "git_commit": "d4e26f20102e48a8a85ea05b0ccce7d1c0771576",
+  "git_dirty": true,
+  "firmware_source_hash": "5413c474786bad15",
+  "platformio_version": "PlatformIO Core, version 6.1.19",
+  "python_version": "3.11.7",
+  "board": "esp8266",
+  "serial_port": "/dev/cu.usbserial-529B0012281",
+  "baud": 115200,
+  "f_cpu": 80000000,
+  "host_os": "macOS-26.3.1-arm64-arm-64bit",
+  "host_cpu": "arm",
+  "sleep_prevention": {
+    "checked": true,
+    "prevented": true,
+    "note": "checked via `pmset -g assertions`; run under `caffeinate -s` before a long session if this is False"
+  },
+  "ref_used": true,
+  "ref_dir_bucket": "with_ref",
+  "ref_dir_matches_flag": true,
+  "recorded_utc": "2026-10-06T10:28:39.228518+00:00"
+}

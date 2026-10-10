@@ -1,0 +1,8 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,uno,h_all,3,100,-10.388,-10.35,1.796,4.0,12.488,-1.2693,anomaly,False,4.0,
+1,,uno,h_all,7,100,-135.213,-135.096,1.74,3.685,139.338,-0.5114,anomaly,False,4.0,
+1,,uno,h_all,8,0,,,,,,,refused_no_target_run,True,4.0,no_target_run
+1,,uno,h_all,2,100,-7.906,-7.827,1.638,3.984,9.825,-2.672,anomaly,False,4.0,
+1,,uno,h_all,4,100,-15.888,-16.385,1.426,0.025,21.988,-0.7552,anomaly,False,4.0,
+1,,uno,h_all,5,0,,,,,,,refused_count_mismatch,True,4.0,99 usable pulses (1 glitch) for 100 reps; refusing rep-order join
+1,,uno,h_all,6,100,-63.069,-62.904,1.821,3.987,65.313,-0.5468,anomaly,False,4.0,
