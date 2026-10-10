@@ -56,8 +56,7 @@ def main():
             label="Timing model (estimate)", zorder=2)
     ps.iqr_band(ax, ns, [float(q1[i]) if reps[i] > 1 else None for i in range(len(ns))],
                 [float(q3[i]) if reps[i] > 1 else None for i in range(len(ns))], color)
-    ax.plot(ns, med, color=color, marker=ps.BOARD_MARKER[args.board], markersize=ps.MARKER_SIZE,
-            linestyle=ps.CIRCUIT_LINESTYLE.get(args.circuit, "-"), linewidth=ps.LINE_WIDTH,
+    ax.plot(ns, med, color=color, linestyle="-", linewidth=1.8,
             label=f"Measured ({ps.BOARD_SHORT[args.board]}), median line, IQR band", zorder=4)
 
     if len(ns) >= 3:
@@ -66,7 +65,7 @@ def main():
                 transform=ax.transAxes, va="top", fontsize=8.5)
 
     ax.set_yscale("log")
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ps.style_axes(ax)
     ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel(r"Execution time per repetition ($\mu$s)")
     label = ps.CIRCUIT_LABEL.get(args.circuit, args.circuit).split(" (")[0]

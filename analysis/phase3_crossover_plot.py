@@ -102,11 +102,9 @@ def draw_series(ax, board, circuit, s, band_alpha=ps.IQR_ALPHA):
     ax.fill_between(ns, s["loc_q1"], s["loc_q3"], color=color, alpha=band_alpha, linewidth=0, zorder=2)
     ax.fill_between(ns, s["off_q1"], s["off_q3"], color=color, alpha=band_alpha * 0.7,
                     linewidth=0, zorder=2)
-    ax.plot(ns, s["loc_med"], color=color, linestyle="-", linewidth=ps.LINE_WIDTH, marker=marker, markersize=ps.MARKER_SIZE,
-            markeredgecolor="white", markeredgewidth=0.5, zorder=3,
+    ax.plot(ns, s["loc_med"], color=color, linestyle="-", linewidth=1.8, zorder=3,
             label=f"{ps.BOARD_SHORT[board]} — local")
-    ax.plot(ns, s["off_med"], color=color, linestyle="--", linewidth=ps.LINE_WIDTH, marker=marker, markersize=ps.MARKER_SIZE,
-            markerfacecolor="white", markeredgecolor=color, markeredgewidth=0.9, zorder=3,
+    ax.plot(ns, s["off_med"], color=color, linestyle="--", linewidth=1.8, zorder=3,
             label=f"{ps.BOARD_SHORT[board]} — offload")
 
     label = "anomaly (also flagged in n=30 run)"
@@ -158,7 +156,7 @@ def main():
 
             ps.style_axes(ax, log_y=True)
             ax.set_title(ps.CIRCUIT_LABEL[circuit])
-            ax.set_xlabel("Number of qubits, n (qubits)")
+            ax.set_xlabel("Number of qubits, $n$")
         axes[0].set_ylabel("Time per run (µs, log scale)")
 
         handles, labels = axes[0].get_legend_handles_labels()

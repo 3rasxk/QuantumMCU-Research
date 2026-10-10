@@ -21,6 +21,12 @@ BOARD_COLOR = {"uno": "#0072B2", "esp8266": "#E69F00", "esp32": "#009E73"}
 BOARD_MARKER = {"uno": "o", "esp8266": "s", "esp32": "^"}
 # linestyle + marker pair per board, stable in every chart (moved here from _graph_data). Reference / model curves
 # are dashed grey WITHOUT markers; no board pair equals a circuit pair (the markers differ).
+# colour-only series (Phase 1/2/3 charts): one colour per circuit, the same in every chart. Blue / vermillion / green /
+# purple checked with dataviz validate_palette.js (--pairs all): lightness, chroma, normal-vision floor (min dE 18.7)
+# and 3:1 contrast pass; CVD separation is in the 6-8 floor band (purple vs blue 6.7), so every chart also has a legend.
+CIRCUIT_COLOR = {"h_all": "#0072B2", "bell_ghz": "#D55E00", "qft": "#009E73", "grover": "#7B3294"}
+# extra colours for the non-board, non-circuit lines of one chart (heap, largest block, reliability, ...)
+EXTRA_COLOR = {"purple": "#7B3294", "brown": "#8C510A", "vermillion": "#D55E00", "sky": "#56B4E9", "dark": "#333333"}
 BOARD_LINESTYLE = {"uno": "-", "esp8266": "--", "esp32": ":"}
 
 # --- วงจร: ไม่ยืมสีบอร์ด (สีมีไว้บอกบอร์ดเท่านั้น) ใช้หมึกเทา + marker + linestyle ---
@@ -118,13 +124,13 @@ def apply_clean_style(paper=False):
 
     global _PAPER
     _PAPER = bool(paper)
-    label, tick, legend, title = (8, 7, 7, 8) if paper else (9, 8, 8, 9.5)
+    label, tick, legend, title = (8, 7, 7, 8) if paper else (10, 9, 9, 10.5)
     matplotlib.rcParams.update({
         "font.family": "serif" if paper else "sans-serif",
         "font.serif": FONT_SERIF,
         "font.sans-serif": FONT_SANS,
         "mathtext.fontset": "stix" if paper else "dejavusans",
-        "font.size": tick + 0.5 if not paper else 7.5,
+        "font.size": 9.5 if not paper else 7.5,
         "axes.titlesize": title,
         "axes.titleweight": "normal",
         "axes.labelsize": label,
@@ -149,10 +155,16 @@ def apply_clean_style(paper=False):
         "ytick.left": True,
         "xtick.minor.visible": False,    # log axes still draw their own minor ticks
         "ytick.minor.visible": False,
-        "xtick.major.width": 0.7,
-        "ytick.major.width": 0.7,
-        "xtick.major.size": 3.0,
-        "ytick.major.size": 3.0,
+        "xtick.major.width": 0.7 if paper else 1.1,    # clear tick mark at every labelled number
+        "ytick.major.width": 0.7 if paper else 1.1,
+        "xtick.major.size": 3.5 if paper else 6.0,
+        "ytick.major.size": 3.5 if paper else 6.0,
+        "xtick.minor.width": 0.6 if paper else 0.8,
+        "ytick.minor.width": 0.6 if paper else 0.8,
+        "xtick.minor.size": 2.0 if paper else 3.5,
+        "ytick.minor.size": 2.0 if paper else 3.5,
+        "xtick.major.pad": 3.5,
+        "ytick.major.pad": 3.5,
         "lines.linewidth": LINE_WIDTH,
         "lines.markersize": MARKER_SIZE,
         "legend.frameon": True,
@@ -207,17 +219,66 @@ def all_fixed_styles():
     return out
 
 
+class EveryIntegerLocator:
+    """Tick (and label) at EVERY integer while the axis spans <= 24 of them, then every 2nd/3rd/... so labels stay
+    readable. Qubit counts are small integers, so each n gets its own tick mark."""
+
+    def __init__(self):
+        self.axis = None
+
+    def set_axis(self, axis):
+        self.axis = axis
+
+    def __call__(self):
+        lo, hi = self.axis.get_view_interval()
+        return self.tick_values(lo, hi)
+
+    def tick_values(self, vmin, vmax):
+        import math
+        import numpy as np
+        if vmin > vmax:
+            vmin, vmax = vmax, vmin
+        step = max(1, math.ceil((vmax - vmin) / 24))
+        first = math.ceil(vmin / step) * step
+        return np.arange(first, vmax + 1e-9, step)
+
+    def view_limits(self, vmin, vmax):
+        return vmin, vmax
+
+    def nonsingular(self, vmin, vmax):
+        return (vmin - 1, vmax + 1) if vmin == vmax else (vmin, vmax)
+
+    def raise_if_exceeds(self, locs):
+        return locs
+
+
+def plain_number_formatter():
+    """Tick labels as plain numbers with a real minus sign (1, 10, -100, 0.1), for symlog axes where 10^k with a
+    leading minus is hard to read."""
+    from matplotlib.ticker import FuncFormatter
+
+    def fmt(v, _pos):
+        if v == 0:
+            return "0"
+        s = f"{abs(v):g}"
+        return ("\u2212" if v < 0 else "") + s
+
+    return FuncFormatter(fmt)
+
+
 def style_axes(ax, log_y=False, integer_x=True):
-    """Integer x ticks (qubit counts) and, for log_y, a log y axis. No grid (clean style). Kept under the old name
-    so every existing script gets the clean look without edits."""
-    from matplotlib.ticker import MaxNLocator
+    """Every integer x gets its own tick + label (qubit counts) and, for log_y, a log y axis. No grid (clean style).
+    Kept under the old name so every existing script gets the clean look without edits."""
+    from matplotlib.ticker import Locator
 
     if log_y:
         ax.set_yscale("log")
     ax.grid(False)
     ax.set_axisbelow(True)
     if integer_x:
-        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        class _Loc(EveryIntegerLocator, Locator):
+            pass
+        ax.xaxis.set_major_locator(_Loc())
 
 
 def add_panel_label(ax, text, inside=False):
@@ -296,7 +357,7 @@ def add_footnote(fig, text):
     — savefig(bbox_inches='tight') ขยายขอบภาพให้ครอบข้อความนี้เอง)"""
     if _PAPER:
         return None   # the paper caption carries the statistics note
-    fig.text(0.995, -0.005, text, ha="right", va="top", fontsize=7.5, color=INK_SECONDARY)
+    fig.text(0.995, -0.005, text, ha="right", va="top", fontsize=8.5, color=INK_SECONDARY)
 
 
 PAPER_PNG_DPI = 600

@@ -91,7 +91,7 @@ def main():
             legend.setdefault(lab, h)
         ps.style_axes(ax, log_y=True)
         ax.set_title(ps.CIRCUIT_LABEL[circuit])
-        ax.set_xlabel("Number of qubits, n (qubits)")
+        ax.set_xlabel("Number of qubits, $n$")
     axes[0].set_ylabel("Time per run (µs, log scale)")
 
     # เรียง legend ตามบอร์ดคงที่ (local, offload) แล้วต่อด้วยสัญลักษณ์จุดตัด

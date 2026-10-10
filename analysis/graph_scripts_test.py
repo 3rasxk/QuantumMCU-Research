@@ -223,8 +223,8 @@ from shared import plot_style as ps
 caps = {}
 ps.save_figure_png_only = lambda fig, d, stem: caps.setdefault(stem, fig) and []
 p2.plot_exec_time_vs_n(gd.PointSet('uno', 'h_all', 2, True))
-ys = [float(l.get_ydata()[0]) for ax in caps['exec_time_vs_n'].axes for l in ax.lines
-      if l.get_marker() == 'o' and len(l.get_ydata()) == 1 and l.get_linestyle() == 'None']
+ys = [float(v) for ax in caps['exec_time_vs_n'].axes for l in ax.lines
+      if l.get_color() == ps.BOARD_COLOR['uno'] and len(l.get_ydata()) >= 3 for v in l.get_ydata()]
 print('count', len(ys), 'max', max(ys))
 """)
         check("with_ref chart uses only the with_ref bucket (no no_ref values)", "count 6" in out and

@@ -41,6 +41,7 @@ from shared import paths as sp  # noqa: E402
 
 REPO_ROOT = gd.REPO_ROOT
 CAP_TEXT = f"{tm.POINT_TIME_CAP_S / 3600:g} h"
+LINE_W = 1.8          # colour-only series: solid lines, no markers
 
 # one marker per outcome category; non-ok categories never reuse the circuit/board data markers
 CAT_MARKER = {OK: "o", OK_CAPPED: "o", WALL: "X", FAILED: "s", WATCHDOG: "v", HANG: "P", TIME_LIMITED: "*"}
@@ -105,7 +106,7 @@ def strip_events(ax, out, board_ymax_axes=0.95):
 def legend_for(ax, cats, extra=()):
     h = [Line2D([], [], linestyle="none", markersize=8, **marker_kwargs(c)) for c in cats]
     ax.legend(h + list(extra), [CAT_LABEL[c] for c in cats] + [e.get_label() for e in extra],
-              loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=1, fontsize=8.5)
+              loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=1, fontsize=9)
 
 
 # --------------------------------------------------------------------------- 1. time vs n
@@ -123,14 +124,11 @@ def plot_exec_time_vs_n(S):
             ax.plot(np.full(len(vals[n]), n), vals[n], linestyle="none", marker=".", markersize=3.2,
                     color=ps.INK_MUTED, alpha=0.28, zorder=1, rasterized=True)
     ps.iqr_band(ax, ns, [st[n][1] for n in ns], [st[n][2] for n in ns], col)
-    ax.plot(ns, [st[n][0] for n in ns], linestyle=ps.CIRCUIT_LINESTYLE.get(S.circuit, "-"), color=col,
-            linewidth=ps.LINE_WIDTH, zorder=2)
-    for n in ns:
-        med = st[n][0]
-        capped = out.get(n, {}).get("cat") == OK_CAPPED
-        ax.plot([n], [med], linestyle="none", markersize=ps.MARKER_SIZE,
-                **marker_kwargs(OK_CAPPED if capped else OK, color=col) | dict(marker=ps.BOARD_MARKER[S.board], markeredgewidth=0.9),
-                zorder=4)
+    ax.plot(ns, [st[n][0] for n in ns], linestyle="-", color=col, linewidth=LINE_W, zorder=2)
+    for n in ns:                       # colour-only series; only a time-capped point (< 100 reps) gets an open marker
+        if out.get(n, {}).get("cat") == OK_CAPPED:
+            ax.plot([n], [st[n][0]], linestyle="none", markersize=5.5, marker="o", markerfacecolor="white",
+                    markeredgecolor=col, markeredgewidth=1.3, zorder=4)
     tl = [n for n, o in out.items() if o["cat"] == TIME_LIMITED]
     model_ns = sorted(set(ns) | set(tl))
     try:
@@ -144,10 +142,9 @@ def plot_exec_time_vs_n(S):
     ax.set_ylim(lo / 2.5, hi * 10 ** (0.75 if any(o["cat"] in (WALL, TIME_LIMITED) for o in out.values()) else 0.3))
     strip_events(ax, out)
     ax.set_xticks(sorted(set(ns) | {n for n, o in out.items() if o["cat"] in (WALL, TIME_LIMITED)}))
-    ax.set_xlabel("Number of qubits, n (qubits)")
+    ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Execution time per rep (µs, log scale)")
-    cats = [c for c in (OK, OK_CAPPED, WALL, TIME_LIMITED) if any(
-        (o["cat"] == c) for o in out.values()) or c == OK]
+    cats = [c for c in (OK_CAPPED, WALL, TIME_LIMITED) if any((o["cat"] == c) for o in out.values())]
     est = Line2D([], [], linestyle="--", color=ps.INK_SECONDARY, linewidth=ps.REF_LINE_WIDTH,
                  label="ESTIMATE: timing_model per-rep expectation (a model, not a measurement)")
     band = Line2D([], [], linestyle="-", color=col, linewidth=6, alpha=ps.BAND_ALPHA * 1.6,
@@ -155,7 +152,8 @@ def plot_exec_time_vs_n(S):
     extra = [est, band]
     if ps.SHOW_REPS:
         extra.append(Line2D([], [], linestyle="none", marker=".", color=ps.INK_MUTED, alpha=0.6, label="individual rep"))
-    legend_for(ax, cats, extra=tuple(extra))
+    ok_line = Line2D([], [], linestyle="-", color=col, linewidth=LINE_W, label=f"measured median ({CAT_LABEL[OK]})")
+    legend_for(ax, cats, extra=(ok_line,) + tuple(extra))
     finish(fig, ax, S, "per-rep execution time vs n")
     gd.footnote(fig, gd.reps_text(len(vals[n]) for n in ns) + "; line = median, band = IQR (25th-75th pct), "
                     "no band where a point has one rep; all reps used (WARMUP_REPS=0).")
@@ -188,27 +186,27 @@ def plot_outcomes_vs_n(S):
             k_cap += 1
             ax.annotate(f"{o['reps']}/{tm.REPS} reps", (n, 1.0), xytext=(0, -17 - 11 * (k_cap % 2)),
                         textcoords="offset points",
-                        ha="center", fontsize=7.5, color=ps.INK_SECONDARY)
+                        ha="center", fontsize=8.5, color=ps.INK_SECONDARY)
         if o["cat"] == WALL:
             ax.annotate(evidence_text(S, o), (n, 1.0), xytext=(0, 14), textcoords="offset points", ha="center",
-                        fontsize=7.5, color=ps.INK_PRIMARY)
+                        fontsize=8.5, color=ps.INK_PRIMARY)
     for i, (n, kinds) in enumerate(sorted(attempts.items())):
         cat = WATCHDOG if any(k.startswith("watchdog") for k in kinds) else FAILED
         ax.plot([n], [0.55], linestyle="none", markersize=9, zorder=3, **marker_kwargs(cat))
         short = kinds[0].replace("_suspected", "")
         ax.annotate(f"{len(kinds)}x {short}" if len(set(kinds)) == 1 else f"{len(kinds)} failed",
                     (n, 0.55), xytext=(0, -17 - 11 * (i % 2)), textcoords="offset points", ha="center",
-                    fontsize=7.5, color=ps.INK_SECONDARY)
+                    fontsize=8.5, color=ps.INK_SECONDARY)
     if attempts:
         ax.set_yticks([1.0, 0.55])
-        ax.set_yticklabels(["final outcome", "failed attempts\nbefore it"], fontsize=8)
+        ax.set_yticklabels(["final outcome", "failed attempts\nbefore it"], fontsize=9)
         ax.set_ylim(0.2, 1.55)
     else:
         ax.set_yticks([1.0])
-        ax.set_yticklabels(["final outcome"], fontsize=8)
+        ax.set_yticklabels(["final outcome"], fontsize=9)
         ax.set_ylim(0.6, 1.55)
     ax.set_xticks(sorted(out))
-    ax.set_xlabel("Number of qubits, n (qubits)")
+    ax.set_xlabel("Number of qubits, $n$")
     ps.style_axes(ax, log_y=False)
     ax.grid(False, axis="y")
     cats = [c for c in (OK, OK_CAPPED, WALL, FAILED, WATCHDOG, HANG, TIME_LIMITED)
@@ -234,44 +232,44 @@ def plot_memory_vs_n(S):
     ns = [int(r["n"]) for r in rows]
     col = ps.BOARD_COLOR[S.board]
     fig, ax = plt.subplots(figsize=(7.4, 5.0), layout="constrained")
-    ax.plot(ns, [float(r["theoretical_bytes"]) for r in rows], linestyle="-", marker=ps.BOARD_MARKER[S.board],
-            color=col, linewidth=ps.LINE_WIDTH, markersize=ps.MARKER_SIZE, label="state vector, theoretical bytes (8 B x 2^n)", zorder=3)
+    ax.plot(ns, [float(r["theoretical_bytes"]) for r in rows], linestyle="-",
+            color=col, linewidth=LINE_W, label="state vector, theoretical bytes (8 B x 2^n)", zorder=3)
     ax.axhline(sram, color=ps.INK_PRIMARY, linestyle="--", linewidth=ps.REF_LINE_WIDTH, zorder=2)
     ax.annotate(f"100% of board RAM = {sram} B", (ns[0], sram), xytext=(0, 4), textcoords="offset points",
                 fontsize=8, color=ps.INK_PRIMARY)
     heap = gd.values_by_n(S.raw, "free_heap_before")
     if heap:
         hn = sorted(heap)
-        ax.plot(hn, [float(np.median(heap[n])) for n in hn], linestyle=":", marker="d", color=ps.INK_SECONDARY,
-                markersize=ps.MARKER_SIZE, label="free heap before the run (median, firmware-reported)", zorder=2)
+        ax.plot(hn, [float(np.median(heap[n])) for n in hn], linestyle="-", color=ps.EXTRA_COLOR["purple"], linewidth=LINE_W,
+                label="free heap before the run (median, firmware-reported)", zorder=2)
     blocks = gd.values_by_n(S.raw, "largest_block")
     if blocks:
         bn = sorted(blocks)
-        ax.plot(bn, [float(np.median(blocks[n])) for n in bn], linestyle="-.", marker="v", color=ps.INK_MUTED,
-                markersize=ps.MARKER_SIZE, label="largest free block (median, firmware-reported)", zorder=2)
+        ax.plot(bn, [float(np.median(blocks[n])) for n in bn], linestyle="-", color=ps.EXTRA_COLOR["brown"], linewidth=LINE_W,
+                label="largest free block (median, firmware-reported)", zorder=2)
     used = [(int(r["n"]), float(r["compile_ram_used_bytes"])) for r in rows if gd.f(r.get("compile_ram_used_bytes"))]
     if used:
-        ax.plot([u[0] for u in used], [u[1] for u in used], linestyle="none", marker="s", color=ps.INK_SECONDARY,
-                markerfacecolor="white", markersize=ps.MARKER_SIZE, label="compile RAM used (static + state), bytes", zorder=2)
+        ax.plot([u[0] for u in used], [u[1] for u in used], linestyle="-", color=ps.EXTRA_COLOR["dark"],
+                linewidth=LINE_W, label="compile RAM used (static + state), bytes", zorder=2)
     for n, o in sorted(out.items()):
         if o["cat"] == WALL:
             y = next(float(r["theoretical_bytes"]) for r in rows if int(r["n"]) == n)
             ax.plot([n], [y], linestyle="none", markersize=11, zorder=5, **marker_kwargs(WALL))
             ax.annotate(evidence_text(S, o).replace("\n", ", "), (n, y), xytext=(-6, 12), textcoords="offset points",
-                        ha="right", fontsize=7.5)
+                        ha="right", fontsize=9)
     ax.set_yscale("log")
     ps.style_axes(ax, log_y=True)
     sec = ax.secondary_yaxis("right", functions=(lambda y: y / sram * 100, lambda p: p * sram / 100))
     sec.set_ylabel("% of board RAM")
     ax.set_xticks(ns)
-    ax.set_xlabel("Number of qubits, n (qubits)")
+    ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Bytes (log scale)")
     h, lab = ax.get_legend_handles_labels()
     wall_h = Line2D([], [], linestyle="none", markersize=9, **marker_kwargs(WALL))
     if any(o["cat"] == WALL for o in out.values()):
         h.append(wall_h)
         lab.append(CAT_LABEL[WALL])
-    ax.legend(h, lab, loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=1, fontsize=8.5)
+    ax.legend(h, lab, loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=1, fontsize=9)
     finish(fig, ax, S, "memory vs n")
     gd.footnote(fig, "The wall marker only appears where the sweep recorded build_overflow / malloc_failed; "
                     "the board RAM line is the plan's figure, not a measurement.")
@@ -305,10 +303,10 @@ def plot_time_per_point(S):
             txt += f"\n({d['fail']} failed)"
         if n in walls and walls[n].get("timeout_budget_s"):
             txt += f"\nwall run, hang budget {walls[n]['timeout_budget_s']} s"
-        ax.annotate(txt, (n, c + u), xytext=(0, 4), textcoords="offset points", ha="center", fontsize=7.5)
+        ax.annotate(txt, (n, c + u), xytext=(0, 4), textcoords="offset points", ha="center", fontsize=9)
     ps.style_axes(ax, log_y=False)
     ax.set_xticks(ns)
-    ax.set_xlabel("Number of qubits, n (qubits)")
+    ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Compile + upload time per point, all attempts (s)")
     ax.set_ylim(0, max(c + u for c, u in zip(comp, upl)) * 1.35)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=2)
@@ -334,27 +332,27 @@ def plot_scaling(S):
     slope, icpt = np.polyfit(fit_ns, [np.log2(med[n]) for n in fit_ns], 1)
     col = ps.BOARD_COLOR[S.board]
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(10.5, 4.8), layout="constrained")
-    a1.plot(full, [np.log2(med[n]) for n in full], linestyle="none", marker=ps.BOARD_MARKER[S.board], color=col,
-            markersize=ps.MARKER_SIZE, markeredgecolor="white", label="measured median", zorder=3)
+    a1.plot(full, [np.log2(med[n]) for n in full], linestyle="-", color=col, linewidth=LINE_W,
+            label="measured median", zorder=3)
     xs = np.array([fit_ns[0], fit_ns[-1]])
     a1.plot(xs, slope * xs + icpt, linestyle="--", color=ps.INK_PRIMARY, linewidth=1.3, zorder=2,
             label=f"least-squares fit, n = {fit_ns[0]}..{fit_ns[-1]}: slope {slope:.2f} doublings / qubit")
     a1.plot(xs, 1.0 * (xs - xs[0]) + (slope * xs[0] + icpt), linestyle=":", color=ps.INK_MUTED, linewidth=1.3,
             zorder=1, label="reference: 1 doubling per qubit (slope 1)")
     a1.set_xticks(full)
-    a1.set_xlabel("Number of qubits, n (qubits)")
+    a1.set_xlabel("Number of qubits, $n$")
     a1.set_ylabel("log2 of median time per rep (µs)")
     ps.style_axes(a1)
-    a1.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), fontsize=8)
+    a1.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), fontsize=9)
     rn = [n for n in full if n - 1 in med]
-    a2.plot(rn, [med[n] / med[n - 1] for n in rn], linestyle=ps.CIRCUIT_LINESTYLE.get(S.circuit, "-"),
-            marker=ps.BOARD_MARKER[S.board], color=col, markersize=ps.MARKER_SIZE, markeredgecolor="white", label="t(n) / t(n-1)")
+    a2.plot(rn, [med[n] / med[n - 1] for n in rn], linestyle="-", color=col, linewidth=LINE_W,
+            label="t(n) / t(n-1)")
     a2.axhline(2.0, color=ps.INK_PRIMARY, linestyle="--", linewidth=1.1, label="reference: 2x per qubit")
     a2.set_xticks(rn)
-    a2.set_xlabel("Number of qubits, n (qubits)")
+    a2.set_xlabel("Number of qubits, $n$")
     a2.set_ylabel("Ratio of successive medians")
     ps.style_axes(a2)
-    a2.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), fontsize=8)
+    a2.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), fontsize=9)
     finish(fig, [a1, a2], S, "scaling of time per rep with n")
     gd.footnote(fig, "Points with 100 reps only; a fit of the median curve, not a model of the device. "
                     "Source: raw.csv.")
@@ -392,24 +390,21 @@ def plot_micros_vs_counter(S):
     for ax, k, unit in ((a1, 2, "µs"), (a2, 3, "%")):
         ax.axhline(0, color=ps.INK_PRIMARY, linewidth=1.0, zorder=1)
         ps.iqr_band(ax, [r[0] for r in rows], [r[k][1] for r in rows], [r[k][2] for r in rows], col)
-        ax.plot([r[0] for r in rows], [r[k][0] for r in rows], linestyle=ps.CIRCUIT_LINESTYLE.get(S.circuit, "-"),
-                color=col, linewidth=ps.LINE_WIDTH, zorder=2)
-        for r in rows:
-            med = r[k][0]
-            flagged = r[1] != "ok"
-            ax.plot([r[0]], [med], linestyle="none", markersize=ps.MARKER_SIZE + 0.6, zorder=4, marker=ps.BOARD_MARKER[S.board],
-                    markerfacecolor="white" if flagged else col, markeredgecolor=col if flagged else "white",
-                    markeredgewidth=1.4 if flagged else 0.7)
+        ax.plot([r[0] for r in rows], [r[k][0] for r in rows], linestyle="-", color=col, linewidth=LINE_W, zorder=2)
+        for r in rows:                 # only a point the counter flagged gets an open marker
+            if r[1] != "ok":
+                ax.plot([r[0]], [r[k][0]], linestyle="none", markersize=5.5, zorder=4, marker="o",
+                        markerfacecolor="white", markeredgecolor=col, markeredgewidth=1.4)
         ax.set_yscale("symlog", linthresh=1.0 if unit == "µs" else 0.1)
         ax.set_ylabel(f"micros() minus counter ({unit}, symlog)")
+        ax.yaxis.set_major_formatter(ps.plain_number_formatter())
         ps.style_axes(ax)
     a2.set_xticks([r[0] for r in rows])
-    a2.set_xlabel("Number of qubits, n (qubits)")
-    h = [Line2D([], [], linestyle="none", marker=ps.BOARD_MARKER[S.board], color=col, markeredgecolor="white",
-                markersize=ps.MARKER_SIZE + 0.6, label="counter reported no anomaly"),
-         Line2D([], [], linestyle="none", marker=ps.BOARD_MARKER[S.board], markerfacecolor="white", markeredgecolor=col,
-                markersize=ps.MARKER_SIZE + 0.6, markeredgewidth=1.4, label="counter flagged an anomaly")]
-    a2.legend(h, [x.get_label() for x in h], loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2, fontsize=8.5)
+    a2.set_xlabel("Number of qubits, $n$")
+    h = [Line2D([], [], linestyle="-", color=col, linewidth=LINE_W, label="median (counter reported no anomaly)"),
+         Line2D([], [], linestyle="none", marker="o", markerfacecolor="white", markeredgecolor=col,
+                markersize=5.5, markeredgewidth=1.4, label="counter flagged an anomaly")]
+    a2.legend(h, [x.get_label() for x in h], loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2, fontsize=9)
     ps.suptitle(fig, f"{ps.BOARD_LABEL[S.board]} -- {ps.CIRCUIT_LABEL.get(S.circuit, S.circuit)} -- micros() vs counter "
                      f"(target REPS={tm.REPS}, {S.commit_note()})", fontsize=10)
     a1.text(0.0, 1.05, f"{ps.BOARD_SHORT[S.board]}, Phase 2, micros() and ESP32 counter (self-loopback tested only, "
@@ -437,13 +432,11 @@ def plot_cumulative(board, ref=False):
         med = [float(np.median(vals[n])) for n in ns]
         lo = min(med + [lo or med[0]])
         hi = max(med + [hi or med[0]])
-        ink = ps.CIRCUIT_INK[c]
-        ax.plot(ns, med, linestyle=ps.CIRCUIT_LINESTYLE[c], color=ink, linewidth=ps.LINE_WIDTH, zorder=2)
+        ink = ps.CIRCUIT_COLOR[c]
+        ax.plot(ns, med, linestyle="-", color=ink, linewidth=LINE_W, zorder=2)
         capped = [n for n in ns if out.get(n, {}).get("cat") == OK_CAPPED]
-        ax.plot([n for n in ns if n not in capped], [m for n, m in zip(ns, med) if n not in capped], linestyle="none",
-                marker=ps.CIRCUIT_MARKER[c], color=ink, markersize=ps.MARKER_SIZE, markeredgecolor="white", zorder=3)
-        ax.plot(capped, [m for n, m in zip(ns, med) if n in capped], linestyle="none", marker=ps.CIRCUIT_MARKER[c],
-                markerfacecolor="white", markeredgecolor=ink, markeredgewidth=1.0, markersize=ps.MARKER_SIZE, zorder=3)
+        ax.plot(capped, [m for n, m in zip(ns, med) if n in capped], linestyle="none", marker="o",
+                markerfacecolor="white", markeredgecolor=ink, markeredgewidth=1.3, markersize=5.5, zorder=3)
         walls[c] = [n for n, o in out.items() if o["cat"] == WALL]
         tls[c] = [n for n, o in out.items() if o["cat"] == TIME_LIMITED]
     ax.set_yscale("log")
@@ -453,18 +446,18 @@ def plot_cumulative(board, ref=False):
     for i, c in enumerate(circuits):
         y = 0.95 - 0.05 * i
         for n in walls.get(c, []):
-            ax.plot([n], [y], transform=tr, linestyle="none", markersize=8, color=ps.CIRCUIT_INK[c], **{
-                k: v for k, v in marker_kwargs(WALL, ps.CIRCUIT_INK[c]).items()})
+            ax.plot([n], [y], transform=tr, linestyle="none", markersize=8, color=ps.CIRCUIT_COLOR[c], **{
+                k: v for k, v in marker_kwargs(WALL, ps.CIRCUIT_COLOR[c]).items()})
         for n in tls.get(c, []):
             ax.plot([n], [y], transform=tr, linestyle="none", markersize=9, **marker_kwargs(TIME_LIMITED,
-                                                                                         ps.CIRCUIT_INK[c]))
-    h = [Line2D([], [], linestyle=ps.CIRCUIT_LINESTYLE[c], marker=ps.CIRCUIT_MARKER[c], color=ps.CIRCUIT_INK[c],
+                                                                                         ps.CIRCUIT_COLOR[c]))
+    h = [Line2D([], [], linestyle="-", color=ps.CIRCUIT_COLOR[c], linewidth=LINE_W,
                 label=ps.CIRCUIT_LABEL[c]) for c in circuits]
     h += [Line2D([], [], linestyle="none", markersize=8, **marker_kwargs(OK_CAPPED), label=CAT_LABEL[OK_CAPPED]),
           Line2D([], [], linestyle="none", markersize=8, **marker_kwargs(WALL), label=CAT_LABEL[WALL] + ", top strip"),
           Line2D([], [], linestyle="none", markersize=8, **marker_kwargs(TIME_LIMITED), label=CAT_LABEL[TIME_LIMITED] + ", top strip")]
-    ax.legend(handles=h, loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=1, fontsize=8)
-    ax.set_xlabel("Number of qubits, n (qubits)")
+    ax.legend(handles=h, loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=1, fontsize=9)
+    ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Median execution time per rep (µs, log scale)")
     commits = list(dict.fromkeys(c for S in sets.values() for c in S.commits()))
     note = gd.commit_phrase(commits)

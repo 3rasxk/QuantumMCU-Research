@@ -98,7 +98,7 @@ def plot_exec_time(summary_rows):
 
         ps.style_axes(ax, log_y=True)
         ax.set_title(ps.CIRCUIT_LABEL[circuit])
-        ax.set_xlabel("Number of qubits, n (qubits)")
+        ax.set_xlabel("Number of qubits, $n$")
     axes[0].set_ylabel("Execution time (µs, log scale)")
 
     # legend รวมทุก subplot (บอร์ดเดียวกันสีเดียวกันทุก subplot) วางนอกพื้นที่พล็อต

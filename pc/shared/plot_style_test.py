@@ -77,6 +77,49 @@ def test_unique_series_styles():
     check("CIRCUIT_LINESTYLE kept", ps.CIRCUIT_LINESTYLE == {"h_all": "-", "bell_ghz": "--", "qft": ":", "grover": "-."})
 
 
+def srgb_to_lab(h):
+    c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    c = [x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
+    X = 0.4124 * c[0] + 0.3576 * c[1] + 0.1805 * c[2]
+    Y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    Z = 0.0193 * c[0] + 0.1192 * c[1] + 0.9505 * c[2]
+    f = lambda t: t ** (1 / 3) if t > 0.008856 else 7.787 * t + 16 / 116  # noqa: E731
+    fx, fy, fz = f(X / 0.95047), f(Y), f(Z / 1.08883)
+    return 116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)
+
+
+def test_colour_only():
+    cols = {**{f"circuit:{c}": v for c, v in ps.CIRCUIT_COLOR.items()}, **{f"board:{b}": v for b, v in ps.BOARD_COLOR.items()}}
+    check("circuit colours are 4 distinct values", len(set(ps.CIRCUIT_COLOR.values())) == 4)
+    worst = min((sum((a - b) ** 2 for a, b in zip(srgb_to_lab(cols[x]), srgb_to_lab(cols[y]))) ** 0.5, x, y)
+                for x, y in itertools.combinations([k for k in cols if k.startswith("circuit:")], 2))
+    check(f"circuit colours pairwise dE >= 15 (min {worst[0]:.1f}: {worst[1]} vs {worst[2]})", worst[0] >= 15)
+    worst = min((sum((a - b) ** 2 for a, b in zip(srgb_to_lab(cols[x]), srgb_to_lab(cols[y]))) ** 0.5, x, y)
+                for x, y in itertools.combinations([k for k in cols if k.startswith("board:")], 2))
+    check(f"board colours pairwise dE >= 15 (min {worst[0]:.1f})", worst[0] >= 15)
+
+
+def test_ticks():
+    ps.apply_clean_style(False)
+    fig, ax = plt.subplots()
+    ax.plot([2, 14], [1, 2])
+    ps.style_axes(ax)
+    fig.canvas.draw()
+    ticks = [t for t in ax.get_xticks() if ax.get_xlim()[0] <= t <= ax.get_xlim()[1]]
+    check("every integer from 2 to 14 has a tick", all(n in ticks for n in range(2, 15)), str(ticks))
+    check("tick marks are long and thick enough to see", matplotlib.rcParams["xtick.major.size"] >= 5 and matplotlib.rcParams["xtick.major.width"] >= 1.0)
+    check("tick labels >= 9 pt, axis labels >= 10 pt", matplotlib.rcParams["xtick.labelsize"] >= 9 and matplotlib.rcParams["axes.labelsize"] >= 10)
+    plt.close(fig)
+    fig, ax = plt.subplots()
+    ax.plot([0, 100], [1, 2])
+    ps.style_axes(ax)
+    fig.canvas.draw()
+    check("wide axis thins the integer ticks (<= 25 labels)", len(ax.get_xticks()) <= 26, str(len(ax.get_xticks())))
+    plt.close(fig)
+    f = ps.plain_number_formatter()
+    check("symlog formatter: plain numbers with a real minus", [f(v, 0) for v in (-10, 0, 0.1, 100)] == ["\u221210", "0", "0.1", "100"])
+
+
 def test_grayscale():
     ps.apply_clean_style(False)
     imgs = {}
@@ -197,6 +240,8 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         test_unique_series_styles()
+        test_colour_only()
+        test_ticks()
         test_grayscale()
         test_save_png_and_guards(tmp)
         test_paper(tmp)

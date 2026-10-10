@@ -48,7 +48,7 @@ def load_rows():
 # (--pairs all, light surface): lightness, chroma, normal-vision floor (min dE 18.7) and 3:1 contrast pass; CVD
 # separation is in the 6-8 floor band (purple vs blue 6.7), so the legend order matches the curve order and the
 # per-algorithm figures carry the algorithm name in the title. The rcParams come from ps.apply_style(). ---
-PUB_COLOR = {"h_all": "#0072B2", "bell_ghz": "#D55E00", "qft": "#009E73", "grover": "#7B3294"}
+PUB_COLOR = dict(ps.CIRCUIT_COLOR)       # one colour per circuit, shared with the Phase 2 and 3 charts
 LINE_W = 1.8
 
 
@@ -75,7 +75,7 @@ def _draw_panel(ax, rows, column, ylabel, threshold=None):
         _curve(ax, [p[0] for p in shown], [p[1] for p in shown], circuit, label=PUB_LABEL[circuit])
     if threshold is not None:
         ax.axhline(threshold, color=ps.INK_SECONDARY, linestyle=(0, (5, 3)), linewidth=ps.REF_LINE_WIDTH, zorder=2)
-        ax.text(1.15, threshold * 1.25, r"pass threshold ($10^{-3}$)", fontsize=7.5,
+        ax.text(1.15, threshold * 1.25, r"pass threshold ($10^{-3}$)", fontsize=8.5,
                 color=ps.INK_SECONDARY, va="bottom", ha="left")
     ax.set_xscale("log")
     ax.set_yscale("log")
@@ -98,7 +98,7 @@ def plot_all(rows):
         ("tvd", "Total variation distance, TVD", None, "tvd_vs_depth"),
     ]
     # combined two-panel figure (a)(b), shared legend on top
-    fig, axes = plt.subplots(1, 2, figsize=(7.2, 3.1), layout="constrained")
+    fig, axes = plt.subplots(1, 2, figsize=(9.0, 3.4), layout="constrained")
     omitted = 0
     for ax, (col, ylab, thr, _), tag in zip(axes, specs, "ab"):
         omitted += _draw_panel(ax, rows, col, ylab, thr)
@@ -139,7 +139,7 @@ def plot_per_algorithm(rows):
                 _curve(ax, [x for x, _ in shown], [y for _, y in shown], circuit)
                 if thr is not None:
                     ax.axhline(thr, color=ps.INK_SECONDARY, linestyle=(0, (5, 3)), linewidth=ps.REF_LINE_WIDTH)
-                    ax.text(0.02, thr * 1.25, r"pass threshold ($10^{-3}$)", fontsize=7.5,
+                    ax.text(0.02, thr * 1.25, r"pass threshold ($10^{-3}$)", fontsize=8.5,
                             color=ps.INK_SECONDARY, va="bottom", ha="left", transform=ax.get_yaxis_transform())
                 ax.set_yscale("log")
                 ys = [y for _, y in shown]
@@ -149,7 +149,7 @@ def plot_per_algorithm(rows):
                     ax.set_xlim(pts[0][0] - 1, pts[0][0] + 1)
                     ax.set_xticks([pts[0][0]])
                 else:
-                    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+                    ps.style_axes(ax)
                 ax.set_xlabel("Number of qubits, $n$")
                 ax.set_ylabel(ylab)
                 ps.add_panel_label(ax, f"({tag})")
@@ -158,8 +158,8 @@ def plot_per_algorithm(rows):
                     step = -(-len(pts) // 8)             # at most ~8 depth labels, so they cannot overlap
                     shown_pts = pts[::step]
                     sec.set_xticks([p[0] for p in shown_pts])
-                    sec.set_xticklabels([f"{p[1]:.1e}".replace("e+0", "e") if p[1] >= 100000 else str(p[1]) for p in shown_pts], fontsize=6.5)
-                    sec.set_xlabel("circuit depth", fontsize=8)
+                    sec.set_xticklabels([f"{p[1]:.1e}".replace("e+0", "e") if p[1] >= 100000 else str(p[1]) for p in shown_pts], fontsize=8)
+                    sec.set_xlabel("circuit depth", fontsize=9)
             extra = f" (depth {pts[0][1]})" if len(pts) == 1 else ""
             ps.suptitle(fig, f"{PUB_LABEL[circuit].replace(' (n=7)', '')}{extra} — C++ simulator vs Qiskit Aer",
                         tag=True, fontsize=10)

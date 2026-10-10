@@ -23,6 +23,7 @@ from shared import plot_style as ps  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 
 CAP_TEXT = f"{tm.POINT_TIME_CAP_S / 3600:g} h"
+LINE_W = 1.8          # colour-only series: solid lines, no markers
 
 
 def plot_circuit(circuit, ref=False):
@@ -42,18 +43,17 @@ def plot_circuit(circuit, ref=False):
         if not ns:
             continue
         st = {n: gd.stats(vals[n]) for n in ns}
-        col, mk, ls = ps.BOARD_COLOR[b], ps.BOARD_MARKER[b], gd.BOARD_LINESTYLE[b]
+        col = ps.BOARD_COLOR[b]
         if ps.SHOW_REPS:
             for n in ns:
                 ax.plot(np.full(len(vals[n]), n), vals[n], linestyle="none", marker=".", markersize=2.6, color=col,
                         alpha=0.16, zorder=1, rasterized=True)
         ps.iqr_band(ax, ns, [st[n][1] for n in ns], [st[n][2] for n in ns], col)
-        ax.plot(ns, [st[n][0] for n in ns], linestyle=ls, color=col, linewidth=ps.LINE_WIDTH, zorder=2)
-        for n in ns:
-            med = st[n][0]
-            capped = out.get(n, {}).get("cat") == OK_CAPPED
-            ax.plot([n], [med], linestyle="none", marker=mk, markersize=ps.MARKER_SIZE, zorder=4, markeredgecolor=col if capped
-                    else "white", markerfacecolor="white" if capped else col, markeredgewidth=0.9 if capped else 0.5)
+        ax.plot(ns, [st[n][0] for n in ns], linestyle="-", color=col, linewidth=LINE_W, zorder=2)
+        for n in ns:                   # colour-only series; only a time-capped point (< 100 reps) gets an open marker
+            if out.get(n, {}).get("cat") == OK_CAPPED:
+                ax.plot([n], [st[n][0]], linestyle="none", marker="o", markersize=5.5, zorder=4, markeredgecolor=col,
+                        markerfacecolor="white", markeredgewidth=1.3)
         reps_all += [len(vals[n]) for n in ns]
         meds = [st[n][0] for n in ns]
         lo, hi = min(meds + [lo or meds[0]]), max(meds + [hi or meds[0]])
@@ -68,9 +68,9 @@ def plot_circuit(circuit, ref=False):
     ax.set_yscale("log")
     ps.style_axes(ax, log_y=True)
     ax.set_ylim(lo / 3, hi * 10 ** 1.1)
-    ax.set_xlabel("Number of qubits, n (qubits)")
+    ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Median execution time per rep (µs, log scale)")
-    h = [Line2D([], [], linestyle=gd.BOARD_LINESTYLE[b], marker=ps.BOARD_MARKER[b], color=ps.BOARD_COLOR[b],
+    h = [Line2D([], [], linestyle="-", color=ps.BOARD_COLOR[b], linewidth=LINE_W,
                 label=ps.BOARD_LABEL[b]) for b in sets]
     h += [Line2D([], [], linestyle="none", marker="o", markersize=5, markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY,
                  markeredgewidth=1.3, label=f"< 100 reps ({CAP_TEXT} per-point cap)"),
@@ -78,7 +78,7 @@ def plot_circuit(circuit, ref=False):
                  label="memory wall (recorded evidence), top strip"),
           Line2D([], [], linestyle="none", marker="*", markersize=10, markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY,
                  label=f"time-limited, not run (1 rep > {CAP_TEXT}), top strip")]
-    ax.legend(handles=h, loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=1, fontsize=8.5)
+    ax.legend(handles=h, loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=1, fontsize=9)
     note = "; ".join(f"{ps.BOARD_SHORT[b]}: {S.commit_note()}" for b, S in sets.items())
     ps.suptitle(fig, f"{ps.CIRCUIT_LABEL.get(circuit, circuit)} -- all boards (target REPS={tm.REPS}; {note})",
                 fontsize=10)
