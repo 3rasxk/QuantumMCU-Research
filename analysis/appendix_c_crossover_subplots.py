@@ -19,7 +19,7 @@
 # แหล่งข้อมูล: data/processed/phase2/summary.csv (local), data/processed/phase3/summary.csv
 # (offload), data/processed/phase3/crossover_summary.csv (ตำแหน่งจุดตัดที่คำนวณไว้แล้ว)
 #
-# ผลลัพธ์: data/figures/phase3/crossover_all_boards.{png,svg}
+# ผลลัพธ์: data/figures/phase3/crossover_all_boards.png
 
 import csv
 import sys
@@ -111,7 +111,7 @@ def main():
         f"Line = median, band = IQR (25th–75th percentile); {ps.reps_phrase(loc_trials, 'local')}; "
         f"{ps.reps_phrase(off_trials, 'offload')}. Offload baud: {bauds}.",
     )
-    ps.save_figure(fig, PHASE3_FIGURES_DIR, "crossover_all_boards")
+    ps.save_figure_png_only(fig, PHASE3_FIGURES_DIR, "crossover_all_boards")
 
 
 if __name__ == "__main__":

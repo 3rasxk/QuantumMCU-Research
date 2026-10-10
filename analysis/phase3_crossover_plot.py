@@ -6,7 +6,7 @@
 # offload (ใช้ baud สูงสุดที่มีข้อมูล) ทั้งคู่เป็นสีบอร์ด พร้อมแถบ IQR
 # และหา Crossover Point (n แรกที่ median offload < median local) ต่อวงจรต่อบอร์ด
 #
-# ผลลัพธ์: data/figures/phase3/crossover_{board}.{png,svg}
+# ผลลัพธ์: data/figures/phase3/crossover_{board}.png
 #          data/processed/phase3/crossover_summary.csv
 
 import csv
@@ -173,7 +173,7 @@ def main():
             "Line = median, band = IQR (25th–75th percentile); "
             f"{ps.reps_phrase(loc_trials, 'local')}; {ps.reps_phrase(off_trials, 'offload')}.",
         )
-        ps.save_figure(fig, PHASE3_FIGURES_DIR, f"crossover_{board}")
+        ps.save_figure_png_only(fig, PHASE3_FIGURES_DIR, f"crossover_{board}")
 
     # เขียนตารางสรุป Crossover Point
     PHASE3_PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
