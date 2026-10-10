@@ -4,10 +4,10 @@
 # (ไม่ใช้ไลบรารี graph เฉพาะทาง เพื่อคุมสไตล์ให้ตรงกับกราฟอื่นใน pc/shared/plot_style.py)
 #
 # ใช้หมึกเทาล้วน ไม่ใช้สีบอร์ด — สีน้ำเงิน/ส้ม/เขียวสงวนไว้บอก Uno/ESP8266/ESP32 เท่านั้น
-# ค่าคงที่ตัวปรับสถาปัตยกรรม (+x คิวบิต) ไม่ใส่เป็นตัวเลข เพราะมาจาก dataset n=30 ที่ถูก
-# แทนที่แล้ว — ต้องคำนวณใหม่จากข้อมูล REPS=100 ก่อนจึงจะใส่กลับได้
+# ค่าคงที่ตัวปรับสถาปัตยกรรม (+x คิวบิต) ใส่จากข้อมูล REPS=100 ชุดใหม่ที่คำนวณโดย
+# analysis/phase4_decision_rule.py (data/processed/phase4/adjustments.csv) — 1 เครื่องต่อบอร์ด
 #
-# ผลลัพธ์: data/figures/phase4/decision_flowchart.{png,svg}
+# ผลลัพธ์: data/figures/phase4/decision_flowchart.png (PNG อย่างเดียวใน data/figures/)
 
 import sys
 from pathlib import Path
@@ -65,7 +65,9 @@ def main():
     box(ax, (5, 19.8), 8.5, 2.2,
         "n_max = floor(log₂(B / 8))\n"
         "B = largest contiguous free block (bytes), if measurable\n"
-        "otherwise B ≈ total SRAM / 2 (one qubit below raw theory)",
+        "otherwise B ≈ total SRAM / 2\n"
+        "Checked on 10 series that stopped at a memory wall:\n"
+        "measured B gives the last ok n on 10/10; SRAM / 2 on 7/10 (ESP32: one qubit high)",
         FILL_DETAIL, fontsize=9.5)
     arrow(ax, (5, 21.7), (5, 20.9))
 
@@ -81,10 +83,10 @@ def main():
     arrow(ax, (4.3, 16.2), (5, 15.3), "No (fits in memory)", label_offset=(0.35, 0), ha="left", va="center")
 
     box(ax, (5, 11.6), 8.8, 2.6,
-        "n* ≈ n*_reference + log₂(clock_new / clock_reference)\n"
-        "      + architecture adjustment\n"
-        "(word size, hardware FPU; constants to be\n"
-        "re-derived from the REPS=100 dataset)",
+        "n* ≈ n*_reference + log₂(clock_new / clock_reference) + A\n"
+        "A measured (this dataset, one unit per board):\n"
+        "Uno → ESP8266: +0.8 … +1.7   ESP8266 → ESP32: +0.5 (CNOT only) … +3.5 (H / CPHASE heavy)\n"
+        "clock ratio alone: RMS error 2.7 qubits; with A: 0.4 qubits (7 crossovers)",
         FILL_DETAIL, fontsize=9.5)
     arrow(ax, (5, 13.35), (5, 12.9))
 
@@ -103,17 +105,17 @@ def main():
         "Considerations beyond speed:\n"
         "• Offload depends on the PC and serial link at all times\n"
         "  (an extra point of failure)\n"
-        "• Local failure mode depends on memory policy\n"
-        "  (static = silent hang, dynamic = detectable OOM)",
+        "• Local failure mode observed: static array = link-time overflow\n"
+        "  (Uno, n=8); malloc = clean NULL (ESP8266 n=13, ESP32 n=14); no silent hang",
         FILL_NOTE, fontsize=9)
     arrow(ax, (1.5, 7.65), (3.3, 6.8))
     arrow(ax, (8.5, 7.65), (6.7, 6.8))
 
     fig.suptitle("Phase 4 — Decision flowchart: local simulation vs offload", y=0.98)
     fig.tight_layout(rect=[0, 0, 1, 0.97])
-    ps.add_footnote(fig, "Schematic decision rule; not a data plot. "
-                         "Architecture adjustment constants pending the REPS=100 rerun.")
-    ps.save_figure(fig, OUT_DIR, "decision_flowchart")
+    ps.add_footnote(fig, "Schematic decision rule; numbers in the grey boxes come from data/processed/phase4/ "
+                         "(115,200 baud serial link, PC simulates with Qiskit Aer, one unit per board).")
+    ps.save_figure_png_only(fig, OUT_DIR, "decision_flowchart")
 
 
 if __name__ == "__main__":
