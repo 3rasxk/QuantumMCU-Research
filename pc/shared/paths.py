@@ -103,18 +103,14 @@ def sessions_csv_path(board: str, circuit: str, phase: int = 2, ref: bool = Fals
 
 
 def figures_dir(board: str, circuit: str = None, ref: bool = False, phase: int = 2) -> Path:
-    """data/figures/<board>/<circuit>/{no_ref,with_ref}/ for a single
-    algorithm's charts, or data/figures/<board>/{no_ref,with_ref}/
-    (circuit=None) for the board's cumulative chart -- timing-only (no_ref)
-    and counter-referenced (with_ref) figures are never mixed into the same
-    directory, matching the raw-data split above. Phase 3 (offload) is
-    data/figures/phase3/<board>/<circuit>/{no_ref,with_ref}/."""
-    if phase == 3:   # Phase 3 (offload): phase-first like data/raw/phase3/, never mixed with the Phase 2 charts
-        base = REPO_ROOT / "data" / "figures" / "phase3" / board
-    else:
-        base = REPO_ROOT / "data" / "figures" / board
-    base = base / circuit if circuit else base
-    return base / _ref_bucket(ref)
+    """data/figures/phase<2|3>/<board>/<circuit>/ for a single algorithm's charts, or
+    data/figures/phase<2|3>/<board>/ (circuit=None) for the board's cumulative chart. Phase-first like
+    data/raw/phase<2|3>/. There is NO no_ref/with_ref level (2026-10-10): the whole dataset was collected
+    with the counter, so the figures sit directly in the algorithm folder. `ref` is accepted only so the
+    callers keep their signature; it does not change the path (a later no_ref run would overwrite the
+    with_ref figures, so give it its own folder first if that ever happens)."""
+    base = REPO_ROOT / "data" / "figures" / f"phase{3 if phase == 3 else 2}" / board
+    return base / circuit if circuit else base
 
 
 def analysis_doc_path(board: str, circuit: str = None) -> Path:

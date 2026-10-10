@@ -19,7 +19,7 @@
 #
 # แหล่งข้อมูล: data/processed/phase2/summary.csv (คอลัมน์จาก phase2_summarize.py:
 # board, circuit, n, n_trials, median_exec_time_us, iqr_low_us, iqr_high_us, iqr_width_us)
-# ผลลัพธ์: data/figures/phase2/fpu_ratio_comparison.{png,svg}
+# ผลลัพธ์: data/figures/phase2/fpu_ratio_comparison.png
 
 import sys
 from pathlib import Path
@@ -76,7 +76,7 @@ def main():
         f"Label = h_all / bell_ghz ratio. n = {n} chosen as the highest qubit count with both "
         "circuits measured on every board shown (controlled comparison — same n for all boards).",
     )
-    ps.save_figure(fig, FIGURES_DIR, "fpu_ratio_comparison")
+    ps.save_figure_png_only(fig, FIGURES_DIR, "fpu_ratio_comparison")
 
     for board in boards:
         fpu = "has FPU" if board == "esp32" else "no FPU"

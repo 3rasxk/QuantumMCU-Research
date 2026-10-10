@@ -18,7 +18,7 @@
 #
 # แหล่งข้อมูล: data/processed/phase2/summary.csv (คอลัมน์จาก phase2_summarize.py:
 # board, circuit, n, n_trials, median_exec_time_us, iqr_low_us, iqr_high_us, iqr_width_us)
-# ผลลัพธ์: data/figures/phase2/fpu_ratio_comparison_own_n.{png,svg}
+# ผลลัพธ์: data/figures/phase2/fpu_ratio_comparison_own_n.png
 
 import sys
 from pathlib import Path
@@ -78,7 +78,7 @@ def main():
         f"Label = h_all / bell_ghz ratio. Each board shown at its own highest n with both "
         f"circuits measured ({n_desc}) — n differs per board, unlike fpu_ratio_comparison.png.",
     )
-    ps.save_figure(fig, FIGURES_DIR, "fpu_ratio_comparison_own_n")
+    ps.save_figure_png_only(fig, FIGURES_DIR, "fpu_ratio_comparison_own_n")
 
     for board in boards:
         fpu = "has FPU" if board == "esp32" else "no FPU"

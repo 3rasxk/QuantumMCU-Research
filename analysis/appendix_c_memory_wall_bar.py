@@ -13,7 +13,7 @@
 # หากต้องการรันใหม่จากข้อมูลดิบ: รัน analysis/phase2_plot.py แทน (มันเขียน
 # memory_wall_summary.csv ทับให้อัตโนมัติจาก *_memory_wall.csv ล่าสุด)
 #
-# ผลลัพธ์: data/figures/phase2/memory_wall_comparison.{png,svg}
+# ผลลัพธ์: data/figures/phase2/memory_wall_comparison.png
 
 import csv
 import sys

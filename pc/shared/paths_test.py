@@ -98,12 +98,12 @@ def test_figures_dir_matrix():
     try:
         for board in BOARDS:
             for ref in (False, True):
-                bucket = "with_ref" if ref else "no_ref"
-                check(f"figures_dir({board}, circuit, ref={ref})",
-                      sp.figures_dir(board, "h_all", ref=ref)
-                      == root / "data/figures" / board / "h_all" / bucket)
-                check(f"figures_dir({board}, circuit=None, ref={ref}) (cumulative chart)",
-                      sp.figures_dir(board, ref=ref) == root / "data/figures" / board / bucket)
+                for phase in (2, 3):
+                    check(f"figures_dir({board}, circuit, ref={ref}, phase={phase}): phase-first, no ref bucket",
+                          sp.figures_dir(board, "h_all", ref=ref, phase=phase)
+                          == root / "data/figures" / f"phase{phase}" / board / "h_all")
+                    check(f"figures_dir({board}, circuit=None, ref={ref}, phase={phase}) (cumulative chart)",
+                          sp.figures_dir(board, ref=ref, phase=phase) == root / "data/figures" / f"phase{phase}" / board)
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -136,10 +136,14 @@ def _sha256(path):
 
 def test_pre_timer_results_are_gone_and_recorded():
     """2026-10-04 purge: results measured before the ESP32 timer existed were deleted
-    (git history, commit af40643). Guard: no data/archive/, and the append-only ledger
-    carries the `restart` and `purge` events. (data/raw/phase2|3 may legitimately fill up
-    again once the new dataset exists, so they are not asserted empty here.)"""
-    check("data/archive/ does not exist", not (sp.REPO_ROOT / "data" / "archive").exists())
+    (git history, commit af40643). Guard: no data/archive/restart_* snapshot of the retired dataset,
+    and the append-only ledger carries the `restart` and `purge` events. (data/raw/phase2|3 may
+    legitimately fill up again once the new dataset exists, so they are not asserted empty here;
+    data/archive/ itself may exist again: run.py --fresh moves a replaced directory there,
+    never deletes it, since the restart.)"""
+    archive = sp.REPO_ROOT / "data" / "archive"
+    check("no data/archive/restart_* snapshot of the retired dataset",
+          not archive.exists() or not list(archive.glob("restart_*")))
     ledger = sp.REPO_ROOT / "data" / "run_history.jsonl"
     events = [json.loads(ln).get("event") for ln in ledger.read_text().splitlines() if ln.strip()]
     check("ledger has a restart and a purge event", "restart" in events and "purge" in events)

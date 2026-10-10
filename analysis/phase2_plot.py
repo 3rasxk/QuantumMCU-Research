@@ -3,13 +3,13 @@
 # สร้างกราฟ Phase 2 จากข้อมูลจริงเท่านั้น (ไม่คำนวณ/ประมาณค่าใหม่):
 #   1. Execution Time vs n (log-scale y) — 1 subplot ต่อวงจร, 1 เส้นต่อบอร์ด
 #      Median + แถบ IQR จาก data/processed/phase2/summary.csv
-#      -> data/figures/phase2/exec_time_vs_n.{png,svg}
+#      -> data/figures/phase2/exec_time_vs_n.png
 #   2. Memory Wall: n สูงสุดตามทฤษฎี (2^n*8 <= SRAM) เทียบ n สูงสุดที่วัดได้จริง
 #      จาก data/raw/phase2/<board>/<circuit>/memory_wall.csv (ทุก board+circuit — เส้นทาง
 #      นี้เปลี่ยนจาก data/raw/phase2/*_memory_wall.csv เดิมเมื่อ 2026-09-20, ดู run_log.md
 #      "per-board per-algorithm layout")
 #      -> data/processed/phase2/memory_wall_summary.csv
-#      -> data/figures/phase2/memory_wall_comparison.{png,svg}
+#      -> data/figures/phase2/memory_wall_comparison.png
 #
 # จัดกลุ่มกราฟ exec time ตามวงจร (ไม่ใช่ตามบอร์ดเหมือนเดิม) เพื่อให้สีคงความหมาย
 # "บอร์ด" เหมือนทุกกราฟอื่นในโปรเจกต์ — สี/marker/ป้ายชื่อมาจาก pc/shared/plot_style.py
@@ -113,7 +113,7 @@ def plot_exec_time(summary_rows):
 
     reps = [int(r["n_trials"]) for r in summary_rows]
     ps.add_footnote(fig, f"Line = median, band = IQR (25th–75th percentile); {ps.reps_phrase(reps)}.")
-    ps.save_figure(fig, FIGURES_DIR, "exec_time_vs_n")
+    ps.save_figure_png_only(fig, FIGURES_DIR, "exec_time_vs_n")
 
 
 def theoretical_max_n(sram_bytes: int) -> int:
@@ -223,7 +223,7 @@ def draw_memory_wall(summary, reps):
 
     all_reps = [c for b in boards for c in reps.get(b, [])]
     ps.add_footnote(fig, f"Bar colour identifies the board. Each measured point: {ps.reps_phrase(all_reps)}.")
-    ps.save_figure(fig, FIGURES_DIR, "memory_wall_comparison")
+    ps.save_figure_png_only(fig, FIGURES_DIR, "memory_wall_comparison")
 
     for b, t, m in zip(boards, theo_ns, meas_ns):
         print(f"  {b:8s} theoretical={t:2d}  measured={m:2d}  gap={t - m} qubit(s)")

@@ -5,7 +5,7 @@
 # Median with IQR error bars (skipped where n_reps == 1), timing_model estimate as a
 # dashed line, and the measured per-qubit growth factor. Read-only against data/raw/.
 #
-# Output: data/figures/<board>/<circuit>/<bucket>/exec_time_vs_qubits.{png,pdf,svg}
+# Output: data/figures/phase2/<board>/<circuit>/exec_time_vs_qubits.png
 #
 # Usage: python3 analysis/phase2_exec_time_pub.py --board esp32 --circuit grover
 
@@ -87,9 +87,9 @@ def main():
     ax.text(1.0, -0.2, f"repetitions per point: {rep_txt}", transform=ax.transAxes,
             ha="right", va="top", fontsize=7.5, color=ps.INK_SECONDARY)
 
-    out = REPO_ROOT / "data" / "figures" / args.board / args.circuit / ("with_ref" if args.ref else "no_ref")
+    out = REPO_ROOT / "data" / "figures" / "phase2" / args.board / args.circuit
     out.mkdir(parents=True, exist_ok=True)
-    for ext, kw in (("png", {"dpi": 300}), ("pdf", {}), ("svg", {})):
+    for ext, kw in (("png", {"dpi": 300}),):   # PNG only under data/figures/ (paper-ready PDFs: paper_figures_ieee.py)
         path = out / f"exec_time_vs_qubits.{ext}"
         fig.savefig(path, bbox_inches="tight", pad_inches=0.05, **kw)
         print(f"figure -> {path}")
