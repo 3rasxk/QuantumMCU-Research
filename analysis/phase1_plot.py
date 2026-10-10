@@ -43,9 +43,20 @@ def load_rows():
     return [merged[k] for k in sorted(merged)]
 
 
-# --- Phase 1 has no boards, so the board palette is not borrowed: a circuit uses the project-wide CIRCUIT_INK /
-# CIRCUIT_LINESTYLE / CIRCUIT_MARKER, so it looks the same here as in every other chart (and stays separable in greyscale). The rcParams come from ps.apply_style() (clean style). ---
-PUB_COLOR = dict(ps.CIRCUIT_INK)      # same grey ink per circuit as in every other chart
+# --- Phase 1 charts tell the algorithms apart by COLOUR ONLY (solid lines, no markers). Phase 1 has no boards, so the
+# board colours are not reused: blue / vermillion / green / purple, checked with dataviz validate_palette.js
+# (--pairs all, light surface): lightness, chroma, normal-vision floor (min dE 18.7) and 3:1 contrast pass; CVD
+# separation is in the 6-8 floor band (purple vs blue 6.7), so the legend order matches the curve order and the
+# per-algorithm figures carry the algorithm name in the title. The rcParams come from ps.apply_style(). ---
+PUB_COLOR = {"h_all": "#0072B2", "bell_ghz": "#D55E00", "qft": "#009E73", "grover": "#7B3294"}
+LINE_W = 1.8
+
+
+def _curve(ax, xs, ys, circuit, **kw):
+    """Solid coloured line, no marker. A lone point has no line to draw, so it gets one small dot to stay visible."""
+    if len(xs) == 1:
+        return ax.plot(xs, ys, color=PUB_COLOR[circuit], marker="o", markersize=3, linestyle="none", zorder=3, **kw)
+    return ax.plot(xs, ys, color=PUB_COLOR[circuit], linestyle="-", linewidth=LINE_W, zorder=3, **kw)
 PUB_LABEL = {
     "h_all": "H-all", "bell_ghz": "Bell/GHZ", "qft": "QFT",
     "grover": "Grover",
@@ -61,11 +72,7 @@ def _draw_panel(ax, rows, column, ylabel, threshold=None):
         omitted += len(pts) - len(shown)
         if not shown:
             continue
-        single = len(shown) == 1
-        ax.plot([p[0] for p in shown], [p[1] for p in shown],
-                color=PUB_COLOR[circuit], marker=ps.CIRCUIT_MARKER[circuit], markersize=ps.MARKER_SIZE,
-                linestyle=ps.CIRCUIT_LINESTYLE[circuit], linewidth=0 if single else ps.LINE_WIDTH,
-                label=PUB_LABEL[circuit], zorder=3)
+        _curve(ax, [p[0] for p in shown], [p[1] for p in shown], circuit, label=PUB_LABEL[circuit])
     if threshold is not None:
         ax.axhline(threshold, color=ps.INK_SECONDARY, linestyle=(0, (5, 3)), linewidth=ps.REF_LINE_WIDTH, zorder=2)
         ax.text(1.15, threshold * 1.25, r"pass threshold ($10^{-3}$)", fontsize=7.5,
@@ -129,10 +136,7 @@ def plot_per_algorithm(rows):
                     (axes[0], 2, r"Infidelity, $1-F$", THRESHOLD, "a"),
                     (axes[1], 3, "Total variation distance, TVD", None, "b")):
                 shown = [(p[0], p[idx]) for p in pts if p[idx] > 0]
-                ax.plot([x for x, _ in shown], [y for _, y in shown],
-                        color=PUB_COLOR[circuit], marker=ps.CIRCUIT_MARKER[circuit], markersize=ps.MARKER_SIZE,
-                        linestyle=ps.CIRCUIT_LINESTYLE[circuit],
-                        linewidth=0 if len(shown) == 1 else ps.LINE_WIDTH, zorder=3)
+                _curve(ax, [x for x, _ in shown], [y for _, y in shown], circuit)
                 if thr is not None:
                     ax.axhline(thr, color=ps.INK_SECONDARY, linestyle=(0, (5, 3)), linewidth=ps.REF_LINE_WIDTH)
                     ax.text(0.02, thr * 1.25, r"pass threshold ($10^{-3}$)", fontsize=7.5,
