@@ -33,3 +33,13 @@ Points with fewer than 10 paired repetitions, or without a joined comparison, ar
 - Counter firmware source hashes: `53b557a22c92` (commit 2cfc36a, Uno h_all/bell_ghz/qft sessions 2026-10-04),
   `2609e5d04463` (uncommitted version between 2cfc36a and 3dd3a9e: Uno and ESP8266 Phase 2 sessions), `bdd71b1e7af9` (commit 579fe78: ESP32 Phase 2 sessions). Protocol version 2 in all.
 - Counter calibration vs the PC clock: +17.5 +/- 1.9 ppm (2026-10-04, `data/calibration/counter_20261004.json`); not stored in the session sidecars (`calibration` is empty there).
+
+## Fig. 3 (Phase 3, offload)
+
+Round-trip latency per request versus number of qubits n when the board offloads the circuit simulation to a PC over a serial
+link (115200 baud), reported by the board's own `micros()` clock; one panel per board, four circuits, log y axis in microseconds.
+Lines connect the median over the recorded requests, bars are the interquartile range, faint dots are the individual requests.
+Filled markers: 100 requests. Open markers: points stopped by the 2 h per-point time cap before 100 requests
+(ESP8266 and ESP32 grover, the last three n each; the last has 2 requests). Stars: points not run because the PC-side simulation
+was predicted to exceed the cap or the PC's memory ("PC-simulation-limited, not run"). No external counter reference is used for this
+figure; latency includes serial transfer, PC simulation and the reply.
