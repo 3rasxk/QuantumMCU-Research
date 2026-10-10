@@ -43,13 +43,9 @@ def load_rows():
     return [merged[k] for k in sorted(merged)]
 
 
-# --- Phase 1 has no boards, so the board palette is not borrowed: Okabe-Ito colour per circuit, plus the project-wide
-# CIRCUIT_LINESTYLE / CIRCUIT_MARKER so a circuit looks the same here as in every other chart (and the series stay
-# separable in greyscale print). The rcParams come from ps.apply_style() (clean style). ---
-PUB_COLOR = {
-    "h_all": "#0072B2", "bell_ghz": "#D55E00", "qft": "#009E73",
-    "grover": "#CC79A7",
-}
+# --- Phase 1 has no boards, so the board palette is not borrowed: a circuit uses the project-wide CIRCUIT_INK /
+# CIRCUIT_LINESTYLE / CIRCUIT_MARKER, so it looks the same here as in every other chart (and stays separable in greyscale). The rcParams come from ps.apply_style() (clean style). ---
+PUB_COLOR = dict(ps.CIRCUIT_INK)      # same grey ink per circuit as in every other chart
 PUB_LABEL = {
     "h_all": "H-all", "bell_ghz": "Bell/GHZ", "qft": "QFT",
     "grover": "Grover",
