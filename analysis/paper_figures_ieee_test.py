@@ -126,6 +126,23 @@ def main():
         c.to_csv(dd / "ref_compare.csv", index=False)
         check("refuses diff_us != micros_us - counter_us", raises(lambda: pf.load_counter_diff(r)) is not None)
 
+        # --- phase 3 loader: reads e2e latency, refuses timed-out / crc rows, treats sim-cost skip as not-run event
+        d3 = pf.load_exec_time(fresh(tmp, "p3"), phase="phase3")
+        check("phase 3 loads 12 groups", len(d3) == 12)
+        check("phase 3 sim-cost skip is a time_limited event",
+              set(d3[("esp32", "h_all")]["events"].kind) == {"time_limited"})
+        r = fresh(tmp, "p3bad")
+        dd = pf.point_dir(r, "phase3", "uno", "qft")
+        x = pd.read_csv(dd / "raw.csv")
+        x.loc[0, "timed_out"] = 1
+        x.to_csv(dd / "raw.csv", index=False)
+        check("phase 3 refuses timed_out rows", raises(lambda: pf.load_exec_time(r, phase="phase3")) is not None)
+        r = fresh(tmp, "p3cols")
+        dd = pf.point_dir(r, "phase3", "uno", "qft")
+        pd.read_csv(dd / "raw.csv").drop(columns=["e2e_latency_us"]).to_csv(dd / "raw.csv", index=False)
+        msg = raises(lambda: pf.load_exec_time(r, phase="phase3"))
+        check("phase 3 refuses missing e2e_latency_us", msg is not None and "e2e_latency_us" in msg, msg)
+
         # --- unknown statuses are not drawn as walls
         r = fresh(tmp, "status")
         dd = pf.point_dir(r, "phase2", "esp8266", "grover")
@@ -174,7 +191,8 @@ def main():
         files = sorted(p.name for p in out.iterdir())
         check("outputs are DRAFT pdf+png only (no svg)",
               files == ["fig1_exec_time_vs_n_DRAFT.pdf", "fig1_exec_time_vs_n_DRAFT.png",
-                        "fig2_micros_minus_counter_DRAFT.pdf", "fig2_micros_minus_counter_DRAFT.png"], str(files))
+                        "fig2_micros_minus_counter_DRAFT.pdf", "fig2_micros_minus_counter_DRAFT.png",
+                        "fig3_offload_latency_vs_n_DRAFT.pdf", "fig3_offload_latency_vs_n_DRAFT.png"], str(files))
         rc = pf.main(["--raw", str(r), "--out", str(r / "phase2")])
         check("main refuses --out under raw", rc == 2)
 

@@ -39,10 +39,11 @@ SINGLE_COL_IN, DOUBLE_COL_IN = 3.5, 7.16
 FULL_REPS = 100
 MIN_PAIRS = 10                                           # fewer paired reps: no median/IQR drawn, point listed instead
 WALL_STATUSES = ("malloc_failed", "build_overflow")      # positive evidence of a memory wall
-TIME_LIMITED_STATUS = "skipped_compute_infeasible"       # not run: one rep would exceed the per-point time cap
+TIME_LIMITED_STATUSES = ("skipped_compute_infeasible", "skipped_sim_cost_infeasible")   # not run: predicted over the cap / PC memory
 JOINED_STATUSES = ("ok", "anomaly", "count_mismatch")    # ref_compare_points statuses that still carry paired reps
 RAW_COLS = ["board", "circuit", "n", "rep", "exec_time_us"]
 WALL_COLS = ["board", "circuit", "n", "status"]
+P3_RAW_COLS = ["board", "circuit", "n", "rep", "e2e_latency_us", "crc_error", "timed_out"]
 COMPARE_COLS = ["board", "circuit", "n", "rep", "micros_us", "counter_us", "diff_us", "diff_pct"]
 COMPARE_POINT_COLS = ["board", "circuit", "n", "n_pairs", "ref_status"]
 SERIF = ["Times New Roman", "Times", "Nimbus Roman", "Liberation Serif", "STIXGeneral", "DejaVu Serif"]
@@ -118,19 +119,26 @@ def iqr(values):
 
 # ----------------------------------------------------------------------------- fig 1 data
 
-def load_exec_time(raw_root, boards=ps.BOARD_ORDER, circuits=ps.CIRCUIT_ORDER):
+def load_exec_time(raw_root, boards=ps.BOARD_ORDER, circuits=ps.CIRCUIT_ORDER, phase="phase2"):
     """{(board, circuit): {"points": DataFrame[n, kind, reps, med, q1, q3, values], "events": DataFrame[n, kind]}}.
     kind of a drawn point: 'full' (100 reps) or 'partial' (time-capped, < 100 reps).
     kind of an event: 'wall' (recorded build_overflow / malloc_failed) or 'time_limited' (not run)."""
     out = {}
     for board in boards:
         for circuit in circuits:
-            d = point_dir(raw_root, "phase2", board, circuit)
+            d = point_dir(raw_root, phase, board, circuit)
             what = f"{board}/{circuit}"
             if not (d / "raw.csv").exists():
                 continue
-            raw = read_csv(d / "raw.csv", RAW_COLS, f"{what} raw.csv")
-            wall = read_csv(d / "memory_wall.csv", WALL_COLS, f"{what} memory_wall.csv")
+            if phase == "phase2":
+                raw = read_csv(d / "raw.csv", RAW_COLS, f"{what} raw.csv")
+                wall = read_csv(d / "memory_wall.csv", WALL_COLS, f"{what} memory_wall.csv")
+            else:   # phase 3: board-reported round-trip latency, terminal status per n in session_log.csv
+                raw = read_csv(d / "raw.csv", P3_RAW_COLS, f"{what} raw.csv").rename(
+                    columns={"e2e_latency_us": "exec_time_us"})
+                wall = read_csv(d / "session_log.csv", WALL_COLS, f"{what} session_log.csv")
+                if (raw.timed_out != 0).any() or (raw.crc_error != 0).any():
+                    raise DataError(f"{what}: rows with timed_out/crc_error set; not plotted around")
             if (raw.exec_time_us <= 0).any():
                 raise DataError(f"{what}: non-positive exec_time_us cannot be drawn on a log axis")
             if raw.duplicated(["n", "rep"]).any():
@@ -154,7 +162,7 @@ def load_exec_time(raw_root, boards=ps.BOARD_ORDER, circuits=ps.CIRCUIT_ORDER):
                     raise DataError(f"{what}: n={n} is recorded ok but has no raw rows")
                 if s in WALL_STATUSES:
                     ev.append(dict(n=int(n), kind="wall"))
-                elif s == TIME_LIMITED_STATUS:
+                elif s in TIME_LIMITED_STATUSES:
                     ev.append(dict(n=int(n), kind="time_limited"))
             out[(board, circuit)] = dict(points=pd.DataFrame(pts).sort_values("n").reset_index(drop=True),
                                          events=pd.DataFrame(ev, columns=["n", "kind"]).sort_values("n"))
@@ -176,7 +184,8 @@ def _fmt_us(v, _pos):
     return f"$10^{{{int(round(np.log10(v)))}}}$" if v > 0 and abs(np.log10(v) - round(np.log10(v))) < 1e-9 else ""
 
 
-def plot_exec_time(data, boards=ps.BOARD_ORDER, circuits=ps.CIRCUIT_ORDER, watermark=None):
+def plot_exec_time(data, boards=ps.BOARD_ORDER, circuits=ps.CIRCUIT_ORDER, watermark=None, ylabel="Time per rep ($\\mu$s)",
+                   show_wall=True, limited_label="time-limited, not run"):
     apply_ieee_style()
     fig, axes = plt.subplots(1, len(boards), figsize=(DOUBLE_COL_IN, 2.55), sharey=True)
     axes = np.atleast_1d(axes)
@@ -223,7 +232,7 @@ def plot_exec_time(data, boards=ps.BOARD_ORDER, circuits=ps.CIRCUIT_ORDER, water
         ax.set_xlabel("Number of qubits $n$")
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
-    axes[0].set_ylabel("Time per rep ($\\mu$s)")
+    axes[0].set_ylabel(ylabel)
     handles = [Line2D([], [], ls=ps.CIRCUIT_LINESTYLE[c], marker=ps.CIRCUIT_MARKER[c], color=ps.CIRCUIT_INK[c],
                       mfc=ps.CIRCUIT_INK[c], label=c.replace("_", " "))
                for c in circuits if any(k[1] == c for k in data)]
@@ -231,8 +240,10 @@ def plot_exec_time(data, boards=ps.BOARD_ORDER, circuits=ps.CIRCUIT_ORDER, water
         Line2D([], [], ls="none", marker="o", mfc="white", mec="black", mew=0.9, label="< 100 reps (time-capped)"),
         Line2D([], [], ls="none", marker="o", ms=2, mfc="#8c8c8c", mec="none", alpha=0.5, label="individual rep"),
         Line2D([], [], ls="none", marker="X", ms=4.6, color="black", label="memory wall (recorded)"),
-        Line2D([], [], ls="none", marker="*", ms=5.6, mfc="white", mec="black", mew=0.7, label="time-limited, not run"),
+        Line2D([], [], ls="none", marker="*", ms=5.6, mfc="white", mec="black", mew=0.7, label=limited_label),
     ]
+    if not show_wall:
+        handles = [h for h in handles if h.get_label() != "memory wall (recorded)"]
     fig.legend(handles=handles, loc="lower center", ncol=len(handles) if len(handles) <= 5 else 4, frameon=False,
                bbox_to_anchor=(0.5, -0.02), columnspacing=1.2, handlelength=2.2)
     fig.tight_layout(rect=(0, 0.13, 1, 1), w_pad=0.6)
@@ -413,11 +424,18 @@ def make_synthetic(root, seed=7):
                     cmp_pts.append(dict(board=board, circuit=circuit, n=n, n_pairs=reps,
                                         ref_status="ok" if n % 3 else "anomaly"))
                 elif circuit == "grover" and n < walls[board]:
-                    wall.append(dict(board=board, circuit=circuit, n=n, status=TIME_LIMITED_STATUS))
+                    wall.append(dict(board=board, circuit=circuit, n=n, status="skipped_compute_infeasible"))
                 else:
                     wall.append(dict(board=board, circuit=circuit, n=n, status="malloc_failed"))
             pd.DataFrame(rows).to_csv(d / "raw.csv", index=False)
             pd.DataFrame(wall).to_csv(d / "memory_wall.csv", index=False)
+            d3 = point_dir(root, "phase3", board, circuit)       # phase 3: same fake numbers, offload column names
+            d3.mkdir(parents=True)
+            p3 = pd.DataFrame(rows).rename(columns={"exec_time_us": "e2e_latency_us"})
+            p3["crc_error"], p3["timed_out"] = 0, 0
+            p3.to_csv(d3 / "raw.csv", index=False)
+            pd.DataFrame(wall).replace("malloc_failed", "skipped_sim_cost_infeasible").to_csv(
+                d3 / "session_log.csv", index=False)
             pd.DataFrame(cmp_rows).to_csv(d / "ref" / "ref_compare.csv", index=False)
             pd.DataFrame(cmp_pts).to_csv(d / "ref" / "ref_compare_points.csv", index=False)
 
@@ -428,7 +446,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="IEEE paper figures (DRAFT) from data/raw")
     ap.add_argument("--raw", type=Path, default=DEFAULT_RAW, help="raw data root (read only)")
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output directory (never under --raw)")
-    ap.add_argument("--only", choices=("fig1", "fig2"))
+    ap.add_argument("--only", choices=("fig1", "fig2", "fig3"))
     ap.add_argument("--synthetic-layout-test", action="store_true",
                     help="draw both figures from fake data in a temp dir, watermarked, outside paper/figures/")
     a = ap.parse_args(argv)
@@ -451,6 +469,15 @@ def main(argv=None):
                 print(f"fig1 {b}/{c}: {len(p)} points ({(p.kind == 'full').sum()} with 100 reps, "
                       f"{(p.kind == 'partial').sum()} time-capped), events: "
                       f"{it['events'].values.tolist()}")
+        if a.only in (None, "fig3"):
+            data = load_exec_time(a.raw, phase="phase3")
+            fig = plot_exec_time(data, ylabel="Round-trip latency per request ($\\mu$s)", show_wall=False,
+                                 limited_label="PC-simulation-limited, not run")
+            written += save(fig, a.out, "fig3_offload_latency_vs_n_DRAFT", a.raw)
+            for (b, c), it in data.items():
+                p = it["points"]
+                print(f"fig3 {b}/{c}: {len(p)} points ({(p.kind == 'full').sum()} with 100 reps, "
+                      f"{(p.kind == 'partial').sum()} capped), events: {it['events'].values.tolist()}")
         if a.only in (None, "fig2"):
             data, skipped = load_counter_diff(a.raw)
             written += save(plot_counter_diff(data), a.out, "fig2_micros_minus_counter_DRAFT", a.raw)
