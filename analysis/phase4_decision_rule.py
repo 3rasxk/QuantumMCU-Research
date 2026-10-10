@@ -194,18 +194,18 @@ def plot_rule(ev, figures_dir):
             continue
         shift = d.n_star_new_measured - d.n_star_ref
         shifts += list(shift)
-        ax.plot(d.log2_local_speed_ratio, shift, linestyle="none", marker=mk[c], markersize=8, markerfacecolor=ps.CIRCUIT_INK[c],
-                markeredgecolor="white", zorder=3)
-        ax.plot(d.log2_clock_ratio, shift, linestyle="none", marker=mk[c], markersize=8, markerfacecolor="white",
-                markeredgecolor=ps.INK_PRIMARY, markeredgewidth=1.3, zorder=3)
+        ax.plot(d.log2_local_speed_ratio, shift, linestyle="none", marker=mk[c], markersize=5.5, markerfacecolor=ps.CIRCUIT_INK[c],
+                markeredgecolor="white", markeredgewidth=0.5, zorder=3)
+        ax.plot(d.log2_clock_ratio, shift, linestyle="none", marker=mk[c], markersize=5.5, markerfacecolor="white",
+                markeredgecolor=ps.INK_PRIMARY, markeredgewidth=0.9, zorder=3)
     top = max(shifts + list(df.log2_local_speed_ratio) + list(df.log2_clock_ratio)) + 0.6
-    ax.plot([0, top], [0, top], linestyle="--", color=ps.INK_SECONDARY, linewidth=1.1, zorder=1)
+    ax.plot([0, top], [0, top], linestyle="--", color=ps.INK_SECONDARY, linewidth=ps.REF_LINE_WIDTH, zorder=1)
     ax.set_xlim(0, top)
     ax.set_ylim(0, top)
     ax.set_aspect("equal")
     ax.set_xlabel("log2 of the ratio (filled: local speed ratio; open: clock ratio)")
     ax.set_ylabel("Measured shift of the crossover n* (qubits)")
-    h = [Line2D([], [], linestyle="none", marker=mk[c], markersize=8, markerfacecolor=ps.CIRCUIT_INK[c], markeredgecolor="white", label=c)
+    h = [Line2D([], [], linestyle="none", marker=mk[c], markersize=5.5, markerfacecolor=ps.CIRCUIT_INK[c], markeredgecolor="white", label=c)
          for c in CIRCUITS]
     h += [Line2D([], [], linestyle="none", marker="o", markerfacecolor="black", markeredgecolor="white", label="x = log2 local speed ratio"),
           Line2D([], [], linestyle="none", marker="o", markerfacecolor="white", markeredgecolor="black", markeredgewidth=1.3,
@@ -213,7 +213,7 @@ def plot_rule(ev, figures_dir):
           Line2D([], [], linestyle="--", color=ps.INK_SECONDARY, label="shift = x")]
     ax.legend(handles=h, fontsize=8, loc="upper left")
     ps.style_axes(ax)
-    fig.suptitle("Phase 4: crossover shift between boards", fontsize=10.5)
+    ps.suptitle(fig, "Phase 4: crossover shift between boards", tag=True, fontsize=10)
     ps.add_footnote(fig, "\n".join(textwrap.wrap("Pairs where both boards have a measured crossover (7). n* by log-linear interpolation of offload vs "
                                                 "local medians; one unit per board; 115,200 baud; the PC simulates with Qiskit Aer.", 90)))
     return ps.save_figure_png_only(fig, figures_dir, "crossover_rule")

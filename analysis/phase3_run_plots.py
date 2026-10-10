@@ -48,8 +48,8 @@ def subtitle(S):
 
 
 def finish(fig, ax, S, what):
-    fig.suptitle(f"{ps.BOARD_LABEL[S.board]} -- {ps.CIRCUIT_LABEL.get(S.circuit, S.circuit)} -- {what} "
-                 f"(target REPS={tm.REPS}, {S.commit_note()})", fontsize=10.5)
+    ps.suptitle(fig, f"{ps.BOARD_LABEL[S.board]} -- {ps.CIRCUIT_LABEL.get(S.circuit, S.circuit)} -- {what} "
+                     f"(target REPS={tm.REPS}, {S.commit_note()})", fontsize=10)
     axes = list(np.ravel(ax)) if isinstance(ax, (list, tuple, np.ndarray)) else [ax]
     axes[0].text(0.0, 1.06, subtitle(S), transform=axes[0].transAxes, fontsize=8.5, color=ps.INK_SECONDARY)
 
@@ -136,7 +136,7 @@ def plot_time_breakdown(S):
         for i, (c, mk) in enumerate(zip(range(3), ("o", "s", "^"))):
             vals = np.where(comp[:, i] > 0, comp[:, i], np.nan)
             a2.plot(ns, vals, linestyle=("-", "--", ":")[i], marker=mk, color=ps.BOARD_COLOR[S.board] if i == 0 else
-                    (ps.INK_SECONDARY if i == 1 else ps.INK_MUTED), markersize=5.5, label=names[i], zorder=3)
+                    (ps.INK_SECONDARY if i == 1 else ps.INK_MUTED), markersize=ps.MARKER_SIZE, label=names[i], zorder=3)
         a2.set_yscale("log")
         ps.style_axes(a2, log_y=True)
         a2.set_xticks(ns)
@@ -176,24 +176,24 @@ def plot_latency_vs_n(S):
         ns = [k[0] for k in keys]
         st = {k: gd.stats(lat[k]) for k in keys}
         for k in keys:
-            ax.plot(np.full(len(lat[k]), k[0]), lat[k], linestyle="none", marker=".", markersize=3, color=ps.INK_MUTED,
-                    alpha=0.25, zorder=1, rasterized=True)
+            if ps.SHOW_REPS:
+                ax.plot(np.full(len(lat[k]), k[0]), lat[k], linestyle="none", marker=".", markersize=3,
+                        color=ps.INK_MUTED, alpha=0.25, zorder=1, rasterized=True)
             all_vals += lat[k]
-        ax.plot(ns, [st[k][0] for k in keys], linestyle=ls, color=col, linewidth=1.5, zorder=2,
-                label=f"board round trip, baud {baud} (median, IQR bars)")
+        ps.iqr_band(ax, ns, [st[k][1] for k in keys], [st[k][2] for k in keys], col)
+        ax.plot(ns, [st[k][0] for k in keys], linestyle=ls, color=col, linewidth=ps.LINE_WIDTH, zorder=2,
+                label=f"board round trip, baud {baud} (median line, IQR band)")
         for k in keys:
-            med, q1, q3 = st[k]
-            if q1 is not None:
-                ax.errorbar([k[0]], [med], yerr=[[med - q1], [q3 - med]], color=col, linewidth=1.6, capsize=2.5, zorder=3)
+            med = st[k][0]
             capped = len(lat[k]) < tm.REPS
-            ax.plot([k[0]], [med], linestyle="none", marker=ps.BOARD_MARKER[S.board], markersize=6.5, zorder=4,
+            ax.plot([k[0]], [med], linestyle="none", marker=ps.BOARD_MARKER[S.board], markersize=ps.MARKER_SIZE, zorder=4,
                     markerfacecolor="white" if capped else col, markeredgecolor=col if capped else "white",
-                    markeredgewidth=1.3 if capped else 0.6)
+                    markeredgewidth=0.9 if capped else 0.5)
     sim = {n: float(p["pc_sim_s_median"]) * 1e6 for (n, b), p in S.ok_points.items()
            if gd.f(p.get("pc_sim_s_median")) is not None and (n, b) in lat}
     if sim:
         sn = sorted(sim)
-        ax.plot(sn, [sim[n] for n in sn], linestyle="--", marker="x", color=ps.INK_SECONDARY, linewidth=1.1,
+        ax.plot(sn, [sim[n] for n in sn], linestyle="--", marker="x", markersize=ps.MARKER_SIZE, color=ps.INK_SECONDARY, linewidth=ps.REF_LINE_WIDTH,
                 label="PC simulation time per request (measured median)", zorder=2)
     ax.set_yscale("log")
     ps.style_axes(ax, log_y=True)
@@ -209,18 +209,19 @@ def plot_latency_vs_n(S):
     ax.set_ylabel("Round trip per request (µs, log scale)")
     h, lab = ax.get_legend_handles_labels()
     if any(len(lat[k]) < tm.REPS for k in ok_keys):
-        h.append(Line2D([], [], linestyle="none", marker="o", markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY,
+        h.append(Line2D([], [], linestyle="none", marker="o", markersize=5, markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY,
                         markeredgewidth=1.3))
         lab.append(f"< 100 requests ({CAP_TEXT} per-point cap)")
-    h.append(Line2D([], [], linestyle="none", marker=".", color=ps.INK_MUTED, alpha=0.6))
-    lab.append("individual request")
+    if ps.SHOW_REPS:
+        h.append(Line2D([], [], linestyle="none", marker=".", color=ps.INK_MUTED, alpha=0.6))
+        lab.append("individual request")
     if nr:
-        h.append(Line2D([], [], linestyle="none", marker="*", markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY))
+        h.append(Line2D([], [], linestyle="none", marker="*", markersize=10, markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY))
         lab.append("not run (PC simulation predicted over the cap or the PC's memory), top strip")
     ax.legend(h, lab, loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=1, fontsize=8.5)
     finish(fig, ax, S, "offload round-trip latency vs n")
     gd.footnote(fig, gd.reps_text(len(lat[k]) for k in ok_keys).replace("repetitions", "requests") +
-                    "; bar = IQR (25th-75th pct); all requests used (rep 0 included).")
+                    "; line = median, band = IQR (25th-75th pct), none where a point has one request; all requests used (rep 0 included).")
     return save(fig, S, "latency_vs_n")
 
 
@@ -246,9 +247,9 @@ def plot_reliability(S):
         ns = [k[0] for k in keys]
         ls = BAUD_LS[bi % 4]
         a1.plot(ns, [100 * (crc[k] + dropped[k]) / reqs[k] for k in keys], linestyle=ls, marker="o", color=ps.INK_PRIMARY,
-                markersize=6, label=f"CRC errors incl. dropped frames, baud {baud}", zorder=3)
+                markersize=ps.MARKER_SIZE, label=f"CRC errors incl. dropped frames, baud {baud}", zorder=3)
         a1.plot(ns, [100 * tout[k] / reqs[k] for k in keys], linestyle=ls, marker="s", color=ps.INK_MUTED,
-                markerfacecolor="white", markersize=6, label=f"timeouts, baud {baud}", zorder=3)
+                markerfacecolor="white", markersize=ps.MARKER_SIZE, label=f"timeouts, baud {baud}", zorder=3)
         a2.bar(ns, [reqs[k] for k in keys], color=col, hatch=None, label="requests answered", zorder=3)
     top = max([100 * (crc[k] + dropped[k]) / reqs[k] for k in reqs] + [100 * tout[k] / reqs[k] for k in reqs] + [1.0])
     a1.set_ylim(-0.05 * top, top * 1.1)
@@ -300,23 +301,23 @@ def plot_offload_vs_local(S):
         ns = [n for n in common if n in vals]
         st = {n: gd.stats(vals[n]) for n in ns}
         meds[label[:5]] = {n: st[n][0] for n in ns}
-        ax.plot(ns, [st[n][0] for n in ns], linestyle=ls, color=col, linewidth=1.4, zorder=2)
+        ps.iqr_band(ax, ns, [st[n][1] for n in ns], [st[n][2] for n in ns], col)
+        ax.plot(ns, [st[n][0] for n in ns], linestyle=ls, color=col, linewidth=ps.LINE_WIDTH, zorder=2)
         for n in ns:
-            med, q1, q3 = st[n]
-            if q1 is not None:
-                ax.errorbar([n], [med], yerr=[[med - q1], [q3 - med]], color=col, linewidth=1.5, capsize=2.5, zorder=3)
-            ax.plot([n], [med], linestyle="none", marker=mk, markersize=6.5, zorder=4,
+            med = st[n][0]
+            ax.plot([n], [med], linestyle="none", marker=mk, markersize=ps.MARKER_SIZE, zorder=4,
                     markerfacecolor=col if filled else "white", markeredgecolor="white" if filled else col,
-                    markeredgewidth=0.6 if filled else 1.3)
+                    markeredgewidth=0.5 if filled else 0.9)
     local, off = meds["local"], meds["offlo"]
     cross = next((n for n in common if off[n] < local[n]), None)
     ax.set_yscale("log")
     ps.style_axes(ax, log_y=True)
     if cross is not None:
         ax.axvline(cross, color=ps.INK_PRIMARY, linestyle=":", linewidth=1.1, zorder=1)
+        at_end = cross == common[-1]                     # keep the label inside the axes
         ax.annotate(f"crossover: offload median first below local at n={cross}", (cross, 0.10),
-                    xycoords=("data", "axes fraction"), xytext=(5, 0), textcoords="offset points", ha="left",
-                    fontsize=8.5)
+                    xycoords=("data", "axes fraction"), xytext=(-5 if at_end else 5, 0), textcoords="offset points",
+                    ha="right" if at_end else "left", fontsize=8)
         verdict = f"Crossover at n={cross} (first n where the offload median is below the local median)."
     else:
         verdict = (f"No crossover in the measured range n={common[0]}..{common[-1]}: the offload round trip is "
@@ -328,13 +329,12 @@ def plot_offload_vs_local(S):
          Line2D([], [], linestyle="--", marker="D", markerfacecolor="white", color=col, markeredgewidth=1.3,
                 label=series[1][0])]
     ax.legend(handles=h, loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=1, fontsize=8.5)
-    ax.text(0.5, 0.02, NOTE, transform=ax.transAxes, ha="center", va="bottom", fontsize=7.5, color=ps.INK_SECONDARY)
     note = f"Phase 2 {L.commit_note()}; Phase 3 {S.commit_note()}"
-    fig.suptitle(f"{ps.BOARD_LABEL[S.board]} -- {ps.CIRCUIT_LABEL.get(S.circuit, S.circuit)} -- local vs offload "
-                 f"(target REPS={tm.REPS}, {note})", fontsize=10)
+    ps.suptitle(fig, f"{ps.BOARD_LABEL[S.board]} -- {ps.CIRCUIT_LABEL.get(S.circuit, S.circuit)} -- local vs offload "
+                     f"(target REPS={tm.REPS}, {note})", fontsize=10)
     ax.text(0.0, 1.06, f"{ps.BOARD_SHORT[S.board]}, micros() timing on the board in both phases, no counter reference",
             transform=ax.transAxes, fontsize=8.5, color=ps.INK_SECONDARY)
-    gd.footnote(fig, verdict + " Different quantities: local = the board computes one circuit run; offload = "
+    gd.footnote(fig, verdict + " " + NOTE + " Different quantities: local = the board computes one circuit run; offload = "
                     "serial request, PC simulation and reply. Only n measured in both phases are drawn.")
     return save(fig, S, "offload_vs_local")
 

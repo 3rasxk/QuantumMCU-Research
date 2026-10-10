@@ -75,7 +75,7 @@ def reps_by_board(summary_rows):
 
 def plot_exec_time(summary_rows):
     circuits = [c for c in ps.CIRCUIT_ORDER if any(r["circuit"] == c for r in summary_rows)]
-    fig, axes = plt.subplots(1, len(circuits), figsize=(4.6 * len(circuits), 4.6),
+    fig, axes = plt.subplots(1, len(circuits), figsize=(4.4 * len(circuits), 4.2),
                              sharey=True, squeeze=False, layout="constrained")
     axes = axes[0]
 
@@ -89,12 +89,10 @@ def plot_exec_time(summary_rows):
                 continue
             ns = [p[0] for p in pts]
             medians = [p[1] for p in pts]
-            color = ps.BOARD_COLOR[board]
-            ax.fill_between(ns, [p[2] for p in pts], [p[3] for p in pts],
-                            color=color, alpha=ps.IQR_ALPHA, linewidth=0, zorder=2)
-            ax.plot(ns, medians, color=color, marker=ps.BOARD_MARKER[board], markersize=5,
-                    markeredgecolor="white", markeredgewidth=0.7, linewidth=1.8,
-                    label=ps.BOARD_LABEL[board], zorder=3)
+            color, ls, mk = ps.board_style(board)
+            ps.iqr_band(ax, ns, [p[2] for p in pts], [p[3] for p in pts], color)
+            ax.plot(ns, medians, color=color, linestyle=ls, marker=mk, markersize=ps.MARKER_SIZE,
+                    linewidth=ps.LINE_WIDTH, label=ps.BOARD_LABEL[board], zorder=3)
             for n in ps.resolve_anomalies(board, circuit, ns, medians, "local", "local"):
                 ps.mark_anomaly(ax, n, medians[ns.index(n)], "anomaly (also flagged in n=30 run)")
 
@@ -109,9 +107,9 @@ def plot_exec_time(summary_rows):
         for h, lab in zip(*ax.get_legend_handles_labels()):
             handles.setdefault(lab, h)
     fig.legend(list(handles.values()), list(handles.keys()), loc="outside lower center", ncol=3)
-    fig.suptitle("Phase 2 — Local execution time vs number of qubits")
-
     reps = [int(r["n_trials"]) for r in summary_rows]
+    ps.suptitle(fig, f"Phase 2 — Local execution time vs number of qubits (REPS={max(reps)}, {ps.git_tag()})")
+
     ps.add_footnote(fig, f"Line = median, band = IQR (25th–75th percentile); {ps.reps_phrase(reps)}.")
     ps.save_figure_png_only(fig, FIGURES_DIR, "exec_time_vs_n")
 

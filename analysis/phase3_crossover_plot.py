@@ -102,11 +102,11 @@ def draw_series(ax, board, circuit, s, band_alpha=ps.IQR_ALPHA):
     ax.fill_between(ns, s["loc_q1"], s["loc_q3"], color=color, alpha=band_alpha, linewidth=0, zorder=2)
     ax.fill_between(ns, s["off_q1"], s["off_q3"], color=color, alpha=band_alpha * 0.7,
                     linewidth=0, zorder=2)
-    ax.plot(ns, s["loc_med"], color=color, linestyle="-", linewidth=1.8, marker=marker, markersize=5,
-            markeredgecolor="white", markeredgewidth=0.7, zorder=3,
+    ax.plot(ns, s["loc_med"], color=color, linestyle="-", linewidth=ps.LINE_WIDTH, marker=marker, markersize=ps.MARKER_SIZE,
+            markeredgecolor="white", markeredgewidth=0.5, zorder=3,
             label=f"{ps.BOARD_SHORT[board]} — local")
-    ax.plot(ns, s["off_med"], color=color, linestyle="--", linewidth=1.6, marker=marker, markersize=5,
-            markerfacecolor="white", markeredgecolor=color, markeredgewidth=1.1, zorder=3,
+    ax.plot(ns, s["off_med"], color=color, linestyle="--", linewidth=ps.LINE_WIDTH, marker=marker, markersize=ps.MARKER_SIZE,
+            markerfacecolor="white", markeredgecolor=color, markeredgewidth=0.9, zorder=3,
             label=f"{ps.BOARD_SHORT[board]} — offload")
 
     label = "anomaly (also flagged in n=30 run)"
@@ -129,7 +129,7 @@ def main():
         baud = best_baud[board]
         circuits = [c for c in ps.CIRCUIT_ORDER
                     if any(r["board"] == board and r["circuit"] == c for r in offload_rows)]
-        fig, axes = plt.subplots(1, len(circuits), figsize=(4.6 * len(circuits), 4.6),
+        fig, axes = plt.subplots(1, len(circuits), figsize=(4.4 * len(circuits), 4.2),
                                  sharey=True, squeeze=False, layout="constrained")
         axes = axes[0]
         loc_trials, off_trials = [], []
@@ -166,8 +166,8 @@ def main():
             handles.append(Line2D([], [], color=ps.REFERENCE_LINE, linestyle=":", linewidth=1.2))
             labels.append("Crossover point (first n where offload median < local median)")
         fig.legend(handles, labels, loc="outside lower center", ncol=3)
-        fig.suptitle(f"Phase 3 — {ps.BOARD_LABEL[board]}: local execution vs offload end-to-end latency "
-                     f"(baud {baud})")
+        ps.suptitle(fig, f"Phase 3 — {ps.BOARD_LABEL[board]}: local execution vs offload end-to-end latency "
+                         f"(baud {baud}, REPS={max(loc_trials + off_trials)}, {ps.git_tag()})", fontsize=10)
         ps.add_footnote(
             fig,
             "Line = median, band = IQR (25th–75th percentile); "

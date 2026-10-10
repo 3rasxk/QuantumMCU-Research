@@ -19,6 +19,9 @@ BOARD_LABEL = {"uno": "Arduino Uno R3", "esp8266": "NodeMCU ESP8266", "esp32": "
 BOARD_SHORT = {"uno": "Uno", "esp8266": "ESP8266", "esp32": "ESP32"}
 BOARD_COLOR = {"uno": "#0072B2", "esp8266": "#E69F00", "esp32": "#009E73"}
 BOARD_MARKER = {"uno": "o", "esp8266": "s", "esp32": "^"}
+# linestyle + marker pair per board, stable in every chart (moved here from _graph_data). Reference / model curves
+# are dashed grey WITHOUT markers; no board pair equals a circuit pair (the markers differ).
+BOARD_LINESTYLE = {"uno": "-", "esp8266": "--", "esp32": ":"}
 
 # --- วงจร: ไม่ยืมสีบอร์ด (สีมีไว้บอกบอร์ดเท่านั้น) ใช้หมึกเทา + marker + linestyle ---
 # 4 วงจร (แผนใหม่ 2026-10-03): h_all, bell_ghz, qft, grover — qpe/steane_encode ถูกถอดออกจากแผน
@@ -38,8 +41,10 @@ CIRCUIT_INK = {
     "qft": "#5e5e5e",
     "grover": "#7d7d7d",
 }
+# circuit markers avoid the board markers (o s ^) and the outcome markers of the Phase 2/3 run charts
+# (o X s v P *), so a (linestyle, marker) pair identifies exactly one board or one circuit everywhere
 CIRCUIT_MARKER = {
-    "h_all": "o", "bell_ghz": "s", "qft": "D", "grover": "^",
+    "h_all": "D", "bell_ghz": "p", "qft": "h", "grover": "<",
 }
 CIRCUIT_LINESTYLE = {
     "h_all": "-", "bell_ghz": "--", "qft": ":", "grover": "-.",
@@ -67,7 +72,6 @@ ANOMALY_INK = "#1a1a1a"
 IQR_ALPHA = 0.18
 
 RASTER_DPI = 300
-VECTOR_FORMAT = "svg"
 
 # --- จุดข้อมูลที่เคยถูกทักว่าผิดปกติ (จาก dataset n=30 ที่ถูกลบไปแล้ว) ---
 # ไม่ได้ถือว่ายังผิดปกติอยู่โดยอัตโนมัติ: จะทำเครื่องหมายบนกราฟก็ต่อเมื่อ
@@ -89,45 +93,190 @@ ANOMALY_WATCHLIST = [
 MIN_EFFECT = {"local": math.log(1.25), "offload": math.log(1.5)}
 
 
-def apply_style():
-    """ตั้ง rcParams กลาง เรียกครั้งเดียวก่อนสร้าง figure แรก"""
+# --- clean style (2026-10-11): plain matplotlib look, full box, no grid, thin lines, small markers ---
+LINE_WIDTH = 1.3          # pt, data lines
+MARKER_SIZE = 4.0         # pt, data-point markers (outcome markers in the run charts stay larger on purpose)
+REF_LINE_WIDTH = 1.0      # pt, dashed reference / model curves
+BAND_ALPHA = IQR_ALPHA    # light IQR band
+SHOW_REPS = False         # individual reps as faint dots only when a script/option turns this on
+FONT_SANS = ["DejaVu Sans"]  # ships with matplotlib, has the micro sign, minus, <=, x
+FONT_SERIF = ["Times New Roman", "Times", "Nimbus Roman", "Liberation Serif", "STIXGeneral", "DejaVu Serif"]
+IEEE_SINGLE_COL_IN, IEEE_DOUBLE_COL_IN = 3.5, 7.16
+_TAB10 = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
+          "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf")
+_SERIES_LINESTYLES = ("-", "--", "-.", ":")
+_SERIES_MARKERS = ("o", "s", "^", "D", "v", "P", "X", "<", ">", "p", "h", "*")
+_PAPER = False
+
+
+def apply_clean_style(paper=False):
+    """Set the project rcParams once, before the first figure.
+    paper=False: sans-serif, 9 pt labels / 8 pt ticks and legend, for data/figures/ PNGs.
+    paper=True : IEEE sizes (8 pt labels, 7 pt ticks and legend), Times-like serif, TrueType fonts embedded
+                 (pdf/ps fonttype 42), no in-figure title or footnote (the caption carries them), no metadata."""
     import matplotlib
 
+    global _PAPER
+    _PAPER = bool(paper)
+    label, tick, legend, title = (8, 7, 7, 8) if paper else (9, 8, 8, 9.5)
     matplotlib.rcParams.update({
-        "font.family": "DejaVu Sans",  # มากับ matplotlib เสมอ มี µ − ≤ × ครบ
-        "font.size": 10,
-        "axes.titlesize": 11.5,
-        "axes.labelsize": 10.5,
-        "axes.edgecolor": INK_SECONDARY,
-        "axes.labelcolor": INK_PRIMARY,
+        "font.family": "serif" if paper else "sans-serif",
+        "font.serif": FONT_SERIF,
+        "font.sans-serif": FONT_SANS,
+        "mathtext.fontset": "stix" if paper else "dejavusans",
+        "font.size": tick + 0.5 if not paper else 7.5,
+        "axes.titlesize": title,
+        "axes.titleweight": "normal",
+        "axes.labelsize": label,
+        "xtick.labelsize": tick,
+        "ytick.labelsize": tick,
+        "legend.fontsize": legend,
+        "figure.titlesize": title + 1,
+        "axes.edgecolor": "black",
+        "axes.linewidth": 0.7 if paper else 0.8,
+        "axes.labelcolor": "black",
         "axes.axisbelow": True,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "xtick.color": INK_SECONDARY,
-        "ytick.color": INK_SECONDARY,
-        "xtick.labelcolor": INK_PRIMARY,
-        "ytick.labelcolor": INK_PRIMARY,
-        "legend.frameon": False,
-        "legend.fontsize": 9,
-        "figure.titlesize": 13,
+        "axes.grid": False,
+        "axes.spines.top": True,
+        "axes.spines.right": True,
+        "xtick.color": "black",
+        "ytick.color": "black",
+        "xtick.direction": "out",
+        "ytick.direction": "out",
+        "xtick.top": False,
+        "xtick.bottom": True,
+        "ytick.right": False,
+        "ytick.left": True,
+        "xtick.minor.visible": False,    # log axes still draw their own minor ticks
+        "ytick.minor.visible": False,
+        "xtick.major.width": 0.7,
+        "ytick.major.width": 0.7,
+        "xtick.major.size": 3.0,
+        "ytick.major.size": 3.0,
+        "lines.linewidth": LINE_WIDTH,
+        "lines.markersize": MARKER_SIZE,
+        "legend.frameon": True,
+        "legend.fancybox": False,
+        "legend.framealpha": 0.9,
+        "legend.edgecolor": "#c8c8c8",
+        "legend.borderpad": 0.4,
+        "legend.labelspacing": 0.3,
+        "legend.handlelength": 2.4,
         "figure.facecolor": "white",
         "axes.facecolor": "white",
         "savefig.facecolor": "white",
-        "svg.fonttype": "path",  # ฝังรูปทรงตัวอักษร เปิดที่ไหนก็หน้าตาเหมือนกัน
+        "axes.unicode_minus": True,
+        "pdf.fonttype": 42,              # embed TrueType fonts (conference requires all fonts embedded)
+        "ps.fonttype": 42,
     })
 
 
+def apply_style():
+    """Back-compat name used by every chart script: the non-paper clean style."""
+    apply_clean_style(paper=False)
+
+
+def is_paper():
+    return _PAPER
+
+
+def style_for_series(index):
+    """(color, linestyle, marker) for the index-th series of a generic chart. Colour from the tab10 cycle, plus a
+    linestyle and a marker, so no two of the first 60 series share the full triple and each stays readable in
+    grayscale. Boards and circuits do NOT use this: they have fixed styles (BOARD_* / CIRCUIT_*) that are the same in
+    every chart."""
+    i = int(index)
+    return (_TAB10[i % len(_TAB10)], _SERIES_LINESTYLES[i % len(_SERIES_LINESTYLES)],
+            _SERIES_MARKERS[i % len(_SERIES_MARKERS)])
+
+
+def board_style(board):
+    """(color, linestyle, marker) of a board, the same in every chart."""
+    return BOARD_COLOR[board], BOARD_LINESTYLE[board], BOARD_MARKER[board]
+
+
+def circuit_style(circuit):
+    """(color, linestyle, marker) of a circuit (grey ink), the same in every chart."""
+    return CIRCUIT_INK[circuit], CIRCUIT_LINESTYLE[circuit], CIRCUIT_MARKER[circuit]
+
+
+def all_fixed_styles():
+    """{name: (linestyle, marker)} of every board and circuit (names prefixed board:/circuit:)."""
+    out = {f"board:{b}": (BOARD_LINESTYLE[b], BOARD_MARKER[b]) for b in BOARD_ORDER}
+    out.update({f"circuit:{c}": (CIRCUIT_LINESTYLE[c], CIRCUIT_MARKER[c]) for c in CIRCUIT_ORDER})
+    return out
+
+
 def style_axes(ax, log_y=False, integer_x=True):
-    """gridline จาง ๆ อยู่หลังข้อมูล + แกน x เป็นจำนวนเต็ม (จำนวนคิวบิต)"""
+    """Integer x ticks (qubit counts) and, for log_y, a log y axis. No grid (clean style). Kept under the old name
+    so every existing script gets the clean look without edits."""
     from matplotlib.ticker import MaxNLocator
 
     if log_y:
         ax.set_yscale("log")
-        ax.grid(True, which="minor", axis="y", color=GRID_COLOR, linewidth=0.4, alpha=0.6)
-    ax.grid(True, which="major", axis="both", color=GRID_COLOR, linewidth=0.7)
+    ax.grid(False)
     ax.set_axisbelow(True)
     if integer_x:
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+
+def add_panel_label(ax, text, inside=False):
+    """Panel label such as "(a)": centred below the panel (under the x label) by default, or inside the top-left
+    corner with inside=True."""
+    if inside:
+        return ax.text(0.03, 0.96, text, transform=ax.transAxes, ha="left", va="top", fontsize=8 if _PAPER else 9)
+    return ax.annotate(text, xy=(0.5, 0.0), xycoords="axes fraction", xytext=(0, -(30 if _PAPER else 36)),
+                       textcoords="offset points", ha="center", va="top", fontsize=8 if _PAPER else 9.5)
+
+
+def iqr_band(ax, xs, q1, q3, color, alpha=None, half_width=0.18, **kw):
+    """Light shaded IQR band (25th-75th percentile over the reps) behind a median line. q1/q3 entries that are None
+    (a point with a single value, so no IQR) get NO band. Neighbouring points with an IQR are joined; an isolated
+    one gets a narrow patch of width 2*half_width in x so it is still visible. Returns the number of band pieces."""
+    alpha = BAND_ALPHA if alpha is None else alpha
+    run = []
+    pieces = 0
+
+    def flush():
+        nonlocal run, pieces
+        if not run:
+            return
+        if len(run) == 1:
+            x, lo, hi = run[0]
+            ax.fill_between([x - half_width, x + half_width], [lo, lo], [hi, hi], color=color, alpha=alpha,
+                            linewidth=0, zorder=kw.get("zorder", 2))
+        else:
+            ax.fill_between([r[0] for r in run], [r[1] for r in run], [r[2] for r in run], color=color,
+                            alpha=alpha, linewidth=0, zorder=kw.get("zorder", 2))
+        pieces += 1
+        run = []
+
+    for x, lo, hi in zip(xs, q1, q3):
+        if lo is None or hi is None:
+            flush()
+        else:
+            run.append((x, lo, hi))
+    flush()
+    return pieces
+
+
+def git_tag():
+    """Short git tag/commit of the code that drew the chart ('+' suffix = uncommitted changes), or 'commit unknown'."""
+    import subprocess
+
+    try:
+        out = subprocess.run(["git", "describe", "--tags", "--always", "--dirty=+"], cwd=Path(__file__).resolve().parent,
+                             capture_output=True, text=True, timeout=10, check=True)
+        return out.stdout.strip() or "commit unknown"
+    except Exception:  # noqa: BLE001 - a chart must never fail because git is missing
+        return "commit unknown"
+
+
+def suptitle(fig, text, tag=False, **kw):
+    """Chart title for data/figures PNGs. paper=True figures carry no in-figure title (the caption does)."""
+    if _PAPER:
+        return None
+    return fig.suptitle(f"{text} [{git_tag()}]" if tag else text, **kw)
 
 
 def reps_phrase(counts, label=None):
@@ -145,37 +294,66 @@ def reps_phrase(counts, label=None):
 def add_footnote(fig, text):
     """คำอธิบายสถิติ + ขนาดตัวอย่าง ใต้ figure ชิดขวา (อยู่นอกพื้นที่พล็อต ไม่บังข้อมูล
     — savefig(bbox_inches='tight') ขยายขอบภาพให้ครอบข้อความนี้เอง)"""
-    fig.text(0.995, -0.005, text, ha="right", va="top", fontsize=8, color=INK_SECONDARY)
+    if _PAPER:
+        return None   # the paper caption carries the statistics note
+    fig.text(0.995, -0.005, text, ha="right", va="top", fontsize=7.5, color=INK_SECONDARY)
 
 
-def save_figure(fig, out_dir: Path, stem: str):
-    """บันทึก PNG 300 DPI + SVG ชื่อเดียวกันเสมอ: <out_dir>/<stem>.png และ .svg"""
+PAPER_PNG_DPI = 600
+_FORBIDDEN_DIRS = (("data", "raw"), ("data", "archive"))
+_PNG_META = {"Software": None}                       # matplotlib would write "Software: Matplotlib version ..."
+_PDF_META = {"Creator": None, "Producer": None, "CreationDate": None, "Title": None, "Author": None,
+             "Subject": None, "Keywords": None}      # nothing identifying in a paper PDF
+
+
+def _check_output_path(path, suffix):
+    path = Path(path)
+    if path.suffix.lower() != suffix:
+        raise ValueError(f"only {suffix} output is allowed here, got {path.name}")
+    parts = path.resolve().parts
+    for forbidden in _FORBIDDEN_DIRS:
+        for i in range(len(parts) - 1):
+            if parts[i:i + 2] == forbidden:
+                raise ValueError(f"refusing to write under {'/'.join(forbidden)}: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def save_png(fig, path, dpi=None, close=True):
+    """Save a PNG (never SVG): 300 dpi for data/figures/, 600 dpi in paper mode. Refuses the raw-data and archived-data trees.
+    No Software metadata. Returns the path."""
     import matplotlib.pyplot as plt
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    paths = []
-    for ext, kwargs in (("png", {"dpi": RASTER_DPI}), (VECTOR_FORMAT, {})):
-        path = out_dir / f"{stem}.{ext}"
-        fig.savefig(path, bbox_inches="tight", pad_inches=0.08, **kwargs)
-        paths.append(path)
-        print(f"figure -> {path}")
-    plt.close(fig)
-    return paths
+    path = _check_output_path(path, ".png")
+    fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=dpi or (PAPER_PNG_DPI if _PAPER else RASTER_DPI),
+                metadata=_PNG_META)
+    print(f"figure -> {path}")
+    if close:
+        plt.close(fig)
+    return path
+
+
+def save_pdf(fig, path, close=True):
+    """Vector PDF for paper figures: TrueType fonts embedded (pdf.fonttype 42), no Creator/Producer/date metadata.
+    Refuses the raw-data and archived-data trees. Returns the path."""
+    import matplotlib.pyplot as plt
+
+    path = _check_output_path(path, ".pdf")
+    fig.savefig(path, bbox_inches="tight", pad_inches=0.02, format="pdf", metadata=_PDF_META)
+    print(f"figure -> {path}")
+    if close:
+        plt.close(fig)
+    return path
 
 
 def save_figure_png_only(fig, out_dir: Path, stem: str):
-    """บันทึกเฉพาะ PNG 300 DPI (ไม่มี SVG) — ใช้สำหรับ data/figures/<board>/<algorithm>/
-    ที่ต้องมีแต่ .png เท่านั้น (2026-09-20, ดู run_log.md "per-board per-algorithm
-    layout") ต่างจาก save_figure() ปกติที่ยังเขียน SVG คู่กันเสมอสำหรับกราฟเก่า
-    (data/figures/phase2/) ซึ่งไม่ได้อยู่ในข้อกำหนด PNG-only นี้"""
-    import matplotlib.pyplot as plt
+    """<out_dir>/<stem>.png only (data/figures/ is PNG-only). Same call signature as before."""
+    return [save_png(fig, Path(out_dir) / f"{stem}.png")]
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{stem}.png"
-    fig.savefig(path, bbox_inches="tight", pad_inches=0.08, dpi=RASTER_DPI)
-    print(f"figure -> {path}")
-    plt.close(fig)
-    return [path]
+
+def save_figure(fig, out_dir: Path, stem: str):
+    """Kept for old callers: now PNG only as well (no SVG anywhere)."""
+    return save_figure_png_only(fig, out_dir, stem)
 
 
 def _quartiles(values):

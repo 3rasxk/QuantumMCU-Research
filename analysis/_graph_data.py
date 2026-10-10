@@ -14,11 +14,12 @@ import numpy as np
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared import paths as sp  # noqa: E402
+from shared import plot_style as ps  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared.telemetry import is_warmup  # noqa: E402
 
-BOARD_LINESTYLE = {"uno": "-", "esp8266": "--", "esp32": ":"}      # second encoding next to BOARD_MARKER (grayscale)
+BOARD_LINESTYLE = ps.BOARD_LINESTYLE      # second encoding next to BOARD_MARKER (grayscale); defined in plot_style
 BOARD_SRAM_BYTES = {"uno": 2048, "esp8266": 81920, "esp32": 327680}
 MIN_PAIRS = 10                                                    # fewer counter pairs: no median/IQR drawn
 

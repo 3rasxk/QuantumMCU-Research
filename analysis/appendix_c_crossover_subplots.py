@@ -59,7 +59,7 @@ def main():
         raise SystemExit("error: ไม่มีข้อมูล Phase 3 ที่ตรงกับวงจรใน CIRCUIT_ORDER")
     ps.apply_style()
 
-    fig, axes = plt.subplots(1, len(circuits), figsize=(4.8 * len(circuits), 5.0),
+    fig, axes = plt.subplots(1, len(circuits), figsize=(4.4 * len(circuits), 4.4),
                              sharey=True, squeeze=False, layout="constrained")
     axes = axes[0]
     loc_trials, off_trials = [], []
@@ -83,8 +83,8 @@ def main():
             if cn is not None and cn in s["ns"]:
                 any_crossover = True
                 color = ps.BOARD_COLOR[board]
-                ax.scatter([cn], [s["off_med"][s["ns"].index(cn)]], s=130, facecolors="none",
-                           edgecolors=color, linewidths=1.8, zorder=5)
+                ax.scatter([cn], [s["off_med"][s["ns"].index(cn)]], s=90, facecolors="none",
+                           edgecolors=color, linewidths=1.2, zorder=5)
                 ax.axvline(x=cn, color=color, linestyle=":", linewidth=1.0, alpha=0.6, zorder=1)
 
         for h, lab in zip(*ax.get_legend_handles_labels()):
@@ -105,7 +105,8 @@ def main():
     fig.legend(handles, labels, loc="outside lower center", ncol=4)
 
     bauds = ", ".join(f"{ps.BOARD_SHORT[b]} {best_baud[b]}" for b in ps.BOARD_ORDER if b in best_baud)
-    fig.suptitle("Local execution time vs offload end-to-end latency, by circuit — all boards")
+    ps.suptitle(fig, "Local execution time vs offload end-to-end latency, by circuit — all boards "
+                     f"(REPS={max(loc_trials + off_trials)}, {ps.git_tag()})", fontsize=10)
     ps.add_footnote(
         fig,
         f"Line = median, band = IQR (25th–75th percentile); {ps.reps_phrase(loc_trials, 'local')}; "

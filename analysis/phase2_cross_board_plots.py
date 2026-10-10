@@ -43,17 +43,17 @@ def plot_circuit(circuit, ref=False):
             continue
         st = {n: gd.stats(vals[n]) for n in ns}
         col, mk, ls = ps.BOARD_COLOR[b], ps.BOARD_MARKER[b], gd.BOARD_LINESTYLE[b]
+        if ps.SHOW_REPS:
+            for n in ns:
+                ax.plot(np.full(len(vals[n]), n), vals[n], linestyle="none", marker=".", markersize=2.6, color=col,
+                        alpha=0.16, zorder=1, rasterized=True)
+        ps.iqr_band(ax, ns, [st[n][1] for n in ns], [st[n][2] for n in ns], col)
+        ax.plot(ns, [st[n][0] for n in ns], linestyle=ls, color=col, linewidth=ps.LINE_WIDTH, zorder=2)
         for n in ns:
-            ax.plot(np.full(len(vals[n]), n), vals[n], linestyle="none", marker=".", markersize=2.6, color=col,
-                    alpha=0.16, zorder=1, rasterized=True)
-        ax.plot(ns, [st[n][0] for n in ns], linestyle=ls, color=col, linewidth=1.4, zorder=2)
-        for n in ns:
-            med, q1, q3 = st[n]
-            if q1 is not None:
-                ax.errorbar([n], [med], yerr=[[med - q1], [q3 - med]], color=col, linewidth=1.6, capsize=2.5, zorder=3)
+            med = st[n][0]
             capped = out.get(n, {}).get("cat") == OK_CAPPED
-            ax.plot([n], [med], linestyle="none", marker=mk, markersize=6.5, zorder=4, markeredgecolor=col if capped
-                    else "white", markerfacecolor="white" if capped else col, markeredgewidth=1.3 if capped else 0.6)
+            ax.plot([n], [med], linestyle="none", marker=mk, markersize=ps.MARKER_SIZE, zorder=4, markeredgecolor=col if capped
+                    else "white", markerfacecolor="white" if capped else col, markeredgewidth=0.9 if capped else 0.5)
         reps_all += [len(vals[n]) for n in ns]
         meds = [st[n][0] for n in ns]
         lo, hi = min(meds + [lo or meds[0]]), max(meds + [hi or meds[0]])
@@ -72,19 +72,19 @@ def plot_circuit(circuit, ref=False):
     ax.set_ylabel("Median execution time per rep (µs, log scale)")
     h = [Line2D([], [], linestyle=gd.BOARD_LINESTYLE[b], marker=ps.BOARD_MARKER[b], color=ps.BOARD_COLOR[b],
                 label=ps.BOARD_LABEL[b]) for b in sets]
-    h += [Line2D([], [], linestyle="none", marker="o", markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY,
+    h += [Line2D([], [], linestyle="none", marker="o", markersize=5, markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY,
                  markeredgewidth=1.3, label=f"< 100 reps ({CAP_TEXT} per-point cap)"),
-          Line2D([], [], linestyle="none", marker="X", color=ps.INK_PRIMARY,
+          Line2D([], [], linestyle="none", marker="X", markersize=8, color=ps.INK_PRIMARY,
                  label="memory wall (recorded evidence), top strip"),
-          Line2D([], [], linestyle="none", marker="*", markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY,
+          Line2D([], [], linestyle="none", marker="*", markersize=10, markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY,
                  label=f"time-limited, not run (1 rep > {CAP_TEXT}), top strip")]
     ax.legend(handles=h, loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=1, fontsize=8.5)
     note = "; ".join(f"{ps.BOARD_SHORT[b]}: {S.commit_note()}" for b, S in sets.items())
-    fig.suptitle(f"{ps.CIRCUIT_LABEL.get(circuit, circuit)} -- all boards (target REPS={tm.REPS}; {note})",
-                 fontsize=10.5)
+    ps.suptitle(fig, f"{ps.CIRCUIT_LABEL.get(circuit, circuit)} -- all boards (target REPS={tm.REPS}; {note})",
+                fontsize=10)
     ax.text(0.0, 1.05, "Phase 2, micros() timing, one unit per board", transform=ax.transAxes, fontsize=8.5,
             color=ps.INK_SECONDARY)
-    gd.footnote(fig, gd.reps_text(reps_all) + "; marker = median, bar = IQR (25th-75th pct), dots = every rep.")
+    gd.footnote(fig, gd.reps_text(reps_all) + "; line = median, band = IQR (25th-75th pct); no band where a point has one rep.")
     return ps.save_figure_png_only(fig, gd.REPO_ROOT / "data" / "figures" / "phase2", f"compare_{circuit}")
 
 
