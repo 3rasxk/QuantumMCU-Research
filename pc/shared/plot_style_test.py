@@ -225,6 +225,17 @@ def test_paper(tmp):
     plt.close(f2)
 
 
+def test_no_minor_ticks(tmp):
+    ps.apply_clean_style(False)
+    fig, ax = plt.subplots()
+    ax.plot([2, 8], [1, 1e6])
+    ax.set_yscale("log")
+    ps.save_png(fig, tmp / "m" / "m.png", close=False)
+    fig.canvas.draw()
+    check("log axis has no minor ticks after save_png", len(ax.yaxis.get_minorticklocs()) == 0 and len(ax.xaxis.get_minorticklocs()) == 0)
+    plt.close(fig)
+
+
 def test_band():
     ps.apply_clean_style(False)
     fig, ax = plt.subplots()
@@ -245,6 +256,7 @@ def main():
         test_grayscale()
         test_save_png_and_guards(tmp)
         test_paper(tmp)
+        test_no_minor_ticks(tmp)
         test_band()
     after = sum(1 for _ in (REPO / "data" / "raw").rglob("*")) if (REPO / "data" / "raw").exists() else 0
     check("real data/raw untouched (entry count unchanged)", before == after)

@@ -380,12 +380,20 @@ def _check_output_path(path, suffix):
     return path
 
 
+def remove_minor_ticks(fig):
+    """No minor tick marks anywhere (log axes draw them by default): only the labelled major ticks remain."""
+    for ax in fig.axes:
+        for a in [ax] + list(ax.child_axes):      # child_axes: secondary x / y axes
+            a.minorticks_off()
+
+
 def save_png(fig, path, dpi=None, close=True):
     """Save a PNG (never SVG): 300 dpi for data/figures/, 600 dpi in paper mode. Refuses the raw-data and archived-data trees.
     No Software metadata. Returns the path."""
     import matplotlib.pyplot as plt
 
     path = _check_output_path(path, ".png")
+    remove_minor_ticks(fig)
     fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=dpi or (PAPER_PNG_DPI if _PAPER else RASTER_DPI),
                 metadata=_PNG_META)
     print(f"figure -> {path}")
@@ -400,6 +408,7 @@ def save_pdf(fig, path, close=True):
     import matplotlib.pyplot as plt
 
     path = _check_output_path(path, ".pdf")
+    remove_minor_ticks(fig)
     fig.savefig(path, bbox_inches="tight", pad_inches=0.02, format="pdf", metadata=_PDF_META)
     print(f"figure -> {path}")
     if close:
