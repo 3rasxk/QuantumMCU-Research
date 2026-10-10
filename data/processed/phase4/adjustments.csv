@@ -1,0 +1,13 @@
+circuit,ref,new,log2_clock_ratio,log2_local_speed_ratio,architecture_adjustment,local_speed_ratio
+h_all,uno,esp8266,2.322,3.417,1.095,10.68
+h_all,esp8266,esp32,1.585,5.116,3.531,34.67
+h_all,uno,esp32,3.907,,,
+bell_ghz,uno,esp8266,2.322,4.048,1.726,16.54
+bell_ghz,esp8266,esp32,1.585,2.127,0.542,4.37
+bell_ghz,uno,esp32,3.907,,,
+qft,uno,esp8266,2.322,3.125,0.803,8.73
+qft,esp8266,esp32,1.585,4.755,3.17,27.0
+qft,uno,esp32,3.907,8.018,4.111,259.24
+grover,uno,esp8266,2.322,3.188,0.866,9.11
+grover,esp8266,esp32,1.585,4.753,3.168,26.96
+grover,uno,esp32,3.907,8.06,4.153,266.93

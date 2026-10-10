@@ -1,0 +1,11 @@
+board,circuit,observed_last_ok_n,observed_wall_n,B_measured_bytes,B_basis,n_max_measured_B,agree_measured_B,B_fallback_sram_half,n_max_fallback,agree_fallback
+uno,h_all,7,8,1846,"SRAM - static data (202 B, compile RAM used - state)",7,True,1024.0,7,True
+uno,bell_ghz,7,8,1842,"SRAM - static data (206 B, compile RAM used - state)",7,True,1024.0,7,True
+uno,qft,7,8,1848,"SRAM - static data (200 B, compile RAM used - state)",7,True,1024.0,7,True
+uno,grover,7,8,1844,"SRAM - static data (204 B, compile RAM used - state)",7,True,1024.0,7,True
+esp8266,h_all,12,13,52240,total free heap (largest block is not logged by the ESP8266 firmware),12,True,40960.0,12,True
+esp8266,bell_ghz,12,13,52240,total free heap (largest block is not logged by the ESP8266 firmware),12,True,40960.0,12,True
+esp8266,qft,12,13,52240,total free heap (largest block is not logged by the ESP8266 firmware),12,True,40960.0,12,True
+esp32,h_all,13,14,110612,largest free block (firmware-reported),13,True,163840.0,14,False
+esp32,bell_ghz,13,14,110612,largest free block (firmware-reported),13,True,163840.0,14,False
+esp32,qft,13,14,110612,largest free block (firmware-reported),13,True,163840.0,14,False
