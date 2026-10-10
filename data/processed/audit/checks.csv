@@ -1,0 +1,28 @@
+id,check,result,evidence
+A1,"telemetry files carry SCHEMA_VERSION=2, one version per file",PASS,24 point sets
+A2a,points.csv status / failure_type are members of telemetry.STATUS_TYPES / FAILURE_TYPES,PASS,
+A2b,terminal-record statuses (memory_wall.csv / session_log.csv) match the known status vocabulary,PASS,
+A3,no_ref and with_ref never mixed (one bucket present; env bucket == directory; flag consistent),PASS,buckets present: ['with_ref']; inconsistent sessions: []
+A4a,"no duplicated (n, [baud], rep) rows in any raw.csv (resumed runs only appended)",PASS,
+A4b,points.csv start_utc non-decreasing (append order = time order),PASS,
+B1a,"every ok point has exactly 100 reps, or a recorded time_capped note",PASS,290 ok points; 10 capped with a recorded note; mismatches: 
+B1b,no raw rows for a point whose terminal status is not ok (interrupted points leave no partial rows),PASS,
+B1c,every planned point is collected or explicitly classified,FAIL,p2 esp32/h_all n=1; p2 esp32/qft n=1; p2 esp8266/h_all n=1; p2 esp8266/qft n=1; p2 uno/h_all n=1; p2 uno/qft n=1; p3 esp32/h_all n=1; p3 esp32/qft n=1; p3 esp8266/h_all n=1; p3 esp8266/qft n=1; p3 uno/h_all n=1; p3 uno/qft n=1
+B1d,no point has several terminal rows (superseded),PASS,0 points
+D1,"every wall row has positive evidence (build_overflow with compile_ram_pct > 100, or a malloc failure attempt)",PASS,
+D2,no watchdog / hang / time-limited point is classified as a wall,PASS,0 offending rows
+D3,failed attempts of type watchdog_suspected / serial / hang are recorded as failures (not walls),INFO,"2 attempts: esp8266/grover p2 n=8 watchdog_suspected: watchdog_reset_loop=true,reset_count=4 | esp8266/grover p2 n=9 watchdog_suspected: watchdog_reset_loop=true,reset_count=4"
+E1,counter-ok points: pulses used equals the reps present in raw.csv (capped points have fewer than 100),PASS,45 points; 
+E2,no session with a simulated / unknown / missing counter reference,PASS,0 sessions: 
+E3,Phase 3 sessions recorded without a counter reference (policy: Phase 3 runs without the counter),FAIL,35 of 35 Phase 3 sessions used --ref counter
+S1,"every session matches a live, non-dry-run 'started' entry of data/run_history.jsonl",PASS,0 unmatched: 
+S2,session env files are tracked in git,PASS,0 untracked
+S3,firmware source hash of every session equals the hash of the run commit's firmware tree,FAIL,"3 sessions differ (uncommitted firmware at run time): esp32:4478147465f99625, esp8266:5413c474786bad15, esp8266:6cb0e9ea301922b4"
+S4,git_dirty false (clean working tree at collection),FAIL,"60 of 60 sessions dirty (git status --porcelain counts untracked data files, pc/shared/telemetry.py:369-372, so this flag cannot show code changes alone)"
+S5,"one firmware source hash per (board, phase, circuit) series",FAIL,"('esp32', 2, 'grover'): 2 hashes; ('esp8266', 2, 'grover'): 3 hashes; ('esp8266', 3, 'grover'): 2 hashes"
+S6,failed points counted in sessions.csv equal the failed rows in points.csv (every failure has a row),FAIL,"p2 esp32/grover: sessions.csv n_points_failed=1, points.csv failed rows=0"
+F1,repeat data: points collected more than once (points.csv ok rows); agreement of the totals,INFO,"8 repeated points; max device_exec_s ratio 1.75; raw.csv keeps only the last run's reps, so per-rep repeatability cannot be assessed"
+B2a,ref_compare_points.csv medians/IQR equal a recomputation from ref_compare.csv rows,PASS,376 values compared; 28 IQR values equal the 'exclusive' quantile convention (pc/counter/crosscheck.py:42-45 statistics.quantiles) instead of numpy linear used by the charts; true mismatches: 
+B2d,"units: device_exec_s is a total over the point's reps (>= sum of the board-timed reps); Phase 3 avg_round_trip_latency_s equals the per-request mean of e2e_latency_us (pc/phase3_offload/sweep.py:547,598)",PASS,290 points; 
+B2b,Uno compile_ram_pct equals compile_ram_used_bytes / 2048 (rounded to 0.1),PASS,
+B2c,medians quoted in docs/analysis/**/*.md equal a recomputation from raw.csv,PASS,24 values; 

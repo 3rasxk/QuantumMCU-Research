@@ -1,0 +1,13 @@
+board,circuit,last_ok_n,limit_n,limit_kind,evidence,predicted_wall_n,predicted_evidence,matches_prediction,watchdog_attempts,capped_points
+uno,h_all,7,8,memory,"build_overflow, compile_ram_pct=109.9",8,build_overflow,True,0,0
+uno,bell_ghz,7,8,memory,"build_overflow, compile_ram_pct=110.1",8,build_overflow,True,0,0
+uno,qft,7,8,memory,"build_overflow, compile_ram_pct=109.8",8,build_overflow,True,0,0
+uno,grover,7,8,memory,"build_overflow, compile_ram_pct=110.0",8,build_overflow,True,0,0
+esp8266,h_all,12,13,memory,malloc_failed,13,malloc_failed,True,0,0
+esp8266,bell_ghz,12,13,memory,malloc_failed,13,malloc_failed,True,0,0
+esp8266,qft,12,13,memory,malloc_failed,13,malloc_failed,True,0,0
+esp8266,grover,10,11,time ceiling,skipped_compute_infeasible from n=11 (1 rep > 7200 s),13,malloc_failed,,2,0
+esp32,h_all,13,14,memory,malloc_failed,14,malloc_failed,True,0,0
+esp32,bell_ghz,13,14,memory,malloc_failed,14,malloc_failed,True,0,0
+esp32,qft,13,14,memory,malloc_failed,14,malloc_failed,True,0,0
+esp32,grover,12,13,time ceiling,skipped_compute_infeasible from n=13 (1 rep > 7200 s),14,malloc_failed,,0,0

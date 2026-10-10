@@ -1,0 +1,13 @@
+board,circuit,model_basis,predicted_wall_n,observed_wall_n,agree
+uno,h_all,"static 202 B (compile RAM used - state), RAM 2048 B",8,8,True
+uno,bell_ghz,"static 206 B (compile RAM used - state), RAM 2048 B",8,8,True
+uno,qft,"static 200 B (compile RAM used - state), RAM 2048 B",8,8,True
+uno,grover,"static 204 B (compile RAM used - state), RAM 2048 B",8,8,True
+esp8266,h_all,free_heap_before at n=2 + its state = 52240 B,13,13,True
+esp8266,bell_ghz,free_heap_before at n=2 + its state = 52240 B,13,13,True
+esp8266,qft,free_heap_before at n=2 + its state = 52240 B,13,13,True
+esp8266,grover,free_heap_before at n=2 + its state = 51264 B,13,none reached,
+esp32,h_all,largest_block at n=2 + its state = 110612 B,14,14,True
+esp32,bell_ghz,largest_block at n=2 + its state = 110612 B,14,14,True
+esp32,qft,largest_block at n=2 + its state = 110612 B,14,14,True
+esp32,grover,largest_block at n=2 + its state = 110612 B,14,none reached,
