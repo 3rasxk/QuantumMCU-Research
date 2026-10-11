@@ -352,12 +352,12 @@ def reps_phrase(counts, label=None):
     return f"{prefix}n = {counts[0]}–{counts[-1]} repetitions per point (varies)"
 
 
-def add_footnote(fig, text):
+def add_footnote(fig, text, y=-0.005):
     """คำอธิบายสถิติ + ขนาดตัวอย่าง ใต้ figure ชิดขวา (อยู่นอกพื้นที่พล็อต ไม่บังข้อมูล
     — savefig(bbox_inches='tight') ขยายขอบภาพให้ครอบข้อความนี้เอง)"""
     if _PAPER:
         return None   # the paper caption carries the statistics note
-    fig.text(0.995, -0.005, text, ha="right", va="top", fontsize=8.5, color=INK_SECONDARY)
+    fig.text(0.995, y, text, ha="right", va="top", fontsize=8.5, color=INK_SECONDARY)
 
 
 PAPER_PNG_DPI = 600
