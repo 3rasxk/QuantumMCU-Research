@@ -281,6 +281,25 @@ def style_axes(ax, log_y=False, integer_x=True):
         ax.xaxis.set_major_locator(_Loc())
 
 
+def dot_kwargs(kind, color=None):
+    """Point-status marks, ALL round dots (no stars / crosses): ok = filled, capped = half-filled (a time-capped point
+    with < 100 reps), wall = filled with a black rim (annotated with its recorded evidence), time_limited = open ring.
+    failed / watchdog / hang (outcomes chart only) differ by fill colour. `color` is the series colour; with none
+    the dot is neutral ink."""
+    ink = color or INK_PRIMARY
+    if kind == "ok":
+        return dict(marker="o", markerfacecolor=ink, markeredgecolor="white", markeredgewidth=0.6)
+    if kind == "capped":
+        return dict(marker="o", fillstyle="left", markerfacecolor=ink, markerfacecoloralt="white",
+                    markeredgecolor=ink, markeredgewidth=1.2)
+    if kind == "wall":
+        return dict(marker="o", markerfacecolor=color or "#B2182B", markeredgecolor="black", markeredgewidth=1.6)
+    if kind == "time_limited":
+        return dict(marker="o", markerfacecolor="white", markeredgecolor=ink, markeredgewidth=1.8)
+    fills = {"failed": "#8c8c8c", "watchdog": "#E69F00", "hang": "#7B3294"}
+    return dict(marker="o", markerfacecolor=fills[kind], markeredgecolor="white", markeredgewidth=0.6)
+
+
 def add_panel_label(ax, text, inside=False):
     """Panel label such as "(a)": centred below the panel (under the x label) by default, or inside the top-left
     corner with inside=True."""

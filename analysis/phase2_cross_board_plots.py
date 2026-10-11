@@ -52,19 +52,18 @@ def plot_circuit(circuit, ref=False):
         ax.plot(ns, [st[n][0] for n in ns], linestyle="-", color=col, linewidth=LINE_W, zorder=2)
         for n in ns:                   # colour-only series; only a time-capped point (< 100 reps) gets an open marker
             if out.get(n, {}).get("cat") == OK_CAPPED:
-                ax.plot([n], [st[n][0]], linestyle="none", marker="o", markersize=5.5, zorder=4, markeredgecolor=col,
-                        markerfacecolor="white", markeredgewidth=1.3)
+                ax.plot([n], [st[n][0]], linestyle="none", markersize=7, zorder=4, **ps.dot_kwargs("capped", col))
         reps_all += [len(vals[n]) for n in ns]
         meds = [st[n][0] for n in ns]
         lo, hi = min(meds + [lo or meds[0]]), max(meds + [hi or meds[0]])
         y = 0.95 - 0.05 * row                                   # one strip row per board
         for n, o in sorted(out.items()):
             if o["cat"] == WALL:
-                ax.plot([n], [y], transform=tr, linestyle="none", marker="X", markersize=8, markerfacecolor=col,
-                        markeredgecolor="white", markeredgewidth=0.5, clip_on=False, zorder=5)
+                ax.plot([n], [y], transform=tr, linestyle="none", markersize=8, clip_on=False, zorder=5,
+                        **ps.dot_kwargs("wall", col))
             elif o["cat"] == TIME_LIMITED:
-                ax.plot([n], [y], transform=tr, linestyle="none", marker="*", markersize=10, markerfacecolor="white",
-                        markeredgecolor=col, markeredgewidth=1.2, clip_on=False, zorder=5)
+                ax.plot([n], [y], transform=tr, linestyle="none", markersize=8, clip_on=False, zorder=5,
+                        **ps.dot_kwargs("time_limited", col))
     ax.set_yscale("log")
     ps.style_axes(ax, log_y=True)
     ax.set_ylim(lo / 3, hi * 10 ** 1.1)
@@ -72,12 +71,9 @@ def plot_circuit(circuit, ref=False):
     ax.set_ylabel("Median execution time per rep (µs, log scale)")
     h = [Line2D([], [], linestyle="-", color=ps.BOARD_COLOR[b], linewidth=LINE_W,
                 label=ps.BOARD_LABEL[b]) for b in sets]
-    h += [Line2D([], [], linestyle="none", marker="o", markersize=5, markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY,
-                 markeredgewidth=1.3, label=f"< 100 reps ({CAP_TEXT} per-point cap)"),
-          Line2D([], [], linestyle="none", marker="X", markersize=8, color=ps.INK_PRIMARY,
-                 label="memory wall (recorded evidence), top strip"),
-          Line2D([], [], linestyle="none", marker="*", markersize=10, markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY,
-                 label=f"time-limited, not run (1 rep > {CAP_TEXT}), top strip")]
+    h += [Line2D([], [], linestyle="none", markersize=7, label=f"< 100 reps ({CAP_TEXT} cap)", **ps.dot_kwargs("capped")),
+          Line2D([], [], linestyle="none", markersize=8, label="memory wall", **ps.dot_kwargs("wall", ps.INK_MUTED)),
+          Line2D([], [], linestyle="none", markersize=8, label="time-limited, not run", **ps.dot_kwargs("time_limited"))]
     ax.legend(handles=h, loc="best", fontsize=8.5)
     note = "; ".join(f"{ps.BOARD_SHORT[b]}: {S.commit_note()}" for b, S in sets.items())
     ps.suptitle(fig, f"{ps.CIRCUIT_LABEL.get(circuit, circuit)} -- all boards (target REPS={tm.REPS}; {note})",

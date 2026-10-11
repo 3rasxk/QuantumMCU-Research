@@ -172,7 +172,7 @@ def plot_per_algorithm(rows):
             fig, axes = plt.subplots(1, 2, figsize=(8.8, 4.4), layout="constrained")
             for ax, idx, (col, ylab, ptitle, thr) in ((axes[0], 2, SPECS[0]), (axes[1], 3, SPECS[1])):
                 shown = [(p[0], p[idx]) for p in pts if p[idx] > 0]
-                _curve(ax, [x for x, _ in shown], [y for _, y in shown], circuit, label=ps.CIRCUIT_LABEL[circuit])
+                _curve(ax, [x for x, _ in shown], [y for _, y in shown], circuit, label=PUB_LABEL[circuit])
                 if thr is not None:
                     _threshold_line(ax)
                 ax.set_yscale("log")

@@ -200,7 +200,7 @@ ps.save_figure_png_only = lambda fig, d, stem: caps.setdefault(stem, fig) and []
 S = gd.PointSet('esp32', 'grover', 2, True)
 p2.plot_outcomes_vs_n(S); p2.plot_exec_time_vs_n(S); p2.plot_memory_vs_n(S)
 for stem, f in caps.items():
-    print(stem, 'X-markers', sum(1 for ax in f.axes for l in ax.lines if l.get_marker() == 'X'))
+    print(stem, 'X-markers', sum(1 for ax in f.axes for l in ax.lines if l.get_marker() == 'o' and l.get_markeredgecolor() == 'black'))  # wall = round dot, black rim
 """)
         check("no X (wall) marker drawn on a dataset without recorded wall evidence",
               "outcomes_vs_n X-markers 0" in out and "exec_time_vs_n X-markers 0" in out and
@@ -211,7 +211,7 @@ from shared import plot_style as ps
 caps = {}
 ps.save_figure_png_only = lambda fig, d, stem: caps.setdefault(stem, fig) and []
 p2.plot_outcomes_vs_n(gd.PointSet('uno', 'h_all', 2, True))
-print('X', sum(1 for ax in caps['outcomes_vs_n'].axes for l in ax.lines if l.get_marker() == 'X'))
+print('X', sum(1 for ax in caps['outcomes_vs_n'].axes for l in ax.lines if l.get_marker() == 'o' and l.get_markeredgecolor() == 'black'))  # wall = round dot, black rim
 """)
         check("recorded build_overflow IS drawn as a wall", "X 1" in out, out)
 
