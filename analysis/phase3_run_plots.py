@@ -169,6 +169,9 @@ def plot_latency_vs_n(S):
     col = ps.BOARD_COLOR[S.board]
     fig, ax = plt.subplots(figsize=(7.6, 5.4), layout="constrained")
     all_vals = []
+    nr = not_run(S)
+    pred = gd.predicted_by_n(S, 3)
+    est_drawn = False
     for bi, baud in enumerate(S.bauds):
         keys = [k for k in ok_keys if k[1] == baud]
         if not keys:
@@ -182,6 +185,11 @@ def plot_latency_vs_n(S):
                         color=ps.INK_MUTED, alpha=0.25, zorder=1, rasterized=True)
             all_vals += lat[k]
         ps.iqr_band(ax, ns, [st[k][1] for k in keys], [st[k][2] for k in keys], col)
+        exs, eys = gd.estimate_segment(ns, st[keys[-1]][0], pred, nr)
+        if exs:                        # skipped n: the project's estimate as a plain dashed continuation
+            ax.plot(exs, eys, linestyle=(0, (4, 2)), color=col, linewidth=LINE_W, zorder=2)
+            all_vals += eys
+            est_drawn = True
         ax.plot(ns, [st[k][0] for k in keys], linestyle=ls, color=col, linewidth=LINE_W, zorder=2,
                 label=f"board round trip{f' @{baud}' if len(S.bauds) > 1 else ''} (median, IQR band)")
         for k in keys:
@@ -195,14 +203,9 @@ def plot_latency_vs_n(S):
                 label="PC simulation (median)", zorder=2)
     ax.set_yscale("log")
     ps.style_axes(ax, log_y=True)
-    nr = not_run(S)
     lo, hi = min(all_vals), max(all_vals)
-    ax.set_ylim(lo / 2.5, hi * 10 ** (0.8 if nr else 0.3))
-    tr = ax.get_xaxis_transform()
-    for n in nr:
-        ax.plot([n], [0.95], transform=tr, linestyle="none", markersize=8, clip_on=False,
-                **ps.dot_kwargs("time_limited"))
-    ax.set_xticks(sorted({k[0] for k in ok_keys} | set(nr)))
+    ax.set_ylim(lo / 2.5, hi * 10 ** 0.3)
+    ax.set_xticks(sorted({k[0] for k in ok_keys} | ({n for n in nr if n in pred} if est_drawn else set())))
     ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Round trip per request (µs, log scale)")
     h, lab = ax.get_legend_handles_labels()
@@ -212,9 +215,9 @@ def plot_latency_vs_n(S):
     if ps.SHOW_REPS:
         h.append(Line2D([], [], linestyle="none", marker=".", color=ps.INK_MUTED, alpha=0.6))
         lab.append("individual request")
-    if nr:
-        h.append(Line2D([], [], linestyle="none", markersize=8, **ps.dot_kwargs("time_limited")))
-        lab.append("not run (too slow or too big)")
+    if est_drawn:
+        h.append(Line2D([], [], linestyle=(0, (4, 2)), color=col, linewidth=LINE_W))
+        lab.append("not run: estimate")
     ax.legend(h, lab, loc="best", fontsize=8.5)
     finish(fig, ax, S, f"offload round-trip latency vs n (baud {', '.join(map(str, S.bauds))})")
     gd.footnote(fig, gd.reps_text(len(lat[k]) for k in ok_keys).replace("repetitions", "requests") +
@@ -304,12 +307,8 @@ def plot_offload_vs_local(S):
     cross = next((n for n in common if off[n] < local[n]), None)
     ax.set_yscale("log")
     ps.style_axes(ax, log_y=True)
-    if cross is not None:
-        ax.axvline(cross, color=ps.INK_PRIMARY, linestyle=":", linewidth=1.1, zorder=1)
-        at_end = cross == common[-1]                     # keep the label inside the axes
-        ax.annotate(f"crossover: offload median first below local at n={cross}", (cross, 0.10),
-                    xycoords=("data", "axes fraction"), xytext=(-5 if at_end else 5, 0), textcoords="offset points",
-                    ha="right" if at_end else "left", fontsize=9)
+    if cross is not None:                                # the crossover is one dot on the offload curve at that n
+        ax.plot([cross], [off[cross]], linestyle="none", markersize=9, zorder=5, **ps.dot_kwargs("wall", ps.INK_PRIMARY))
         verdict = f"Crossover at n={cross} (first n where the offload median is below the local median)."
     else:
         verdict = (f"No crossover in the measured range n={common[0]}..{common[-1]}: the offload round trip is "
@@ -319,6 +318,9 @@ def plot_offload_vs_local(S):
     ax.set_ylabel("Time (µs, log scale)")
     h = [Line2D([], [], linestyle="-", color=series[0][2], linewidth=LINE_W, label=series[0][0]),
          Line2D([], [], linestyle="-", color=series[1][2], linewidth=LINE_W, label=series[1][0])]
+    if cross is not None:
+        h.append(Line2D([], [], linestyle="none", markersize=9, label=f"crossover (n={cross})",
+                        **ps.dot_kwargs("wall", ps.INK_PRIMARY)))
     ax.legend(handles=h, loc="best", fontsize=8.5)
     note = f"Phase 2 {L.commit_note()}; Phase 3 {S.commit_note()}"
     ps.suptitle(fig, f"{ps.BOARD_LABEL[S.board]} -- {ps.CIRCUIT_LABEL.get(S.circuit, S.circuit)} -- local vs offload (baud {baud}) "

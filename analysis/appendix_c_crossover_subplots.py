@@ -83,9 +83,8 @@ def main():
             if cn is not None and cn in s["ns"]:
                 any_crossover = True
                 color = ps.BOARD_COLOR[board]
-                ax.scatter([cn], [s["off_med"][s["ns"].index(cn)]], s=90, facecolors="none",
-                           edgecolors=color, linewidths=1.2, zorder=5)
-                ax.axvline(x=cn, color=color, linestyle=":", linewidth=1.0, alpha=0.6, zorder=1)
+                ax.plot([cn], [s["off_med"][s["ns"].index(cn)]], linestyle="none", markersize=9, zorder=5,
+                        **ps.dot_kwargs("wall", color))
 
         for h, lab in zip(*ax.get_legend_handles_labels()):
             legend.setdefault(lab, h)
@@ -99,9 +98,8 @@ def main():
     labels = [lab for lab in labels if lab in legend]
     handles = [legend[lab] for lab in labels]
     if any_crossover:
-        handles.append(Line2D([], [], linestyle="none", marker="o", markersize=9,
-                              markerfacecolor="none", markeredgecolor=ps.INK_SECONDARY))
-        labels.append("Crossover point (board colour)")
+        handles.append(Line2D([], [], linestyle="none", markersize=9, **ps.dot_kwargs("wall", ps.INK_MUTED)))
+        labels.append("crossover (board colour)")
     fig.legend(handles, labels, loc="outside lower center", ncol=4)
 
     bauds = ", ".join(f"{ps.BOARD_SHORT[b]} {best_baud[b]}" for b in ps.BOARD_ORDER if b in best_baud)

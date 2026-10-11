@@ -35,6 +35,7 @@ def plot_circuit(circuit, ref=False):
     fig, ax = plt.subplots(figsize=(8.2, 5.8), layout="constrained")
     tr = ax.get_xaxis_transform()
     lo = hi = None
+    has_est = False
     reps_all = []
     for row, (b, S) in enumerate(sets.items()):
         out = gd.outcomes_phase2(S)
@@ -55,15 +56,17 @@ def plot_circuit(circuit, ref=False):
                 ax.plot([n], [st[n][0]], linestyle="none", markersize=7, zorder=4, **ps.dot_kwargs("capped", col))
         reps_all += [len(vals[n]) for n in ns]
         meds = [st[n][0] for n in ns]
-        lo, hi = min(meds + [lo or meds[0]]), max(meds + [hi or meds[0]])
+        exs, eys = gd.estimate_segment(ns, meds[-1], gd.predicted_by_n(S, 2),
+                                       [n for n, o in out.items() if o["cat"] == TIME_LIMITED])
+        if exs:                        # skipped n: the project's estimate as a plain dashed continuation
+            ax.plot(exs, eys, linestyle=(0, (4, 2)), color=col, linewidth=LINE_W, zorder=2)
+            has_est = True
+        lo, hi = min(meds + [lo or meds[0]]), max(meds + list(eys) + [hi or meds[0]])
         y = 0.95 - 0.05 * row                                   # one strip row per board
         for n, o in sorted(out.items()):
             if o["cat"] == WALL:
                 ax.plot([n], [y], transform=tr, linestyle="none", markersize=8, clip_on=False, zorder=5,
                         **ps.dot_kwargs("wall", col))
-            elif o["cat"] == TIME_LIMITED:
-                ax.plot([n], [y], transform=tr, linestyle="none", markersize=8, clip_on=False, zorder=5,
-                        **ps.dot_kwargs("time_limited", col))
     ax.set_yscale("log")
     ps.style_axes(ax, log_y=True)
     ax.set_ylim(lo / 3, hi * 10 ** 1.1)
@@ -73,7 +76,9 @@ def plot_circuit(circuit, ref=False):
                 label=ps.BOARD_LABEL[b]) for b in sets]
     h += [Line2D([], [], linestyle="none", markersize=7, label=f"< 100 reps ({CAP_TEXT} cap)", **ps.dot_kwargs("capped")),
           Line2D([], [], linestyle="none", markersize=8, label="memory wall", **ps.dot_kwargs("wall", ps.INK_MUTED)),
-          Line2D([], [], linestyle="none", markersize=8, label="time-limited, not run", **ps.dot_kwargs("time_limited"))]
+          ]
+    if has_est:
+        h.append(Line2D([], [], linestyle=(0, (4, 2)), color=ps.INK_SECONDARY, linewidth=LINE_W, label="not run: estimate"))
     ax.legend(handles=h, loc="best", fontsize=8.5)
     note = "; ".join(f"{ps.BOARD_SHORT[b]}: {S.commit_note()}" for b, S in sets.items())
     ps.suptitle(fig, f"{ps.CIRCUIT_LABEL.get(circuit, circuit)} -- all boards (target REPS={tm.REPS}; {note})",

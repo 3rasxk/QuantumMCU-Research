@@ -141,13 +141,11 @@ def main():
             off_trials += s["off_trials"]
             draw_series(ax, board, circuit, s)
 
-            crossover_n, _ = find_crossover(s)
-            if crossover_n is not None:
+            crossover_n, cross_y = find_crossover(s)
+            if crossover_n is not None:      # the crossover is one dot on the offload curve at that n
                 any_crossover = True
-                ax.axvline(crossover_n, color=ps.REFERENCE_LINE, linestyle=":", linewidth=1.2, zorder=1)
-                ax.annotate(f"crossover\nn = {crossover_n}", xy=(crossover_n, 1), xycoords=("data", "axes fraction"),
-                            xytext=(4, -4), textcoords="offset points", ha="left", va="top",
-                            fontsize=8, color=ps.INK_PRIMARY)
+                ax.plot([crossover_n], [cross_y], linestyle="none", markersize=9, zorder=5,
+                        **ps.dot_kwargs("wall", ps.INK_PRIMARY))
             crossover_summary.append({
                 "board": board, "circuit": circuit, "baud_used": baud,
                 "crossover_n": crossover_n if crossover_n is not None else NO_CROSSOVER,
@@ -161,8 +159,8 @@ def main():
 
         handles, labels = axes[0].get_legend_handles_labels()
         if any_crossover:
-            handles.append(Line2D([], [], color=ps.REFERENCE_LINE, linestyle=":", linewidth=1.2))
-            labels.append("Crossover point (first n where offload median < local median)")
+            handles.append(Line2D([], [], linestyle="none", markersize=9, **ps.dot_kwargs("wall", ps.INK_PRIMARY)))
+            labels.append("crossover (first n where offload < local)")
         fig.legend(handles, labels, loc="outside lower center", ncol=3)
         ps.suptitle(fig, f"Phase 3 — {ps.BOARD_LABEL[board]}: local execution vs offload end-to-end latency "
                          f"(baud {baud}, REPS={max(loc_trials + off_trials)}, {ps.git_tag()})", fontsize=10)

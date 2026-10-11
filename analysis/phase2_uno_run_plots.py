@@ -97,7 +97,7 @@ def strip_events(ax, out, board_ymax_axes=0.95):
     the data curve, so they cannot be read as measured values."""
     tr = ax.get_xaxis_transform()
     for n, o in sorted(out.items()):
-        if o["cat"] in (WALL, TIME_LIMITED):
+        if o["cat"] == WALL:
             ax.plot([n], [board_ymax_axes], linestyle="none", transform=tr, clip_on=False, markersize=9,
                     **marker_kwargs(o["cat"]))
 
@@ -128,26 +128,30 @@ def plot_exec_time_vs_n(S):
         if out.get(n, {}).get("cat") == OK_CAPPED:
             ax.plot([n], [st[n][0]], linestyle="none", markersize=7, zorder=4, **marker_kwargs(OK_CAPPED, col))
     tl = [n for n, o in out.items() if o["cat"] == TIME_LIMITED]
-    model_ns = sorted(set(ns) | set(tl))
+    exs, eys = gd.estimate_segment(ns, st[ns[-1]][0], gd.predicted_by_n(S, 2), tl)
+    if exs:                            # skipped n: the project's own estimate, drawn as a plain dashed continuation
+        ax.plot(exs, eys, linestyle=(0, (4, 2)), color=col, linewidth=LINE_W, zorder=2)
     try:
-        ax.plot(model_ns, [tm.expected_exec_time_us(S.board, S.circuit, n) for n in model_ns], linestyle="--",
+        ax.plot(ns, [tm.expected_exec_time_us(S.board, S.circuit, n) for n in ns], linestyle="--",
                 color=ps.INK_SECONDARY, linewidth=ps.REF_LINE_WIDTH, zorder=2)
     except Exception as e:  # noqa: BLE001
         print(f"[{S.circuit}] no timing_model estimate ({e})")
     ax.set_yscale("log")
     ps.style_axes(ax, log_y=True)
-    lo, hi = min(min(v) for v in vals.values() if v), max(max(v) for v in vals.values() if v)
-    ax.set_ylim(lo / 2.5, hi * 10 ** (0.75 if any(o["cat"] in (WALL, TIME_LIMITED) for o in out.values()) else 0.3))
+    lo, hi = min(min(v) for v in vals.values() if v), max([max(v) for v in vals.values() if v] + list(eys))
+    ax.set_ylim(lo / 2.5, hi * 10 ** (0.75 if any(o["cat"] == WALL for o in out.values()) else 0.3))
     strip_events(ax, out)
     ax.set_xticks(sorted(set(ns) | {n for n, o in out.items() if o["cat"] in (WALL, TIME_LIMITED)}))
     ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Execution time per rep (µs, log scale)")
-    cats = [c for c in (OK_CAPPED, WALL, TIME_LIMITED) if any((o["cat"] == c) for o in out.values())]
+    cats = [c for c in (OK_CAPPED, WALL) if any((o["cat"] == c) for o in out.values())]
     est = Line2D([], [], linestyle="--", color=ps.INK_SECONDARY, linewidth=ps.REF_LINE_WIDTH,
                  label="timing model (estimate)")
     band = Line2D([], [], linestyle="-", color=col, linewidth=6, alpha=ps.BAND_ALPHA * 1.6,
                   label="IQR band")
     extra = [est, band]
+    if exs:
+        extra.append(Line2D([], [], linestyle=(0, (4, 2)), color=col, linewidth=LINE_W, label="not run: estimate"))
     if ps.SHOW_REPS:
         extra.append(Line2D([], [], linestyle="none", marker=".", color=ps.INK_MUTED, alpha=0.6, label="individual rep"))
     ok_line = Line2D([], [], linestyle="-", color=col, linewidth=LINE_W, label="median (100 reps)")
@@ -422,7 +426,7 @@ def plot_cumulative(board, ref=False):
     sets = {c: gd.PointSet(board, c, 2, ref) for c in circuits}
     fig, ax = plt.subplots(figsize=(8.4, 6.0), layout="constrained")
     lo = hi = None
-    walls, tls = {}, {}
+    walls, has_est = {}, False
     for c, S in sets.items():
         ns, vals, out = ok_series(S)
         if not ns:
@@ -436,7 +440,12 @@ def plot_cumulative(board, ref=False):
         ax.plot(capped, [m for n, m in zip(ns, med) if n in capped], linestyle="none", markersize=7, zorder=3,
                 **marker_kwargs(OK_CAPPED, ink))
         walls[c] = [n for n, o in out.items() if o["cat"] == WALL]
-        tls[c] = [n for n, o in out.items() if o["cat"] == TIME_LIMITED]
+        exs, eys = gd.estimate_segment(ns, med[-1], gd.predicted_by_n(S, 2),
+                                       [n for n, o in out.items() if o["cat"] == TIME_LIMITED])
+        if exs:                        # skipped n: the project's estimate as a plain dashed continuation
+            ax.plot(exs, eys, linestyle=(0, (4, 2)), color=ink, linewidth=LINE_W, zorder=2)
+            hi = max([hi] + list(eys))
+            has_est = True
     ax.set_yscale("log")
     ps.style_axes(ax, log_y=True)
     ax.set_ylim(lo / 2.5, hi * 10 ** 1.0)
@@ -446,14 +455,13 @@ def plot_cumulative(board, ref=False):
         for n in walls.get(c, []):
             ax.plot([n], [y], transform=tr, linestyle="none", markersize=8, color=ps.CIRCUIT_COLOR[c], **{
                 k: v for k, v in marker_kwargs(WALL, ps.CIRCUIT_COLOR[c]).items()})
-        for n in tls.get(c, []):
-            ax.plot([n], [y], transform=tr, linestyle="none", markersize=9, **marker_kwargs(TIME_LIMITED,
-                                                                                         ps.CIRCUIT_COLOR[c]))
     h = [Line2D([], [], linestyle="-", color=ps.CIRCUIT_COLOR[c], linewidth=LINE_W,
                 label=c) for c in circuits]
     h += [Line2D([], [], linestyle="none", markersize=8, **marker_kwargs(OK_CAPPED), label=CAT_LABEL[OK_CAPPED]),
           Line2D([], [], linestyle="none", markersize=8, **marker_kwargs(WALL), label=CAT_LABEL[WALL]),
-          Line2D([], [], linestyle="none", markersize=8, **marker_kwargs(TIME_LIMITED), label=CAT_LABEL[TIME_LIMITED])]
+          ]
+    if has_est:
+        h.append(Line2D([], [], linestyle=(0, (4, 2)), color=ps.INK_SECONDARY, linewidth=LINE_W, label="not run: estimate"))
     ax.legend(handles=h, loc="best", fontsize=8.5)
     ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Median execution time per rep (µs, log scale)")
@@ -462,8 +470,8 @@ def plot_cumulative(board, ref=False):
     ps.suptitle(fig, f"{ps.BOARD_LABEL[board]} -- all algorithms completed so far (target REPS={tm.REPS}, {note})", fontsize=10)
     ax.text(0.0, 1.04, f"{ps.BOARD_SHORT[board]}, Phase 2, micros() timing", transform=ax.transAxes, fontsize=8.5,
             color=ps.INK_SECONDARY)
-    gd.footnote(fig, "Median per point (IQR is in each circuit's own exec_time_vs_n chart). Wall / time-limited "
-                    "markers are on the top strip, one row per circuit, never on a curve.")
+    gd.footnote(fig, "Median per point (IQR is in each circuit's own exec_time_vs_n chart). Wall dots are on the top strip, "
+                    "one row per circuit, never on a curve. Dashed = not run, the project's own estimate (never a measurement).")
     return ps.save_figure_png_only(fig, sp.figures_dir(board, ref=ref), "all_algorithms_so_far")
 
 

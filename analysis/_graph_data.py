@@ -32,6 +32,32 @@ def read_rows(path):
         return list(csv.DictReader(f))
 
 
+def predicted_by_n(S, phase=2):
+    """{n: estimated time in us} for points that were skipped (not run) and estimated by the project, from the
+    predicted.csv beside raw.csv. Phase 2: per_rep_used_us (calibrated model, else model). Phase 3: per request,
+    calibrated, else model (seconds, converted). ESTIMATES, never measurements."""
+    out = {}
+    for r in read_rows(Path(S.dir) / "predicted.csv"):
+        if r.get("circuit") not in (None, "", S.circuit):
+            continue
+        if phase == 2:
+            v = f(r.get("per_rep_used_us"))
+        else:
+            sec = f(r.get("per_request_calibrated_s")) or f(r.get("per_request_model_s"))
+            v = sec * 1e6 if sec else None
+        if v:
+            out[int(r["n"])] = v
+    return out
+
+
+def estimate_segment(ns_measured, last_value, predicted, skipped_ns):
+    """(xs, ys) of the dashed continuation from the last measured point through the skipped n that have an estimate."""
+    extra = sorted(n for n in skipped_ns if n in predicted and n > ns_measured[-1])
+    if not extra:
+        return [], []
+    return [ns_measured[-1]] + extra, [last_value] + [predicted[n] for n in extra]
+
+
 def need(rows, cols, what):
     """Refuse a file that lacks a column the chart reads (never plot around it)."""
     if rows:
