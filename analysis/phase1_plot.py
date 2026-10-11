@@ -130,12 +130,14 @@ def plot_all(rows):
     for ax, (col, ylab, ptitle, thr) in zip(axes, SPECS):
         omitted += _draw_panel(ax, rows, col, ylab, thr)
         ax.set_title(f"{ptitle} vs circuit depth")
-    handles, labels = axes[0].get_legend_handles_labels()
-    handles.append(_threshold_handle())
-    labels.append(THRESHOLD_LABEL)
-    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, -0.005), ncol=5)
+    for ax, (col, ylab, ptitle, thr) in zip(axes, SPECS):      # symbol key inside every panel
+        h, lab = ax.get_legend_handles_labels()
+        if thr is not None:
+            h.append(_threshold_handle())
+            lab.append(THRESHOLD_LABEL)
+        ax.legend(h, lab, loc="upper left", fontsize=8.5)
     _title(fig, "Phase 1 -- infidelity and TVD vs circuit depth, all circuits")
-    _footnote(fig, y=-0.12, subtitle=True)
+    _footnote(fig, subtitle=True)
     _save_pub(fig, "phase1_accuracy")
     # one chart per measure (same layout as the Phase 2 charts: legend below the axes)
     for col, ylab, ptitle, thr in SPECS:
@@ -145,7 +147,7 @@ def plot_all(rows):
         if thr is not None:
             h.append(_threshold_handle())
             lab.append(THRESHOLD_LABEL)
-        ax.legend(h, lab, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=1)
+        ax.legend(h, lab, loc="upper left", fontsize=8.5)
         _title(fig, f"Phase 1 -- {ptitle.lower()} vs circuit depth, all circuits")
         _subtitle(ax)
         _footnote(fig)
@@ -192,13 +194,15 @@ def plot_per_algorithm(rows):
                     sec.set_xticks([p[0] for p in shown_pts])
                     sec.set_xticklabels([f"{p[1]:.1e}".replace("e+0", "e") if p[1] >= 100000 else str(p[1]) for p in shown_pts], fontsize=8)
                     sec.set_xlabel("circuit depth", fontsize=9)
-            h, lab = axes[0].get_legend_handles_labels()
-            h.append(_threshold_handle())
-            lab.append(THRESHOLD_LABEL)
-            fig.legend(h, lab, loc="upper center", bbox_to_anchor=(0.5, -0.005), ncol=2)
+            for ax, (col, ylab, ptitle, thr) in zip(axes, SPECS):   # symbol key inside every panel
+                h, lab = ax.get_legend_handles_labels()
+                if thr is not None:
+                    h.append(_threshold_handle())
+                    lab.append(THRESHOLD_LABEL)
+                ax.legend(h, lab, loc="best", fontsize=8.5)
             extra = f", depth {pts[0][1]}" if len({q[1] for q in pts}) == 1 else ""
             _title(fig, f"Phase 1 -- {ps.CIRCUIT_LABEL[circuit]}{extra}")
-            _footnote(fig, y=-0.12, subtitle=True)
+            _footnote(fig, subtitle=True)
             FIGURES_DIR = base / circuit
             _save_pub(fig, "infidelity_tvd")
     finally:

@@ -78,7 +78,7 @@ def plot_circuit(circuit, ref=False):
                  label="memory wall (recorded evidence), top strip"),
           Line2D([], [], linestyle="none", marker="*", markersize=10, markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY,
                  label=f"time-limited, not run (1 rep > {CAP_TEXT}), top strip")]
-    ax.legend(handles=h, loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=1, fontsize=9)
+    ax.legend(handles=h, loc="best", fontsize=8.5)
     note = "; ".join(f"{ps.BOARD_SHORT[b]}: {S.commit_note()}" for b, S in sets.items())
     ps.suptitle(fig, f"{ps.CIRCUIT_LABEL.get(circuit, circuit)} -- all boards (target REPS={tm.REPS}; {note})",
                 fontsize=10)

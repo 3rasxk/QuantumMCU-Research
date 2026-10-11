@@ -106,7 +106,7 @@ def strip_events(ax, out, board_ymax_axes=0.95):
 def legend_for(ax, cats, extra=()):
     h = [Line2D([], [], linestyle="none", markersize=8, **marker_kwargs(c)) for c in cats]
     ax.legend(h + list(extra), [CAT_LABEL[c] for c in cats] + [e.get_label() for e in extra],
-              loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=1, fontsize=9)
+              loc="best", fontsize=8.5)
 
 
 # --------------------------------------------------------------------------- 1. time vs n
@@ -146,9 +146,9 @@ def plot_exec_time_vs_n(S):
     ax.set_ylabel("Execution time per rep (µs, log scale)")
     cats = [c for c in (OK_CAPPED, WALL, TIME_LIMITED) if any((o["cat"] == c) for o in out.values())]
     est = Line2D([], [], linestyle="--", color=ps.INK_SECONDARY, linewidth=ps.REF_LINE_WIDTH,
-                 label="ESTIMATE: timing_model per-rep expectation (a model, not a measurement)")
+                 label="ESTIMATE: timing model (not a measurement)")
     band = Line2D([], [], linestyle="-", color=col, linewidth=6, alpha=ps.BAND_ALPHA * 1.6,
-                  label="IQR band (25th-75th percentile of the reps)")
+                  label="IQR band (25th-75th percentile)")
     extra = [est, band]
     if ps.SHOW_REPS:
         extra.append(Line2D([], [], linestyle="none", marker=".", color=ps.INK_MUTED, alpha=0.6, label="individual rep"))
@@ -269,7 +269,7 @@ def plot_memory_vs_n(S):
     if any(o["cat"] == WALL for o in out.values()):
         h.append(wall_h)
         lab.append(CAT_LABEL[WALL])
-    ax.legend(h, lab, loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=1, fontsize=9)
+    ax.legend(h, lab, loc="best", fontsize=8.5)
     finish(fig, ax, S, "memory vs n")
     gd.footnote(fig, "The wall marker only appears where the sweep recorded build_overflow / malloc_failed; "
                     "the board RAM line is the plan's figure, not a measurement.")
@@ -308,8 +308,8 @@ def plot_time_per_point(S):
     ax.set_xticks(ns)
     ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Compile + upload time per point, all attempts (s)")
-    ax.set_ylim(0, max(c + u for c, u in zip(comp, upl)) * 1.35)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=2)
+    ax.set_ylim(0, max(c + u for c, u in zip(comp, upl)) * 1.6)
+    ax.legend(loc="best", fontsize=8.5)
     finish(fig, ax, S, "reflash overhead per point (compile + upload)")
     gd.footnote(fig, "Summed over every attempt of a point (a retried or failed attempt still costs reflash time); "
                     "device run time is not part of this chart. Source: points.csv.")
@@ -343,7 +343,7 @@ def plot_scaling(S):
     a1.set_xlabel("Number of qubits, $n$")
     a1.set_ylabel("log2 of median time per rep (µs)")
     ps.style_axes(a1)
-    a1.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), fontsize=9)
+    a1.legend(loc="best", fontsize=8.5)
     rn = [n for n in full if n - 1 in med]
     a2.plot(rn, [med[n] / med[n - 1] for n in rn], linestyle="-", color=col, linewidth=LINE_W,
             label="t(n) / t(n-1)")
@@ -352,7 +352,7 @@ def plot_scaling(S):
     a2.set_xlabel("Number of qubits, $n$")
     a2.set_ylabel("Ratio of successive medians")
     ps.style_axes(a2)
-    a2.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), fontsize=9)
+    a2.legend(loc="best", fontsize=8.5)
     finish(fig, [a1, a2], S, "scaling of time per rep with n")
     gd.footnote(fig, "Points with 100 reps only; a fit of the median curve, not a model of the device. "
                     "Source: raw.csv.")
@@ -404,7 +404,7 @@ def plot_micros_vs_counter(S):
     h = [Line2D([], [], linestyle="-", color=col, linewidth=LINE_W, label="median (counter reported no anomaly)"),
          Line2D([], [], linestyle="none", marker="o", markerfacecolor="white", markeredgecolor=col,
                 markersize=5.5, markeredgewidth=1.4, label="counter flagged an anomaly")]
-    a2.legend(h, [x.get_label() for x in h], loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2, fontsize=9)
+    a2.legend(h, [x.get_label() for x in h], loc="best", fontsize=8.5)
     ps.suptitle(fig, f"{ps.BOARD_LABEL[S.board]} -- {ps.CIRCUIT_LABEL.get(S.circuit, S.circuit)} -- micros() vs counter "
                      f"(target REPS={tm.REPS}, {S.commit_note()})", fontsize=10)
     a1.text(0.0, 1.05, f"{ps.BOARD_SHORT[S.board]}, Phase 2, micros() and ESP32 counter (self-loopback tested only, "
@@ -456,7 +456,7 @@ def plot_cumulative(board, ref=False):
     h += [Line2D([], [], linestyle="none", markersize=8, **marker_kwargs(OK_CAPPED), label=CAT_LABEL[OK_CAPPED]),
           Line2D([], [], linestyle="none", markersize=8, **marker_kwargs(WALL), label=CAT_LABEL[WALL] + ", top strip"),
           Line2D([], [], linestyle="none", markersize=8, **marker_kwargs(TIME_LIMITED), label=CAT_LABEL[TIME_LIMITED] + ", top strip")]
-    ax.legend(handles=h, loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=1, fontsize=9)
+    ax.legend(handles=h, loc="best", fontsize=8.5)
     ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Median execution time per rep (µs, log scale)")
     commits = list(dict.fromkeys(c for S in sets.values() for c in S.commits()))

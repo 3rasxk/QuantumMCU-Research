@@ -129,7 +129,8 @@ def plot_time_breakdown(S):
             a1.bar(ns, share[:, i], bottom=bottom, color=greys[i], hatch=hatches[i], edgecolor="white", label=names[i],
                    zorder=3)
             bottom += share[:, i]
-        a1.set_ylim(0, 100)
+        a1.set_ylim(0, 150)               # headroom so the symbol key sits above the bars
+        a1.set_yticks(range(0, 101, 20))
         a1.set_ylabel("Share of the point's time (%)")
         a1.set_xticks(ns)
         a1.set_xlabel("Number of qubits, $n$")
@@ -144,7 +145,7 @@ def plot_time_breakdown(S):
         a2.set_ylabel("Time per request (µs, log scale)")
         a2.legend(loc="upper left", fontsize=9)
         h, lab = a1.get_legend_handles_labels()
-        a1.legend(h, lab, loc="upper center", bbox_to_anchor=(0.5, -0.17), ncol=1, fontsize=9)
+        a1.legend(h, lab, loc="best", fontsize=8.5)
         finish(fig, [a1, a2], S, f"time breakdown per request (baud {baud})")
         clipped = [r[0] for r in rows if r[5]]
         gd.footnote(fig, "Per request = point totals / requests. PC simulation = pc_sim_s_total; rest of round trip = "
@@ -216,7 +217,7 @@ def plot_latency_vs_n(S):
     if nr:
         h.append(Line2D([], [], linestyle="none", marker="*", markersize=10, markerfacecolor="white", markeredgecolor=ps.INK_PRIMARY))
         lab.append("not run (PC simulation predicted over the cap or the PC's memory), top strip")
-    ax.legend(h, lab, loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=1, fontsize=9)
+    ax.legend(h, lab, loc="best", fontsize=8.5)
     finish(fig, ax, S, "offload round-trip latency vs n")
     gd.footnote(fig, gd.reps_text(len(lat[k]) for k in ok_keys).replace("repetitions", "requests") +
                     "; line = median, band = IQR (25th-75th pct), none where a point has one request; all requests used (rep 0 included).")
@@ -320,7 +321,7 @@ def plot_offload_vs_local(S):
     ax.set_ylabel("Time (µs, log scale)")
     h = [Line2D([], [], linestyle="-", color=series[0][2], linewidth=LINE_W, label=series[0][0]),
          Line2D([], [], linestyle="-", color=series[1][2], linewidth=LINE_W, label=series[1][0])]
-    ax.legend(handles=h, loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=1, fontsize=9)
+    ax.legend(handles=h, loc="best", fontsize=8.5)
     note = f"Phase 2 {L.commit_note()}; Phase 3 {S.commit_note()}"
     ps.suptitle(fig, f"{ps.BOARD_LABEL[S.board]} -- {ps.CIRCUIT_LABEL.get(S.circuit, S.circuit)} -- local vs offload "
                      f"(target REPS={tm.REPS}, {note})", fontsize=10)
