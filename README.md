@@ -17,6 +17,31 @@ diverse microcontroller architectures for edge computing.
 microcontroller simulate the quantum circuit *locally*, or *offload* it to a
 PC running Qiskit Aer?
 
+## Results at a glance
+
+Median time per run vs number of qubits `n`, every board and every circuit in one chart per phase
+(one colour per line, one tone family per board).
+
+| Phase 2: run on the board (`micros()`) | Phase 3: offload round trip to the PC |
+|---|---|
+| ![Phase 2](data/figures/phase2/all_boards_all_circuits.png) | ![Phase 3](data/figures/phase3/all_boards_all_circuits.png) |
+
+**Phase 4: when to offload.** The crossover `n*` is the first whole `n` where the offload round trip
+beats the local run. Memory limit and crossover rule:
+
+![Phase 4 crossover](data/figures/phase4/all_boards_all_circuits.png)
+
+![Phase 4 equations](docs/design/phase4_equations.png)
+
+Example circuit (grover, `n = 2`, one iteration):
+
+![Grover circuit](docs/design/grover_circuit.png)
+
+Figure scripts: `analysis/phase2_all_in_one.py [--phase 3]`, `analysis/phase4_all_in_one.py`,
+`docs/design/make_phase4_equations.py`, `docs/design/make_grover_circuit.py`.
+
+---
+
 ## What is measured, and what is not
 
 - **Measured (Phase 2, on-device):** wall-clock execution time per circuit
@@ -91,7 +116,7 @@ data/
                                        directory per (phase, board, circuit)
   processed/            aggregated summaries (currently just .gitkeep --
                         not yet regenerated for the REPS=100 dataset)
-  figures/<board>/<circuit>/*.png     per-run diagnostic charts, PNG only
+  figures/phase<2|3>/<board>/<circuit>/*.png     per-run diagnostic charts, PNG only
   archive/phase{2,3}/<board>/<circuit>/<timestamp>/   --fresh's archived
                         data, moved not deleted, MANIFEST.json per folder --
                         read by nothing in the pipeline, safe to delete
@@ -421,8 +446,8 @@ data/raw/phase<N>/<board>/<circuit>/{no_ref,with_ref}/
   ref/                with_ref/ only — ref_pulses.csv, ref_points.csv, ref_compare.csv,
                         ref_compare_points.csv, ref_issues.log (schemas: pc/counter/ref_schema.py)
 
-data/figures/<board>/<circuit>/{no_ref,with_ref}/{exec_time_vs_n,outcomes_vs_n,time_per_point}.png
-data/figures/<board>/{no_ref,with_ref}/all_algorithms_so_far.png   cumulative, regenerated every run
+data/figures/phase2/<board>/<circuit>/{exec_time_vs_n,outcomes_vs_n,time_per_point}.png
+data/figures/phase2/<board>/all_algorithms_so_far.png   cumulative, regenerated every run
 ```
 
 **no_ref vs with_ref (renamed 2026-10-04 from no_la/with_la; no data existed under either name).**
