@@ -88,17 +88,25 @@ def draw_series(ax, ns, ys, color, linestyle):
     return segs
 
 
+def _sci_label(v, _pos=None):
+    """10^k, 2x10^k, 5x10^k as mathtext (1 / 2 / 5 mantissa of a decade)."""
+    e = int(math.floor(math.log10(v) + 1e-9))
+    m = int(round(v / 10.0 ** e))
+    return rf"$10^{{{e}}}$" if m == 1 else rf"${m}\times10^{{{e}}}$"
+
+
 def decade_axis(ax, ymin, ymax):
-    """Log y with 10^k labels (every 2 decades; every decade when the data span < 2) and limits hugging the decades."""
+    """Log y labelled at 1, 2 and 5 of every decade (10^k, 2x10^k, 5x10^k); limits hug the surrounding decades."""
     lo, hi = math.floor(math.log10(ymin) + 0.05), math.ceil(math.log10(ymax) - 0.05)
     hi = max(hi, lo + 1)
-    step = 2 if hi - lo >= 2 else 1
+    ylim = (10.0 ** (lo - 0.17), 10.0 ** (hi + 0.12))
+    ticks = [m * 10.0 ** e for e in range(lo - 1, hi + 1) for m in (1, 2, 5) if ylim[0] <= m * 10.0 ** e <= ylim[1]]
     ax.set_yscale("log")
-    ax.yaxis.set_major_locator(mticker.FixedLocator([10.0 ** e for e in range(lo, hi + 1, step)]))
-    ax.yaxis.set_major_formatter(mticker.LogFormatterSciNotation(base=10))
+    ax.yaxis.set_major_locator(mticker.FixedLocator(ticks))
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_sci_label))
     ax.yaxis.set_minor_locator(mticker.NullLocator())
-    ax.set_ylim(10.0 ** (lo - 0.17), 10.0 ** (hi + 0.12))
-    return lo, hi, step
+    ax.set_ylim(*ylim)
+    return lo, hi, 1
 
 
 def place_legend(ax, handles, segs):
