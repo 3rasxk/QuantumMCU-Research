@@ -18,7 +18,6 @@
 #   memory_vs_n.png        state-vector bytes vs the board's RAM; Uno: compile RAM %, ESP: free heap and largest block
 #   time_per_point.png     compile + upload time per point (all attempts), attempts and hang budget labelled
 #   scaling.png            ratio of successive-n medians and log2(time) vs n with a fit (fit range on the chart)
-#   micros_vs_counter.png  (--ref, physical counter only) micros() minus counter, median + IQR, per n
 #   all_algorithms_so_far.png (per board) every completed circuit, walls / time limits marked as in outcomes_vs_n
 #
 # Use:  .venv/bin/python analysis/phase2_uno_run_plots.py --board uno --circuit h_all [--ref]
@@ -59,7 +58,7 @@ CAT_LABEL = {
 
 def subtitle(S):
     return (f"{ps.BOARD_SHORT[S.board]}, Phase 2, micros() timing, "
-            f"{'counter reference collected (see micros_vs_counter)' if S.ref else 'no counter reference'}")
+            f"{'counter reference collected' if S.ref else 'no counter reference'}")
 
 
 def finish(fig, ax, S, what):
@@ -361,61 +360,6 @@ def plot_scaling(S):
     return save(fig, S, "scaling")
 
 
-# --------------------------------------------------------------------------- 8. micros() vs counter
-
-def plot_micros_vs_counter(S):
-    if not S.ref:
-        return None
-    okc, why = S.physical_counter()
-    if not okc:
-        print(f"[{S.circuit}] counter reference not established as physical ({why}) -- skipping micros_vs_counter")
-        return None
-    cmp_ = gd.need(gd.read_rows(S.dir / "ref" / "ref_compare.csv"),
-                   ["n", "rep", "micros_us", "counter_us", "diff_us", "diff_pct"], "ref_compare.csv")
-    pts = {int(r["n"]): r for r in gd.read_rows(S.dir / "ref" / "ref_compare_points.csv")}
-    by_n = {}
-    for r in cmp_:
-        by_n.setdefault(int(r["n"]), []).append(r)
-    rows = []
-    for n in sorted(by_n):
-        st = pts.get(n, {}).get("ref_status", "")
-        if st not in ("ok", "anomaly", "count_mismatch") or len(by_n[n]) < gd.MIN_PAIRS:
-            continue
-        us = [float(r["diff_us"]) for r in by_n[n]]
-        pc = [float(r["diff_pct"]) for r in by_n[n]]
-        rows.append((n, st, gd.stats(us), gd.stats(pc), len(us)))
-    if not rows:
-        print(f"[{S.circuit}] no joined counter comparison with >= {gd.MIN_PAIRS} pairs -- skipping micros_vs_counter")
-        return None
-    col = ps.BOARD_COLOR[S.board]
-    fig, (a1, a2) = plt.subplots(2, 1, figsize=(7.4, 7.2), sharex=True, layout="constrained")
-    for ax, k, unit in ((a1, 2, "µs"), (a2, 3, "%")):
-        ax.axhline(0, color=ps.INK_PRIMARY, linewidth=1.0, zorder=1)
-        ps.iqr_band(ax, [r[0] for r in rows], [r[k][1] for r in rows], [r[k][2] for r in rows], col)
-        ax.plot([r[0] for r in rows], [r[k][0] for r in rows], linestyle="-", color=col, linewidth=LINE_W, zorder=2)
-        for r in rows:                 # only a point the counter flagged gets an open marker
-            if r[1] != "ok":
-                ax.plot([r[0]], [r[k][0]], linestyle="none", markersize=5.5, zorder=4, marker="o",
-                        markerfacecolor="white", markeredgecolor=col, markeredgewidth=1.4)
-        ax.set_yscale("symlog", linthresh=1.0 if unit == "µs" else 0.1)
-        ax.set_ylabel(f"micros() minus counter ({unit}, symlog)")
-        ax.yaxis.set_major_formatter(ps.plain_number_formatter())
-        ps.style_axes(ax)
-    a2.set_xticks([r[0] for r in rows])
-    a2.set_xlabel("Number of qubits, $n$")
-    h = [Line2D([], [], linestyle="-", color=col, linewidth=LINE_W, label="median"),
-         Line2D([], [], linestyle="none", marker="o", markerfacecolor="white", markeredgecolor=col,
-                markersize=6, markeredgewidth=1.4, label="counter flagged anomaly")]
-    a2.legend(h, [x.get_label() for x in h], loc="best", fontsize=8.5)
-    ps.suptitle(fig, f"{ps.BOARD_LABEL[S.board]} -- {ps.CIRCUIT_LABEL.get(S.circuit, S.circuit)} -- micros() vs counter "
-                     f"(target REPS={tm.REPS}, {S.commit_note()})", fontsize=10)
-    a1.text(0.0, 1.05, f"{ps.BOARD_SHORT[S.board]}, Phase 2, micros() and ESP32 counter (self-loopback tested only, "
-            "NOT externally calibrated)", transform=a1.transAxes, fontsize=8.5, color=ps.INK_SECONDARY)
-    gd.footnote(fig, f"Line = median, band = IQR of the per-rep difference; only points with >= {gd.MIN_PAIRS} paired reps. "
-                    "Differences are relative to this counter, not to a traceable reference.")
-    return save(fig, S, "micros_vs_counter")
-
-
 # --------------------------------------------------------------------------- 7. cumulative
 
 def plot_cumulative(board, ref=False):
@@ -489,8 +433,7 @@ def main():
         print(f"refused: {e}", file=sys.stderr)
         sys.exit(2)
     generated = []
-    for fn in (plot_exec_time_vs_n, plot_outcomes_vs_n, plot_memory_vs_n, plot_time_per_point, plot_scaling,
-               plot_micros_vs_counter):
+    for fn in (plot_exec_time_vs_n, plot_outcomes_vs_n, plot_memory_vs_n, plot_time_per_point, plot_scaling):
         paths = fn(S)
         if paths:
             generated.extend(paths)

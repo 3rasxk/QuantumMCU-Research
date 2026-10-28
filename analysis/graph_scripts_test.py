@@ -167,7 +167,7 @@ def main():
         fig = root / "data" / "figures"
         names = {p.relative_to(fig).as_posix() for p in fig.rglob("*") if p.is_file()}
         check("only PNG files under data/figures", all(n.endswith(".png") for n in names), str(sorted(names)))
-        for stem in ("exec_time_vs_n", "outcomes_vs_n", "memory_vs_n", "time_per_point", "scaling", "micros_vs_counter"):
+        for stem in ("exec_time_vs_n", "outcomes_vs_n", "memory_vs_n", "time_per_point", "scaling"):
             check(f"phase 2 {stem}.png written", f"phase2/uno/h_all/{stem}.png" in names)
         check("cumulative chart written", "phase2/uno/all_algorithms_so_far.png" in names)
         check("cross-board chart written", "phase2/compare_h_all.png" in names)
@@ -232,13 +232,9 @@ print('count', len(ys), 'max', max(ys))
         r = run(root, "phase2_uno_run_plots.py", "--board", "uno", "--circuit", "h_all")
         check("no_ref run succeeds on the no_ref bucket", r.returncode == 0, r.stderr[-200:])
 
-        # --- counter chart only for a physical counter
-        d = p2_dir(root, "with_ref", "esp32", "h_all")
-        (fig / "phase2" / "esp32" / "h_all" / "micros_vs_counter.png").unlink()
-        (d / "env" / "s1.ref.json").write_text(json.dumps({"counter_port": "SIM", "counter_fw_sha256": "00"}))
-        r = run(root, "phase2_uno_run_plots.py", "--board", "esp32", "--circuit", "h_all", "--ref")
-        check("simulator-port session: no micros_vs_counter chart",
-              not (fig / "phase2" / "esp32" / "h_all" / "micros_vs_counter.png").exists() and r.returncode == 0)
+        # --- the per-run micros() vs counter chart is gone (superseded by analysis/phase2/plot_micros_vs_counter.py)
+        check("no per-run micros_vs_counter chart is written",
+              not any(n.endswith("micros_vs_counter.png") for n in names))
 
         # --- missing columns refused (exit 2, nothing plotted around)
         d = p2_dir(root, "with_ref", "esp32", "h_all")
