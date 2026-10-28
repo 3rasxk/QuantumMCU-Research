@@ -5,10 +5,7 @@
 # Reads data/raw/phase2/<board>/<circuit>/with_ref/ref/ref_compare.csv read-only (the post-restart dataset: micros() and the
 # counter timed the same rep). A point needs >= MIN_PAIRS paired reps. A line ends where the data ends and breaks at a missing n;
 # nothing is filled or interpolated. A board x circuit without counter data gets no figure and is listed.
-# Writes data/figures/phase2/micros_vs_counter/<board>_<circuit>.png (both methods, log y) and
-# data/figures/phase2/micros_minus_counter/<board>_<circuit>.png (micros() - counter in us, linear y, a tick every 0.1 us (every 1 us when the axis spans > 10 us), numbers every 1-10 us; only the
-# leading n whose differences fit a DIFF_WINDOW_US window are drawn, the rest is named on the figure), plus
-# data/derived/phase2_micros_vs_counter.csv.
+# Writes data/figures/phase2/micros_vs_counter/<board>_<circuit>.png and data/derived/phase2_micros_vs_counter.csv.
 # PNGs carry no timestamp metadata, so a re-run gives identical files.
 #
 # Use:  .venv/bin/python analysis/phase2/plot_micros_vs_counter.py
@@ -29,11 +26,9 @@ from shared import plot_style as ps  # noqa: E402
 
 RAW_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 FIG_DIR = REPO_ROOT / "data" / "figures" / "phase2" / "micros_vs_counter"
-DIFF_DIR = REPO_ROOT / "data" / "figures" / "phase2" / "micros_minus_counter"
 CSV_PATH = REPO_ROOT / "data" / "derived" / "phase2_micros_vs_counter.csv"
 MIN_PAIRS = 10          # fewer paired reps: no median drawn (same rule as the other micros()/counter charts)
 OUTLIER_PCT = 5.0
-DIFF_WINDOW_US = 20.0   # widest y range (max - min of the drawn differences) that still reads at one tick per 1 us
 DASH = (0, (4, 3))
 COUNTER_COLOR, MICROS_COLOR = "#1f77b4", "#ff7f0e"   # single group: each series takes the base of a different family
 
@@ -152,47 +147,6 @@ def plot_one(s, board, circuit):
     return loc, ticks
 
 
-def plot_diff_one(s, board, circuit):
-    """micros() - counter in us, linear y with a tick every 1 us. Points are taken in n order while max - min of the drawn
-    differences stays within DIFF_WINDOW_US; the first n that would break the window and everything after it is left out
-    (named on the figure, still in the CSV)."""
-    s = s.sort_values("n")
-    keep = []
-    for n, d in zip(s.n, s.diff_us):
-        vals = [v for _, v in keep] + [d]
-        if keep and max(vals) - min(vals) > DIFF_WINDOW_US:
-            break
-        keep.append((int(n), float(d)))
-    cut = [int(n) for n in s.n if n > keep[-1][0]]
-    ns, ds = [k[0] for k in keep], [k[1] for k in keep]
-    fig, ax = plt.subplots(figsize=(9.4, 6.2), layout="constrained")
-    segs = draw_series(ax, ns, ds, COUNTER_COLOR, "-")
-    lo, hi = math.floor(min(ds)) - 1, math.ceil(max(ds)) + 1
-    ax.set_ylim(lo, hi)
-    step = next(st for st in (1, 2, 5, 10) if (hi - lo) / st <= 12)       # numbers only where they do not crowd
-    ax.yaxis.set_major_locator(mticker.MultipleLocator(step))
-    ax.yaxis.set_minor_locator(mticker.MultipleLocator(0.1 if hi - lo <= 10 else 1))   # 0.1 us ticks fuse into a band on a tall axis
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _p: f"{v:g}".replace("-", "\u2212")))
-    ax.tick_params(axis="y", which="minor", length=3.5, width=0.8)
-    if lo < 0 < hi:
-        ax.axhline(0, color="black", linewidth=0.8, zorder=1)
-    ax.set_xticks(ns)
-    ax.set_title(f"Phase 2 -- micros() minus counter, {ps.BOARD_SHORT[board]}, {circuit}")
-    ax.set_xlabel("Number of qubits, $n$")
-    ax.set_ylabel("micros() $-$ counter (µs)")
-    handle = Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, label="micros() $-$ counter")
-    place_legend(ax, [handle], segs)
-    if cut:
-        ax.text(0.99, 0.02, "n = " + ", ".join(map(str, cut)) + f" not shown (difference outside a {DIFF_WINDOW_US:g} µs window)",
-                transform=ax.transAxes, ha="right", va="bottom", fontsize=9)
-    # ps.save_png switches minor ticks off; here they are the 0.1 us ticks, so save with the same settings but keep them
-    path = ps._check_output_path(DIFF_DIR / f"{board}_{circuit}.png", ".png")
-    fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
-    print(f"figure -> {path}")
-    plt.close(fig)
-    return ns, cut, (lo, hi)
-
-
 def main():
     ps.apply_style()
     df, skipped = load_points()
@@ -216,12 +170,6 @@ def main():
             made += 1
             print(f"{b}_{c}: legend={loc} ytick(lo,hi,step)={ticks}" + ("  <-- under 2 decades" if ticks[1] - ticks[0] < 2 else ""))
     print(f"{made} figure(s) written")
-    for b in ps.BOARD_ORDER:
-        for c in ps.CIRCUIT_ORDER:
-            s = df[(df.board == b) & (df.circuit == c)] if len(df) else df
-            if not s.empty:
-                ns, cut, ylim = plot_diff_one(s, b, c)
-                print(f"diff {b}_{c}: n shown={ns} not shown={cut} ylim={ylim}")
     for sk in skipped:
         print("skipped:", *sk)
     big = df[df.diff_pct.abs() > OUTLIER_PCT].sort_values(["board", "circuit", "n"])
