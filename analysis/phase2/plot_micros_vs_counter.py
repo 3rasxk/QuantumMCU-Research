@@ -91,15 +91,17 @@ def _sci_label(v, _pos=None):
 
 
 def decade_axis(ax, ymin, ymax):
-    """Log y labelled at 1, 2 and 5 of every decade (10^k, 2x10^k, 5x10^k); limits hug the surrounding decades."""
+    """Log y: a numbered tick (10^k) at every decade, unnumbered small ticks at 2x and 5x; limits hug the decades."""
     lo, hi = math.floor(math.log10(ymin) + 0.05), math.ceil(math.log10(ymax) - 0.05)
     hi = max(hi, lo + 1)
     ylim = (10.0 ** (lo - 0.17), 10.0 ** (hi + 0.12))
-    ticks = [m * 10.0 ** e for e in range(lo - 1, hi + 1) for m in (1, 2, 5) if ylim[0] <= m * 10.0 ** e <= ylim[1]]
+    inside = lambda vs: [v for v in vs if ylim[0] <= v <= ylim[1]]  # noqa: E731
     ax.set_yscale("log")
-    ax.yaxis.set_major_locator(mticker.FixedLocator(ticks))
+    ax.yaxis.set_major_locator(mticker.FixedLocator(inside([10.0 ** e for e in range(lo - 1, hi + 1)])))
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(_sci_label))
-    ax.yaxis.set_minor_locator(mticker.NullLocator())
+    ax.yaxis.set_minor_locator(mticker.FixedLocator(inside([m * 10.0 ** e for e in range(lo - 1, hi + 1) for m in (2, 5)])))
+    ax.yaxis.set_minor_formatter(mticker.NullFormatter())
+    ax.tick_params(axis="y", which="minor", length=3.5, width=0.8)
     ax.set_ylim(*ylim)
     return lo, hi, 1
 
@@ -143,7 +145,11 @@ def plot_one(s, board, circuit):
     ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Median execution time per rep (µs, log scale)")
     loc = place_legend(ax, handles, segs)
-    ps.save_png(fig, FIG_DIR / f"{board}_{circuit}.png")
+    # ps.save_png switches minor ticks off; here they are the unnumbered 2x / 5x ticks, so save with the same settings
+    path = ps._check_output_path(FIG_DIR / f"{board}_{circuit}.png", ".png")
+    fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
+    print(f"figure -> {path}")
+    plt.close(fig)
     return loc, ticks
 
 
