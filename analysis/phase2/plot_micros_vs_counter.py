@@ -5,7 +5,7 @@
 # Reads data/raw/phase2/<board>/<circuit>/with_ref/ref/ref_compare.csv read-only (the post-restart dataset: micros() and the
 # counter timed the same rep). A point needs >= MIN_PAIRS paired reps. A line ends where the data ends and breaks at a missing n;
 # nothing is filled or interpolated. A board x circuit without counter data gets no figure and is listed.
-# Each figure: top = both methods (log y), bottom = (micros() - counter) / counter in % (linear y) to show the trend.
+# Each figure: counter = the solid line at 0, micros() = its gap to the counter in us (dashed), symlog y (linear within +-1 us).
 # Writes data/figures/phase2/micros_vs_counter/<board>_<circuit>.png and data/derived/phase2_micros_vs_counter.csv.
 # PNGs carry no timestamp metadata, so a re-run gives identical files.
 #
@@ -132,32 +132,51 @@ def place_legend(ax, handles, segs):
     return best
 
 
+def _plain(v, _pos=None):
+    """0, 0.5, 1, 10, 100, 1,000 ... with a real minus sign."""
+    txt = f"{abs(v):,.0f}" if abs(v) >= 1 else f"{abs(v):g}"
+    return ("\u2212" if v < 0 else "") + txt
+
+
+def symlog_axis(ax, lo, hi):
+    """Linear from -1 to 1 us (a tick every 0.1 us, numbers every 0.5 us), logarithmic beyond that (numbers at +-1, 10, 100 ...,
+    small ticks at 2-9 x 10^k). The linear core resolves the sub-microsecond gaps, the log wings keep large gaps on the same axis."""
+    ax.set_yscale("symlog", linthresh=1.0, linscale=2.0)
+    top = hi * 1.6 if hi > 1 else max(hi, 0) + 0.5
+    bot = lo * 1.6 if lo < -1 else min(lo, 0) - 0.5
+    ax.set_ylim(bot, top)
+    decades = [10.0 ** e for e in range(0, 10)]
+    major = [0.0, 0.5, -0.5] + decades + [-d for d in decades]
+    minor = [round(0.1 * k, 1) for k in range(-10, 11)] + [m * d * sgn for d in decades for m in range(2, 10) for sgn in (1, -1)]
+    inside = lambda vs: sorted({v for v in vs if bot <= v <= top})  # noqa: E731
+    ax.yaxis.set_major_locator(mticker.FixedLocator(inside(major + [1.0, -1.0])))
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_plain))
+    ax.yaxis.set_minor_locator(mticker.FixedLocator(inside(minor)))
+    ax.yaxis.set_minor_formatter(mticker.NullFormatter())
+    ax.tick_params(axis="y", which="minor", length=3.5, width=0.8)
+
+
 def plot_one(s, board, circuit):
+    """counter is the reference, drawn as the solid line at 0; micros() is drawn as its gap to the counter in us (dashed)."""
     s = s.sort_values("n")
-    fig, (ax, bx) = plt.subplots(2, 1, figsize=(9.4, 8.2), sharex=True, layout="constrained",
-                                 gridspec_kw={"height_ratios": [3, 1.3]})
-    segs = draw_series(ax, s.n.tolist(), s.median_counter_us.tolist(), COUNTER_COLOR, "-")
-    segs += draw_series(ax, s.n.tolist(), s.median_micros_us.tolist(), MICROS_COLOR, DASH)
+    fig, ax = plt.subplots(figsize=(9.4, 6.2), layout="constrained")
+    ns = s.n.tolist()
+    segs = draw_series(ax, ns, [0.0] * len(ns), COUNTER_COLOR, "-")
+    segs += draw_series(ax, ns, s.diff_us.tolist(), MICROS_COLOR, DASH)
     handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, linestyle="-", label="counter (reference)"),
                Line2D([], [], color=MICROS_COLOR, linewidth=2.0, linestyle=DASH, label="micros()")]
-    ticks = decade_axis(ax, s[["median_counter_us", "median_micros_us"]].min().min(),
-                        s[["median_counter_us", "median_micros_us"]].max().max())
+    symlog_axis(ax, min(s.diff_us.min(), 0.0), max(s.diff_us.max(), 0.0))
     ax.set_xticks(sorted(s.n.unique()))
     ax.set_title(f"Phase 2 -- micros() vs counter, {ps.BOARD_SHORT[board]}, {circuit}")
-    ax.set_ylabel("Median execution time per rep (µs, log scale)")
+    ax.set_xlabel("Number of qubits, $n$")
+    ax.set_ylabel("Time relative to counter (µs, symlog)")
     loc = place_legend(ax, handles, segs)
-    # trend panel: the two lines above overlap on a log axis, so show (micros() - counter) / counter on its own linear axis
-    bx.axhline(0, color="black", linewidth=0.8, zorder=1)
-    draw_series(bx, s.n.tolist(), s.diff_pct.tolist(), MICROS_COLOR, "-")
-    bx.yaxis.set_major_locator(mticker.MaxNLocator(nbins=5))
-    bx.set_xlabel("Number of qubits, $n$")
-    bx.set_ylabel("micros() vs counter (%)")
-    # ps.save_png switches minor ticks off; here they are the unnumbered 2x / 5x ticks, so save with the same settings
+    # ps.save_png switches minor ticks off; here they are the 0.1 us ticks, so save with the same settings
     path = ps._check_output_path(FIG_DIR / f"{board}_{circuit}.png", ".png")
     fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
     print(f"figure -> {path}")
     plt.close(fig)
-    return loc, ticks
+    return loc, (0, 0, 1)
 
 
 def main():
