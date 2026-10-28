@@ -5,6 +5,7 @@
 # Reads data/raw/phase2/<board>/<circuit>/with_ref/ref/ref_compare.csv read-only (the post-restart dataset: micros() and the
 # counter timed the same rep). A point needs >= MIN_PAIRS paired reps. A line ends where the data ends and breaks at a missing n;
 # nothing is filled or interpolated. A board x circuit without counter data gets no figure and is listed.
+# Each figure: |micros() - counter| in us on a log y axis numbered at 1/2/5 per decade (hollow dot where micros() is above the counter).
 # Writes data/figures/phase2/micros_vs_counter/<board>_<circuit>.png and data/derived/phase2_micros_vs_counter.csv.
 # PNGs carry no timestamp metadata, so a re-run gives identical files.
 #
@@ -83,25 +84,21 @@ def draw_series(ax, ns, ys, color, linestyle):
     return segs
 
 
-def _sci_label(v, _pos=None):
-    """10^k, 2x10^k, 5x10^k as mathtext (1 / 2 / 5 mantissa of a decade)."""
-    e = int(math.floor(math.log10(v) + 1e-9))
-    m = int(round(v / 10.0 ** e))
-    return rf"$10^{{{e}}}$" if m == 1 else rf"${m}\times10^{{{e}}}$"
+def _plain(v, _pos=None):
+    """0.1, 0.2, 0.5, 1, 2, 5, 10 ... 100,000 as plain numbers."""
+    return f"{v:,.0f}" if v >= 1 else f"{v:g}"
 
 
-def decade_axis(ax, ymin, ymax):
-    """Log y: a numbered tick (10^k) at every decade, unnumbered small ticks at 2x and 5x; limits hug the decades."""
+def gap_axis(ax, ymin, ymax):
+    """Log y numbered at 1, 2 and 5 of every decade, so a gap of 0.1 us is readable; limits hug the surrounding decades."""
     lo, hi = math.floor(math.log10(ymin) + 0.05), math.ceil(math.log10(ymax) - 0.05)
     hi = max(hi, lo + 1)
     ylim = (10.0 ** (lo - 0.17), 10.0 ** (hi + 0.12))
-    inside = lambda vs: [v for v in vs if ylim[0] <= v <= ylim[1]]  # noqa: E731
+    ticks = [round(m * 10.0 ** e, 6) for e in range(lo - 1, hi + 1) for m in (1, 2, 5) if ylim[0] <= m * 10.0 ** e <= ylim[1]]
     ax.set_yscale("log")
-    ax.yaxis.set_major_locator(mticker.FixedLocator(inside([10.0 ** e for e in range(lo - 1, hi + 1)])))
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_sci_label))
-    ax.yaxis.set_minor_locator(mticker.FixedLocator(inside([m * 10.0 ** e for e in range(lo - 1, hi + 1) for m in (2, 5)])))
-    ax.yaxis.set_minor_formatter(mticker.NullFormatter())
-    ax.tick_params(axis="y", which="minor", length=3.5, width=0.8)
+    ax.yaxis.set_major_locator(mticker.FixedLocator(ticks))
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_plain))
+    ax.yaxis.set_minor_locator(mticker.NullLocator())
     ax.set_ylim(*ylim)
     return lo, hi, 1
 
@@ -132,24 +129,26 @@ def place_legend(ax, handles, segs):
 
 
 def plot_one(s, board, circuit):
+    """|micros() - counter| in us (measured medians), log y. micros() is below the counter at almost every point; a point where it
+    is above is marked with a hollow dot, so the sign is not lost on a log axis."""
     s = s.sort_values("n")
     fig, ax = plt.subplots(figsize=(9.4, 6.2), layout="constrained")
-    segs = draw_series(ax, s.n.tolist(), s.median_counter_us.tolist(), COUNTER_COLOR, "-")
-    segs += draw_series(ax, s.n.tolist(), s.median_micros_us.tolist(), MICROS_COLOR, DASH)
-    handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, linestyle="-", label="counter (reference)"),
-               Line2D([], [], color=MICROS_COLOR, linewidth=2.0, linestyle=DASH, label="micros()")]
-    ticks = decade_axis(ax, s[["median_counter_us", "median_micros_us"]].min().min(),
-                        s[["median_counter_us", "median_micros_us"]].max().max())
+    ns, gap = s.n.tolist(), s.diff_us.abs().tolist()
+    segs = draw_series(ax, ns, gap, MICROS_COLOR, "-")
+    handles = [Line2D([], [], color=MICROS_COLOR, linewidth=2.0, label="|micros() $-$ counter|")]
+    above = s[s.diff_us > 0]
+    if not above.empty:
+        ax.plot(above.n, above.diff_us.abs(), linestyle="none", marker="o", markersize=7, markerfacecolor="white",
+                markeredgecolor=MICROS_COLOR, markeredgewidth=1.6, zorder=4)
+        handles.append(Line2D([], [], linestyle="none", marker="o", markersize=7, markerfacecolor="white",
+                              markeredgecolor=MICROS_COLOR, markeredgewidth=1.6, label="micros() above counter"))
+    ticks = gap_axis(ax, min(gap), max(gap))
     ax.set_xticks(sorted(s.n.unique()))
     ax.set_title(f"Phase 2 -- micros() vs counter, {ps.BOARD_SHORT[board]}, {circuit}")
     ax.set_xlabel("Number of qubits, $n$")
-    ax.set_ylabel("Median execution time per rep (µs, log scale)")
+    ax.set_ylabel("Gap between micros() and counter (µs, log scale)")
     loc = place_legend(ax, handles, segs)
-    # ps.save_png switches minor ticks off; here they are the unnumbered 2x / 5x ticks, so save with the same settings
-    path = ps._check_output_path(FIG_DIR / f"{board}_{circuit}.png", ".png")
-    fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
-    print(f"figure -> {path}")
-    plt.close(fig)
+    ps.save_png(fig, FIG_DIR / f"{board}_{circuit}.png")
     return loc, ticks
 
 
