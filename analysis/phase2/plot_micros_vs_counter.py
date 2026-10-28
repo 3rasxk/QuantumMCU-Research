@@ -5,6 +5,7 @@
 # Reads data/raw/phase2/<board>/<circuit>/with_ref/ref/ref_compare.csv read-only (the post-restart dataset: micros() and the
 # counter timed the same rep). A point needs >= MIN_PAIRS paired reps. A line ends where the data ends and breaks at a missing n;
 # nothing is filled or interpolated. A board x circuit without counter data gets no figure and is listed.
+# Each figure: top = both methods (log y), bottom = (micros() - counter) / counter in % (linear y) to show the trend.
 # Writes data/figures/phase2/micros_vs_counter/<board>_<circuit>.png and data/derived/phase2_micros_vs_counter.csv.
 # PNGs carry no timestamp metadata, so a re-run gives identical files.
 #
@@ -133,7 +134,8 @@ def place_legend(ax, handles, segs):
 
 def plot_one(s, board, circuit):
     s = s.sort_values("n")
-    fig, ax = plt.subplots(figsize=(9.4, 6.2), layout="constrained")
+    fig, (ax, bx) = plt.subplots(2, 1, figsize=(9.4, 8.2), sharex=True, layout="constrained",
+                                 gridspec_kw={"height_ratios": [3, 1.3]})
     segs = draw_series(ax, s.n.tolist(), s.median_counter_us.tolist(), COUNTER_COLOR, "-")
     segs += draw_series(ax, s.n.tolist(), s.median_micros_us.tolist(), MICROS_COLOR, DASH)
     handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, linestyle="-", label="counter (reference)"),
@@ -142,9 +144,14 @@ def plot_one(s, board, circuit):
                         s[["median_counter_us", "median_micros_us"]].max().max())
     ax.set_xticks(sorted(s.n.unique()))
     ax.set_title(f"Phase 2 -- micros() vs counter, {ps.BOARD_SHORT[board]}, {circuit}")
-    ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Median execution time per rep (µs, log scale)")
     loc = place_legend(ax, handles, segs)
+    # trend panel: the two lines above overlap on a log axis, so show (micros() - counter) / counter on its own linear axis
+    bx.axhline(0, color="black", linewidth=0.8, zorder=1)
+    draw_series(bx, s.n.tolist(), s.diff_pct.tolist(), MICROS_COLOR, "-")
+    bx.yaxis.set_major_locator(mticker.MaxNLocator(nbins=5))
+    bx.set_xlabel("Number of qubits, $n$")
+    bx.set_ylabel("micros() vs counter (%)")
     # ps.save_png switches minor ticks off; here they are the unnumbered 2x / 5x ticks, so save with the same settings
     path = ps._check_output_path(FIG_DIR / f"{board}_{circuit}.png", ".png")
     fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
