@@ -91,19 +91,16 @@ def _plain(v, _pos=None):
 
 
 def gap_axis(ax, ymin, ymax):
-    """Log y with limits hugging the surrounding decades. Up to 6 decades: numbered at 1, 2 and 5 of every decade (a gap of 0.1 us
-    stays readable); wider: numbered at every decade, with the 2x and 5x ticks unnumbered so the labels do not crowd."""
+    """Log y: a numbered tick at every decade (0.1, 1, 10, 100, 1,000 ...) and unnumbered small ticks at 2-9 of each decade, the
+    usual log-paper reading; limits hug the surrounding decades."""
     lo, hi = math.floor(math.log10(ymin) + 0.05), math.ceil(math.log10(ymax) - 0.05)
     hi = max(hi, lo + 1)
     ylim = (10.0 ** (lo - 0.17), 10.0 ** (hi + 0.12))
     inside = lambda vs: [round(v, 6) for v in vs if ylim[0] <= v <= ylim[1]]  # noqa: E731
-    dense = hi - lo <= 6
     ax.set_yscale("log")
-    ax.yaxis.set_major_locator(mticker.FixedLocator(inside([m * 10.0 ** e for e in range(lo - 1, hi + 1)
-                                                            for m in ((1, 2, 5) if dense else (1,))])))
+    ax.yaxis.set_major_locator(mticker.FixedLocator(inside([10.0 ** e for e in range(lo - 1, hi + 1)])))
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(_plain))
-    ax.yaxis.set_minor_locator(mticker.NullLocator() if dense else
-                               mticker.FixedLocator(inside([m * 10.0 ** e for e in range(lo - 1, hi + 1) for m in (2, 5)])))
+    ax.yaxis.set_minor_locator(mticker.FixedLocator(inside([m * 10.0 ** e for e in range(lo - 1, hi + 1) for m in range(2, 10)])))
     ax.yaxis.set_minor_formatter(mticker.NullFormatter())
     ax.tick_params(axis="y", which="minor", length=3.5, width=0.8)
     ax.set_ylim(*ylim)
@@ -158,7 +155,7 @@ def plot_one(s, board, circuit):
     ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Median time per rep and gap (µs, log scale)")
     loc = place_legend(ax, handles, segs)
-    # ps.save_png switches minor ticks off; the wide charts keep unnumbered 2x / 5x ticks, so save with the same settings
+    # ps.save_png switches minor ticks off; the unnumbered 2-9 ticks are minor ticks, so save with the same settings
     path = ps._check_output_path(FIG_DIR / f"{board}_{circuit}.png", ".png")
     fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
     print(f"figure -> {path}")
