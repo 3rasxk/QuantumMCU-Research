@@ -1,0 +1,13 @@
+board,circuit,p2_n_range,p2_ok_n,p2_wall_n,p2_wall_evidence,p2_time_capped_n,p2_skipped_compute_infeasible_n,p2_reps_min,p2_reps_max,p2_fw_hashes,p2_schema,p2_failed_attempts,p3_n_range,p3_ok_n,p3_bauds,p3_reps_min,p3_reps_max,p3_time_capped_n,p3_skipped_n,p3_crc_errors,p3_timed_out,p3_fw_hashes,p3_schema,overlap_n,gap_p2_ok_missing_in_p3,gap_p3_ok_missing_in_p2,p3_n_beyond_p2_wall
+uno,h_all,2-8,2-7,8,build_overflow,-,-,100,100,7feb4a04e1208c6b,2,build:8,2-22,2-22,115200,100,100,-,-,0,0,8ce7531666759bcc,2,2-7,-,8-22,8-22
+uno,bell_ghz,2-8,2-7,8,build_overflow,-,-,100,100,7feb4a04e1208c6b,2,build:8,2-22,2-22,115200,100,100,-,-,0,0,8ce7531666759bcc,2,2-7,-,8-22,8-22
+uno,qft,2-8,2-7,8,build_overflow,-,-,100,100,7feb4a04e1208c6b,2,build:8,2-22,2-22,115200,100,100,-,-,0,0,8ce7531666759bcc,2,2-7,-,8-22,8-22
+uno,grover,2-8,2-7,8,build_overflow,-,-,100,100,7feb4a04e1208c6b,2,build:8,2-10,2-10,115200,100,100,-,-,0,0,8ce7531666759bcc,2,2-7,-,8-10,8-10
+esp8266,h_all,2-13,2-12,13,malloc_failed,-,-,100,100,6a19c55beaadc693,2,malloc:13,2-15,2-15,115200,100,100,-,-,0,0,54bef9c2f8726c37,2,2-12,-,13-15,13-15
+esp8266,bell_ghz,2-13,2-12,13,malloc_failed,-,-,100,100,6a19c55beaadc693,2,malloc:13,2-15,2-15,115200,100,100,-,-,0,0,54bef9c2f8726c37,2,2-12,-,13-15,13-15
+esp8266,qft,2-13,2-12,13,malloc_failed,-,-,100,100,6a19c55beaadc693,2,malloc:13,2-15,2-15,115200,100,100,-,-,0,0,54bef9c2f8726c37,2,2-12,-,13-15,13-15
+esp8266,grover,2-16,2-10,,none observed,9-10,11-16,4,100,5413c474786bad15 6a19c55beaadc693 6cb0e9ea301922b4,2,watchdog_suspected:8-9,2-15,2-13,115200,2,100,11-13,14-15,0,0,1b7b5ca0cb3143d8 e33508351a496315,2,2-10,-,11-13,-
+esp32,h_all,2-14,2-13,14,malloc_failed,-,-,100,100,5f10cc9afc3fffe5,2,malloc:14,2-14,2-14,115200,100,100,-,-,0,0,1e404bfed41a49f2,2,2-13,-,14,14
+esp32,bell_ghz,2-14,2-13,14,malloc_failed,-,-,100,100,5f10cc9afc3fffe5,2,malloc:14,2-14,2-14,115200,100,100,-,-,0,0,1e404bfed41a49f2,2,2-13,-,14,14
+esp32,qft,2-14,2-13,14,malloc_failed,-,-,100,100,5f10cc9afc3fffe5,2,malloc:14,2-14,2-14,115200,100,100,-,-,0,0,1e404bfed41a49f2,2,2-13,-,14,14
+esp32,grover,2-18,2-12,,none observed,11-12,13-18,1,100,4478147465f99625 5f10cc9afc3fffe5,2,,2-18,2-13,115200,2,100,11-13,14-18,0,0,1e404bfed41a49f2,2,2-12,-,13,-
