@@ -256,12 +256,12 @@ def f5_accuracy(p1, gd=None):
         ax.plot(gg.n, gg.f32_infid_vs_ideal_normalised.clip(lower=1e-9), marker="D", color="#B00020", mfc="white", ls=":", lw=0.8,
                 label="grover, normalised")
     ax.axhline(1e-3, color="k", ls="--", lw=0.8)
-    ax.text(1.6, 1.4e-3, r"$10^{-3}$ threshold", fontsize=6.3, va="bottom")
+    ax.text(1.0, 1.4e-3, r"$10^{-3}$ threshold", fontsize=6.3, va="bottom")
     log_ticks(ax)
     ax.set_xlabel("Qubits $n$"); ax.set_ylabel(r"Infidelity of the float32 state")
     ax.set_xlim(0.5, 14.5); ax.set_ylim(1e-8, 1)
     ax.set_xticks(range(2, 15, 2))
-    ax.legend(loc="lower right", frameon=False, ncol=2, fontsize=6.3, bbox_to_anchor=(1.0, 0.18))
+    ax.legend(loc="upper left", frameon=False, ncol=2, fontsize=6.3, bbox_to_anchor=(0.0, 1.0))
     fig.tight_layout()
     save(fig, "F5_phase1_accuracy")
 

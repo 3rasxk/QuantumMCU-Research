@@ -33,7 +33,7 @@ def build_runners(tmp):
     f32 = os.path.join(tmp, "phase1_validate_f32")
     subprocess.run(["g++", "-O2", "-std=c++11", "-o", f32, os.path.join(ROOT, "pc", "phase1_validate", "main.cpp")], check=True,
                    capture_output=True)
-    subprocess.run([os.path.join(ROOT, "pc", "phase1_validate", "build_double.sh"), os.path.join(tmp, "dbl")], check=True, capture_output=True)
+    subprocess.run(["bash", os.path.join(ROOT, "pc", "phase1_validate", "build_double.sh"), os.path.join(tmp, "dbl")], check=True, capture_output=True)
     return f32, os.path.join(tmp, "dbl", "phase1_validate_double")
 
 
