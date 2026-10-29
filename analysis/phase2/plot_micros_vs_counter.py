@@ -5,8 +5,8 @@
 # Reads data/raw/phase2/<board>/<circuit>/with_ref/ref/ref_compare.csv read-only (the post-restart dataset: micros() and the
 # counter timed the same rep). A point needs >= MIN_PAIRS paired reps. A line ends where the data ends and breaks at a missing n;
 # nothing is filled or interpolated. A board x circuit without counter data gets no figure and is listed.
-# Each figure: the counter (reference, solid) and micros() (dashed), both measured median time per rep in us on one log y axis zoomed
-# onto the two lines.
+# Each figure: the counter is the reference at 1.0 (solid), micros() is median micros() / median counter at each n (dashed); linear y
+# zoomed onto the two lines. Every value comes from the measured medians in ref_compare.csv.
 # Writes data/figures/phase2/micros_vs_counter/<board>_<circuit>.png and data/derived/phase2_micros_vs_counter.csv.
 # PNGs carry no timestamp metadata, so a re-run gives identical files.
 #
@@ -85,27 +85,6 @@ def draw_series(ax, ns, ys, color, linestyle):
     return segs
 
 
-def _sci_label(v, _pos=None):
-    """10^k as mathtext (the house-style tick label)."""
-    return rf"$10^{{{int(round(math.log10(v)))}}}$"
-
-
-def zoom_axis(ax, ymin, ymax):
-    """Log y zoomed onto the data: the limits sit 1.4x outside the lowest and highest plotted value. A numbered tick (10^k, in us) at
-    every decade inside, unnumbered small ticks at 2-9 of each decade."""
-    ylim = (ymin / 1.4, ymax * 1.4)
-    lo, hi = math.floor(math.log10(ylim[0])), math.ceil(math.log10(ylim[1]))
-    inside = lambda vs: [round(v, 6) for v in vs if ylim[0] <= v <= ylim[1]]  # noqa: E731
-    ax.set_yscale("log")
-    ax.yaxis.set_major_locator(mticker.FixedLocator(inside([10.0 ** e for e in range(lo, hi + 1)])))
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_sci_label))
-    ax.yaxis.set_minor_locator(mticker.FixedLocator(inside([m * 10.0 ** e for e in range(lo, hi + 1) for m in range(2, 10)])))
-    ax.yaxis.set_minor_formatter(mticker.NullFormatter())
-    ax.tick_params(axis="y", which="minor", length=3.5, width=0.8)
-    ax.set_ylim(*ylim)
-    return lo, hi
-
-
 def place_legend(ax, handles, segs):
     """Upper left like the house style; another corner only when it would cover a line."""
     fig = ax.figure
@@ -132,28 +111,30 @@ def place_legend(ax, handles, segs):
 
 
 def plot_one(s, board, circuit):
-    """Both lines are measured medians per rep in us on one log axis: the counter (reference, solid blue) and micros() (dashed
-    orange). Nothing is derived or fixed; the y axis is zoomed onto the two lines."""
+    """Both lines are relative to the counter, which is the reference and sits at 1.0 (solid blue): the dashed orange line is
+    median micros() / median counter at each n, so micros() reading 0.5 % short shows as 0.995. Linear y, zoomed onto the two lines."""
     s = s.sort_values("n")
     fig, ax = plt.subplots(figsize=(9.4, 6.2), layout="constrained")
     ns = s.n.tolist()
-    segs = draw_series(ax, ns, s.median_counter_us.tolist(), COUNTER_COLOR, "-")
-    segs += draw_series(ax, ns, s.median_micros_us.tolist(), MICROS_COLOR, DASH)
-    handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, linestyle="-", label="counter (reference)"),
+    ratio = (s.median_micros_us / s.median_counter_us).tolist()
+    segs = draw_series(ax, ns, [1.0] * len(ns), COUNTER_COLOR, "-")
+    segs += draw_series(ax, ns, ratio, MICROS_COLOR, DASH)
+    handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, linestyle="-", label="counter (reference = 1)"),
                Line2D([], [], color=MICROS_COLOR, linewidth=2.0, linestyle=DASH, label="micros()")]
-    top = zoom_axis(ax, s[["median_counter_us", "median_micros_us"]].min().min(),
-                    s[["median_counter_us", "median_micros_us"]].max().max())
+    lo, hi = min(ratio + [1.0]), max(ratio + [1.0])
+    pad = 0.12 * (hi - lo)
+    ax.set_ylim(lo - pad, hi + pad)
+    ax.yaxis.set_major_locator(mticker.MaxNLocator(nbins=7))
+    fmt = mticker.ScalarFormatter(useOffset=False)
+    fmt.set_scientific(False)
+    ax.yaxis.set_major_formatter(fmt)
     ax.set_xticks(sorted(s.n.unique()))
     ax.set_title(f"Phase 2 -- micros() vs counter, {ps.BOARD_SHORT[board]}, {circuit}")
     ax.set_xlabel("Number of qubits, $n$")
-    ax.set_ylabel("Median execution time per rep (µs, log scale)")
+    ax.set_ylabel("Median time per rep relative to counter (counter = 1)")
     loc = place_legend(ax, handles, segs)
-    # ps.save_png switches minor ticks off; the unnumbered 2-9 ticks are minor ticks, so save with the same settings
-    path = ps._check_output_path(FIG_DIR / f"{board}_{circuit}.png", ".png")
-    fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
-    print(f"figure -> {path}")
-    plt.close(fig)
-    return loc, top
+    ps.save_png(fig, FIG_DIR / f"{board}_{circuit}.png")
+    return loc, (round(lo, 4), round(hi, 4))
 
 
 def main():
@@ -177,7 +158,7 @@ def main():
                 continue
             loc, top = plot_one(s, b, c)
             made += 1
-            print(f"{b}_{c}: legend={loc} y decades {top}")
+            print(f"{b}_{c}: legend={loc} ratio range {top}")
     print(f"{made} figure(s) written")
     for sk in skipped:
         print("skipped:", *sk)
