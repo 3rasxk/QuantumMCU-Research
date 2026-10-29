@@ -125,7 +125,7 @@ def main():
                       statuses=";".join(f"{k}:{v}" for k, v in g["terminal_status"].value_counts().items()),
                       mixed_hash_points=int((g["n_hashes"] > 1).sum()),
                       mixed_schema_points=int((g["n_schemas"] > 1).sum()),
-                      series_hashes=g["fw_hashes"].nunique(),
+                      series_hashes=g[g["ok_rows"] > 0]["fw_hashes"].nunique(),
                       ref_pts=int((g["ref_pairs"] > 0).sum())))
     ss = pd.DataFrame(s)
     ss.to_csv(f"{OUT}/audit_series.csv", index=False)
