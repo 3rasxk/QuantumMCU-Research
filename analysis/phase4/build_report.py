@@ -6,7 +6,7 @@ import sys
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import common as C
+import p4common as C
 
 D = C.PROC
 rd = lambda f: pd.read_csv(os.path.join(D, f))

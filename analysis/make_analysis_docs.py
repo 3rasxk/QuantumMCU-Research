@@ -22,6 +22,8 @@ import _graph_data as gd  # noqa: E402
 from _graph_data import OK, OK_CAPPED, WALL, TIME_LIMITED  # noqa: E402
 from shared import plot_style as ps  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import counter_validity as cv  # noqa: E402
 from shared import paths as sp  # noqa: E402
 
 FIT_POINTS = 5
@@ -116,6 +118,9 @@ def phase2_section(S):
             by.setdefault(int(r["n"]), []).append((float(r["diff_us"]), float(r["diff_pct"])))
         use = [n for n in sorted(by) if len(by[n]) >= gd.MIN_PAIRS and pts_c.get(n, {}).get("ref_status") in
                ("ok", "anomaly", "count_mismatch")]
+        usable_n = cv.usable_n_in_dir(S.dir, 2, S.board, S.circuit)   # counter validity (analysis/common/counter_validity.py)
+        if usable_n is not None:
+            use = [n for n in use if n in usable_n]
         if use:
             mu = [statistics.median(d[0] for d in by[n]) for n in use]
             mp = [statistics.median(d[1] for d in by[n]) for n in use]

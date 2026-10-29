@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import nnls
 
-import common as C
+import p4common as C
 import gatecount as G
 
 os.makedirs(C.PROC, exist_ok=True)
@@ -203,46 +203,15 @@ def time_sensitivity():
 # micros() vs counter (Phase 2 only; Phase 3 counter data are excluded by policy)
 # ----------------------------------------------------------------------------------------------
 def counter_agreement():
-    rows = []
-    for b in C.BOARDS:
-        for c in C.CIRCUITS:
-            base = C.series_dir(2, b, c)
-            pr = pd.read_csv(os.path.join(base, "ref", "ref_compare_points.csv"))
-            rc = pd.read_csv(os.path.join(base, "ref", "ref_compare.csv"))
-            for _, p in pr.iterrows():
-                g = rc[rc.n == p.n]
-                g = g[(g.counter_us > 0) & (g.micros_us > 0)]
-                if len(g) == 0:
-                    continue
-                ratio = g.micros_us / g.counter_us
-                rows.append(dict(board=b, circuit=c, n=int(p.n), n_pairs=len(g), ref_status=p.ref_status,
-                                 median_micros_us=float(g.micros_us.median()),
-                                 median_counter_us=float(g.counter_us.median()),
-                                 median_ratio=float(ratio.median()),
-                                 ratio_q1=float(np.percentile(ratio, 25)), ratio_q3=float(np.percentile(ratio, 75))))
-    D = pd.DataFrame(rows)
-    D.to_csv(os.path.join(C.PROC, "counter_agreement.csv"), index=False)
-    return D
+    """micros() vs counter from USABLE counter points only (analysis/common/counter_validity.py); see counter_report.py"""
+    import counter_report as CR
+    vt, ex, a, s = CR.main()
+    return a
 
 
 def counter_summary(D):
-    out = []
-    for b in C.BOARDS:
-        for stat in ["ok", "not_ok"]:
-            for sel_name, sel in [("all", lambda g: g), ("median>=100us", lambda g: g[g.median_micros_us >= C.FLOOR_US])]:
-                g = D[D.board == b]
-                g = g[(g.ref_status == "ok")] if stat == "ok" else g[g.ref_status != "ok"]
-                g = g[g.n_pairs >= 10]
-                g = sel(g)
-                if len(g) == 0:
-                    continue
-                out.append(dict(board=b, counter_status=stat, subset=sel_name, n_points=len(g),
-                                median_of_median_ratio=float(g.median_ratio.median()),
-                                ratio_min=float(g.median_ratio.min()), ratio_max=float(g.median_ratio.max()),
-                                iqr_of_point_medians=float(np.percentile(g.median_ratio, 75) - np.percentile(g.median_ratio, 25))))
-    S = pd.DataFrame(out)
-    S.to_csv(os.path.join(C.PROC, "counter_summary.csv"), index=False)
-    return S
+    import counter_report as CR
+    return CR.summary(D)
 
 
 # ----------------------------------------------------------------------------------------------

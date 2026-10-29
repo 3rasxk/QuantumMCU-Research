@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 
-import common as C
+import p4common as C
 import model as M
 
 plt.rcParams.update({

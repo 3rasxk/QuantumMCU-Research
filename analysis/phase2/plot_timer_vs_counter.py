@@ -30,6 +30,7 @@ sys.path.insert(0, str(REPO_ROOT / "pc"))
 sys.path.insert(0, str(REPO_ROOT / "analysis"))
 from shared import plot_style as ps  # noqa: E402
 import _graph_data as gd  # noqa: E402
+from common import counter_validity as cv  # noqa: E402
 
 PHASE = 3 if "--phase" in sys.argv and sys.argv[sys.argv.index("--phase") + 1] == "3" else 2   # Phase 3: e2e round trip vs counter
 RAW_DIR = REPO_ROOT / "data" / "raw" / f"phase{PHASE}"
@@ -51,6 +52,11 @@ def load_points():
                 skipped.append((b, c, "no ref_compare.csv"))
                 continue
             d = pd.read_csv(path).dropna(subset=["micros_us", "counter_us"])
+            ok_n = cv.usable_n_in_dir(RAW_DIR / b / c / "with_ref", PHASE, b, c)   # counter validity (analysis/common/counter_validity.py)
+            if ok_n is not None:
+                for n_bad in sorted(set(d.n) - ok_n):
+                    skipped.append((b, c, f"n={int(n_bad)}: counter point not usable (counter_validity)"))
+                d = d[d.n.isin(ok_n)]
             if PHASE == 3 and gd.phase3_cutoff(b, c) is not None:      # Phase 3: up to the crossover with Phase 2 (+1 n)
                 d = d[d.n <= gd.phase3_cutoff(b, c)]
             for n, g in d.groupby("n"):

@@ -1,0 +1,301 @@
+phase,board,circuit,n,usable,reason,T_max_s,ref_status,counter_codes,reps_in_raw,n_pairs,pulses_received,host_flagged,micros_median_us,counter_median_us
+2,esp32,bell_ghz,2,True,ok,3518383.521792,ok,,100,100,200,True,2.0,3.125
+2,esp32,bell_ghz,3,True,ok,3518383.521792,ok,,100,100,200,True,3.0,4.188
+2,esp32,bell_ghz,4,True,ok,3518383.521792,ok,,100,100,200,False,7.0,7.963
+2,esp32,bell_ghz,5,True,ok,3518383.521792,ok,,100,100,200,True,15.0,16.163
+2,esp32,bell_ghz,6,True,ok,3518383.521792,ok,,100,100,200,False,34.0,35.3
+2,esp32,bell_ghz,7,True,ok,3518383.521792,ok,,100,100,200,False,78.0,79.025
+2,esp32,bell_ghz,8,True,ok,3518383.521792,ok,,100,100,200,False,177.0,177.425
+2,esp32,bell_ghz,9,True,ok,3518383.521792,ok,,100,100,200,False,417.0,417.46900000000005
+2,esp32,bell_ghz,10,True,ok,3518383.521792,ok,,100,100,200,False,931.0,931.513
+2,esp32,bell_ghz,11,True,ok,3518383.521792,ok,,100,100,200,False,2282.0,2282.944
+2,esp32,bell_ghz,12,True,ok,3518383.521792,ok,,100,100,200,False,4988.0,4988.913
+2,esp32,bell_ghz,13,True,ok,3518383.521792,ok,,100,100,200,False,10818.0,10819.075
+2,esp32,bell_ghz,14,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),3518383.521792,refused_no_target_run,never_started,0,0,0,True,,
+2,esp32,grover,2,True,ok,3518383.521792,ok,,100,100,200,False,26.0,26.663
+2,esp32,grover,3,True,ok,3518383.521792,ok,,100,100,200,False,107.0,107.363
+2,esp32,grover,4,True,ok,3518383.521792,ok,,100,100,200,False,489.0,489.875
+2,esp32,grover,5,True,ok,3518383.521792,ok,,100,100,200,False,2364.0,2364.919
+2,esp32,grover,6,True,ok,3518383.521792,ok,,100,100,200,False,15801.0,15801.819
+2,esp32,grover,7,True,ok,3518383.521792,ok,,100,100,117,False,107774.0,107772.03150000001
+2,esp32,grover,8,True,ok,3518383.521792,ok,,100,100,102,False,896155.0,896136.2690000001
+2,esp32,grover,9,True,ok,3518383.521792,ok,,100,100,101,False,7334250.5,7334098.9315
+2,esp32,grover,10,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra+glitch+count_mismatch+seq_gap,100,0,267,True,63566278.0,
+2,esp32,grover,11,True,ok,3518383.521792,ok,,13,13,14,False,529449313.0,529438668.688
+2,esp32,grover,12,False,R3 paired pulse of 1710895.663 us carries counter flag count_mismatch (code 5); the join used a pulse the counter marked not-clean,3518383.521792,anomaly,count_mismatch,1,1,2,True,4519575802.0,1710895.663
+2,esp32,h_all,2,True,ok,3518383.521792,ok,,100,100,200,True,2.0,3.2
+2,esp32,h_all,3,True,ok,3518383.521792,ok,,100,100,200,False,4.0,4.563
+2,esp32,h_all,4,True,ok,3518383.521792,ok,,100,100,200,False,7.0,7.8
+2,esp32,h_all,5,True,ok,3518383.521792,ok,,100,100,200,False,15.0,15.45
+2,esp32,h_all,6,True,ok,3518383.521792,ok,,100,100,200,False,32.0,33.175
+2,esp32,h_all,7,True,ok,3518383.521792,ok,,100,100,200,False,71.0,71.613
+2,esp32,h_all,8,True,ok,3518383.521792,ok,,100,100,200,False,163.0,163.925
+2,esp32,h_all,9,True,ok,3518383.521792,ok,,100,100,200,False,364.0,364.55
+2,esp32,h_all,10,True,ok,3518383.521792,ok,,100,100,200,False,812.0,812.525
+2,esp32,h_all,11,True,ok,3518383.521792,ok,,100,100,200,False,1779.0,1780.1
+2,esp32,h_all,12,True,ok,3518383.521792,ok,,100,100,200,False,3872.0,3872.825
+2,esp32,h_all,13,True,ok,3518383.521792,ok,,100,100,200,False,8374.0,8374.125
+2,esp32,h_all,14,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),3518383.521792,refused_no_target_run,never_started,0,0,0,True,,
+2,esp32,qft,2,True,ok,3518383.521792,ok,,100,100,200,False,3.0,3.338
+2,esp32,qft,3,True,ok,3518383.521792,ok,,100,100,200,False,11.0,11.838
+2,esp32,qft,4,True,ok,3518383.521792,ok,,100,100,200,False,23.0,23.513
+2,esp32,qft,5,True,ok,3518383.521792,ok,,100,100,200,False,48.0,48.513
+2,esp32,qft,6,True,ok,3518383.521792,ok,,100,100,200,False,103.0,103.625
+2,esp32,qft,7,True,ok,3518383.521792,ok,,100,100,200,False,230.0,230.6565
+2,esp32,qft,8,True,ok,3518383.521792,ok,,100,100,200,False,523.0,523.75
+2,esp32,qft,9,True,ok,3518383.521792,ok,,100,100,200,False,1275.0,1275.375
+2,esp32,qft,10,True,ok,3518383.521792,ok,,100,100,200,False,3010.0,3011.075
+2,esp32,qft,11,True,ok,3518383.521792,ok,,100,100,200,False,7066.0,7066.388
+2,esp32,qft,12,True,ok,3518383.521792,ok,,100,100,200,False,15608.0,15609.138
+2,esp32,qft,13,True,ok,3518383.521792,ok,,100,100,145,False,38003.0,38002.931500000006
+2,esp32,qft,14,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),3518383.521792,refused_no_target_run,never_started,0,0,0,True,,
+2,esp8266,bell_ghz,2,True,ok,3518383.521792,anomaly,extra,100,100,200,True,13.0,20.388
+2,esp8266,bell_ghz,3,True,ok,3518383.521792,anomaly,extra+glitch+count_mismatch,100,100,201,True,26.0,33.325
+2,esp8266,bell_ghz,4,True,ok,3518383.521792,anomaly,extra,100,100,200,True,51.0,58.45
+2,esp8266,bell_ghz,5,True,ok,3518383.521792,anomaly,extra,100,100,200,True,104.0,111.625
+2,esp8266,bell_ghz,6,True,ok,3518383.521792,anomaly,extra,100,100,200,False,215.0,222.138
+2,esp8266,bell_ghz,7,True,ok,3518383.521792,anomaly,extra,100,100,200,False,444.0,451.438
+2,esp8266,bell_ghz,8,True,ok,3518383.521792,anomaly,extra,100,100,200,False,919.0,926.763
+2,esp8266,bell_ghz,9,False,R1 no pairs: arm_failed (counter could not be armed for this point),3518383.521792,refused_arm_failed,,100,0,0,True,1961.0,
+2,esp8266,bell_ghz,10,True,ok,3518383.521792,anomaly,extra,100,100,200,False,4067.0,4074.388
+2,esp8266,bell_ghz,11,True,ok,3518383.521792,anomaly,extra,100,100,200,False,8707.0,8714.75
+2,esp8266,bell_ghz,12,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,200,True,18054.0,
+2,esp8266,bell_ghz,13,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),3518383.521792,refused_no_target_run,never_started,0,0,0,True,,
+2,esp8266,grover,2,True,ok,3518383.521792,anomaly,extra,100,100,200,False,669.0,676.138
+2,esp8266,grover,3,True,ok,3518383.521792,anomaly,extra,100,100,200,False,3003.0,3009.738
+2,esp8266,grover,4,True,ok,3518383.521792,anomaly,extra,100,100,200,False,13930.0,13938.275
+2,esp8266,grover,5,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,129,True,66238.5,
+2,esp8266,grover,6,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra+glitch+count_mismatch,100,0,136,True,430161.0,
+2,esp8266,grover,7,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra+glitch+count_mismatch,100,0,158,True,2877381.0,
+2,esp8266,grover,8,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),3518383.521792,refused_no_target_run,missing+glitch+stuck_high+count_mismatch+seq_gap,100,0,4,True,23788944.0,
+2,esp8266,grover,9,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),3518383.521792,refused_no_target_run,missing+stuck_high,37,0,7,True,193874385.0,
+2,esp8266,grover,10,False,R1 no pairs: short_raw,3518383.521792,refused_short_raw,missing+stuck_high+count_mismatch+seq_gap,4,0,5,True,1682673786.0,
+2,esp8266,h_all,2,True,ok,3518383.521792,anomaly,extra,100,100,200,True,24.0,31.675
+2,esp8266,h_all,3,False,R1 no pairs: counter_lost (counter link lost during the point),3518383.521792,refused_counter_lost,,100,0,66,True,72.0,
+2,esp8266,h_all,4,True,ok,3518383.521792,anomaly,extra,100,100,200,False,187.0,193.925
+2,esp8266,h_all,5,True,ok,3518383.521792,anomaly,extra,100,100,200,False,457.0,464.225
+2,esp8266,h_all,6,True,ok,3518383.521792,anomaly,extra,100,100,200,False,1080.0,1087.163
+2,esp8266,h_all,7,True,ok,3518383.521792,anomaly,extra,100,100,200,False,2494.0,2500.925
+2,esp8266,h_all,8,True,ok,3518383.521792,anomaly,extra,100,100,200,False,5651.0,5657.95
+2,esp8266,h_all,9,True,ok,3518383.521792,anomaly,extra,100,100,200,False,12697.0,12705.15
+2,esp8266,h_all,10,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,169,True,28057.0,
+2,esp8266,h_all,11,False,R1 no pairs: arm_failed (counter could not be armed for this point),3518383.521792,refused_arm_failed,,100,0,0,True,61760.0,
+2,esp8266,h_all,12,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,115,True,134233.0,
+2,esp8266,h_all,13,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),3518383.521792,refused_no_target_run,never_started,0,0,0,True,,
+2,esp8266,qft,2,True,ok,3518383.521792,anomaly,extra,100,100,200,True,28.0,35.638
+2,esp8266,qft,3,True,ok,3518383.521792,anomaly,extra,100,100,200,False,248.0,255.275
+2,esp8266,qft,4,True,ok,3518383.521792,anomaly,extra,100,100,200,False,578.0,585.013
+2,esp8266,qft,5,True,ok,3518383.521792,anomaly,extra,100,100,200,False,1262.0,1269.694
+2,esp8266,qft,6,True,ok,3518383.521792,anomaly,extra,100,100,200,False,2781.0,2788.238
+2,esp8266,qft,7,True,ok,3518383.521792,anomaly,extra,100,100,200,False,6290.0,6297.425
+2,esp8266,qft,8,True,ok,3518383.521792,anomaly,extra,100,100,200,False,14524.0,14531.963
+2,esp8266,qft,9,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,156,True,34131.0,
+2,esp8266,qft,10,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,124,True,79773.0,
+2,esp8266,qft,11,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,111,True,187237.0,
+2,esp8266,qft,12,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,105,True,432275.0,
+2,esp8266,qft,13,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),3518383.521792,refused_no_target_run,never_started,0,0,0,True,,
+2,uno,bell_ghz,2,True,ok,3518383.521792,anomaly,extra+count_mismatch+seq_gap,100,100,201,True,148.0,164.138
+2,uno,bell_ghz,3,True,ok,3518383.521792,anomaly,extra,100,100,200,False,348.0,354.763
+2,uno,bell_ghz,4,True,ok,3518383.521792,anomaly,extra,100,100,200,False,772.0,783.588
+2,uno,bell_ghz,5,True,ok,3518383.521792,anomaly,extra,100,100,200,False,1704.0,1719.388
+2,uno,bell_ghz,6,True,ok,3518383.521792,anomaly,extra+count_mismatch+seq_gap,100,100,200,False,3556.0,3581.844
+2,uno,bell_ghz,7,True,ok,3518383.521792,anomaly,extra,100,100,200,False,7556.0,7597.388
+2,uno,bell_ghz,8,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),3518383.521792,refused_no_target_run,never_started,0,0,0,True,,
+2,uno,grover,2,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra+glitch+count_mismatch+seq_gap,100,99,201,False,4284.0,4310.675
+2,uno,grover,3,True,ok,3518383.521792,anomaly,extra,100,100,137,False,22628.0,22746.6
+2,uno,grover,4,True,ok,3518383.521792,anomaly,extra,100,100,108,False,121396.0,121999.525
+2,uno,grover,5,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra+glitch+count_mismatch,100,0,102,True,631024.0,
+2,uno,grover,6,True,ok,3518383.521792,anomaly,extra,100,100,101,False,4322908.0,4344110.169
+2,uno,grover,7,True,ok,3518383.521792,anomaly,extra,100,100,101,False,29829024.0,29975339.4815
+2,uno,grover,8,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),3518383.521792,refused_no_target_run,never_started,0,0,0,True,,
+2,uno,h_all,2,True,ok,3518383.521792,anomaly,extra+count_mismatch+seq_gap,100,100,200,False,284.0,289.825
+2,uno,h_all,3,True,ok,3518383.521792,anomaly,extra,100,100,200,False,812.0,824.475
+2,uno,h_all,4,True,ok,3518383.521792,anomaly,extra,100,100,200,False,2088.0,2103.888
+2,uno,h_all,5,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra+glitch+count_mismatch,100,0,200,True,4912.0,
+2,uno,h_all,6,True,ok,3518383.521792,anomaly,extra,100,100,170,False,11468.0,11528.988
+2,uno,h_all,7,True,ok,3518383.521792,anomaly,extra,100,100,133,False,26308.0,26445.313
+2,uno,h_all,8,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),3518383.521792,refused_no_target_run,never_started,0,0,0,True,,
+2,uno,qft,2,True,ok,3518383.521792,anomaly,extra+count_mismatch+seq_gap,100,100,203,False,292.0,298.738
+2,uno,qft,3,True,ok,3518383.521792,anomaly,extra+count_mismatch+seq_gap,100,100,200,False,1932.0,1946.763
+2,uno,qft,4,True,ok,3518383.521792,anomaly,extra+count_mismatch+seq_gap,100,100,200,False,4696.0,4726.6
+2,uno,qft,5,True,ok,3518383.521792,anomaly,extra,100,100,172,False,11012.0,11073.1
+2,uno,qft,6,True,ok,3518383.521792,anomaly,extra,100,100,132,False,25920.0,26049.938
+2,uno,qft,7,True,ok,3518383.521792,anomaly,extra,100,100,114,False,61424.0,61729.288
+2,uno,qft,8,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),3518383.521792,refused_no_target_run,never_started,0,0,0,True,,
+3,esp32,bell_ghz,2,True,ok,3518383.521792,ok,,100,100,101,False,6495.5,6496.225
+3,esp32,bell_ghz,3,True,ok,3518383.521792,ok,,100,100,101,False,6086.0,6087.2875
+3,esp32,bell_ghz,4,True,ok,3518383.521792,ok,,100,100,101,False,6400.5,6401.281499999999
+3,esp32,bell_ghz,5,True,ok,3518383.521792,ok,,100,100,101,False,6555.5,6556.075000000001
+3,esp32,bell_ghz,6,True,ok,3518383.521792,ok,,100,100,101,False,6823.0,6823.387500000001
+3,esp32,bell_ghz,7,True,ok,3518383.521792,ok,,100,100,101,False,6831.5,6832.0005
+3,esp32,bell_ghz,8,True,ok,3518383.521792,ok,,100,100,101,False,6779.0,6779.8505
+3,esp32,bell_ghz,9,True,ok,3518383.521792,ok,,100,100,101,False,6782.5,6782.9565
+3,esp32,bell_ghz,10,True,ok,3518383.521792,ok,,100,100,101,False,6882.0,6882.181500000001
+3,esp32,bell_ghz,11,True,ok,3518383.521792,ok,,100,100,101,False,7175.5,7176.594
+3,esp32,bell_ghz,12,True,ok,3518383.521792,ok,,100,100,101,False,7713.0,7714.0815
+3,esp32,bell_ghz,13,True,ok,3518383.521792,ok,,100,100,101,False,8397.0,8397.919
+3,esp32,bell_ghz,14,True,ok,3518383.521792,ok,,100,100,101,False,8947.5,8947.438
+3,esp32,grover,2,True,ok,3518383.521792,anomaly,count_mismatch+seq_gap,100,100,102,False,7347.5,7348.3625
+3,esp32,grover,3,True,ok,3518383.521792,anomaly,glitch+count_mismatch+seq_gap,100,100,147,False,12672.0,12672.556499999999
+3,esp32,grover,4,True,ok,3518383.521792,ok,,100,100,101,False,18419.5,18420.344
+3,esp32,grover,5,True,ok,3518383.521792,ok,,100,100,101,False,23661.0,23660.9375
+3,esp32,grover,6,True,ok,3518383.521792,ok,,100,100,101,False,88286.5,88286.0565
+3,esp32,grover,7,True,ok,3518383.521792,ok,,100,100,101,False,342616.5,342610.838
+3,esp32,grover,8,True,ok,3518383.521792,ok,,100,100,101,False,1538505.5,1538476.3065
+3,esp32,grover,9,True,ok,3518383.521792,ok,,100,100,101,False,6885069.5,6884934.775
+3,esp32,grover,10,False,R1 no pairs: counter_lost (counter link lost during the point),3518383.521792,refused_counter_lost,glitch+count_mismatch,100,0,11,True,32377857.5,32377223.2375
+3,esp32,grover,11,False,R2 partial join: 39 pairs for 42 reps,3518383.521792,count_mismatch,extra+glitch+count_mismatch+seq_gap+ring_overflow,42,39,771,False,100058293.0,92625433.938
+3,esp32,grover,12,True,ok,3518383.521792,ok,,9,9,10,False,365158669.0,365151392.875
+3,esp32,grover,13,False,R1 no pairs: counter_lost (counter link lost during the point),3518383.521792,refused_counter_lost,glitch+count_mismatch,2,0,463,True,3216444850.5,
+3,esp32,h_all,2,True,ok,3518383.521792,anomaly,count_mismatch+seq_gap,100,100,101,False,6478.5,6479.338
+3,esp32,h_all,3,True,ok,3518383.521792,ok,,100,100,101,False,6473.0,6473.306500000001
+3,esp32,h_all,4,True,ok,3518383.521792,ok,,100,100,101,False,6660.0,6661.1065
+3,esp32,h_all,5,True,ok,3518383.521792,ok,,100,100,101,False,6493.0,6493.588
+3,esp32,h_all,6,True,ok,3518383.521792,ok,,100,100,101,False,6854.5,6855.7564999999995
+3,esp32,h_all,7,True,ok,3518383.521792,ok,,100,100,101,False,6624.5,6625.244
+3,esp32,h_all,8,True,ok,3518383.521792,ok,,100,100,101,False,6654.0,6654.9875
+3,esp32,h_all,9,True,ok,3518383.521792,ok,,100,100,101,False,6914.0,6914.763
+3,esp32,h_all,10,True,ok,3518383.521792,ok,,100,100,101,False,7153.0,7153.3189999999995
+3,esp32,h_all,11,True,ok,3518383.521792,ok,,100,100,101,False,7454.5,7455.344
+3,esp32,h_all,12,True,ok,3518383.521792,ok,,100,100,101,False,7594.5,7595.5815
+3,esp32,h_all,13,True,ok,3518383.521792,ok,,100,100,101,False,9261.0,9262.413
+3,esp32,h_all,14,True,ok,3518383.521792,ok,,100,100,101,False,11993.5,11993.838
+3,esp32,qft,2,True,ok,3518383.521792,ok,,100,100,101,False,6849.5,6850.119000000001
+3,esp32,qft,3,True,ok,3518383.521792,ok,,100,100,101,False,7018.5,7019.6065
+3,esp32,qft,4,True,ok,3518383.521792,ok,,100,100,101,False,7568.5,7569.494000000001
+3,esp32,qft,5,True,ok,3518383.521792,ok,,100,100,101,False,8856.0,8856.1255
+3,esp32,qft,6,True,ok,3518383.521792,ok,,100,100,101,False,10554.0,10555.194
+3,esp32,qft,7,True,ok,3518383.521792,ok,,100,100,101,False,11263.5,11264.3815
+3,esp32,qft,8,True,ok,3518383.521792,ok,,100,100,101,False,12670.5,12671.1125
+3,esp32,qft,9,True,ok,3518383.521792,ok,,100,100,101,False,12985.5,12986.519
+3,esp32,qft,10,True,ok,3518383.521792,ok,,100,100,101,False,14505.0,14505.3565
+3,esp32,qft,11,True,ok,3518383.521792,ok,,100,100,101,False,15497.5,15498.244
+3,esp32,qft,12,True,ok,3518383.521792,anomaly,glitch+count_mismatch,100,100,104,False,18729.0,18729.544
+3,esp32,qft,13,True,ok,3518383.521792,ok,,100,100,101,False,17853.0,17852.6815
+3,esp32,qft,14,True,ok,3518383.521792,ok,,100,100,101,False,19325.5,19326.438000000002
+3,esp8266,bell_ghz,2,True,ok,3518383.521792,ok,,100,100,101,False,3098.0,3100.0564999999997
+3,esp8266,bell_ghz,3,True,ok,3518383.521792,ok,,100,100,101,False,2889.0,2891.3065
+3,esp8266,bell_ghz,4,True,ok,3518383.521792,ok,,100,100,101,False,3274.5,3276.7005
+3,esp8266,bell_ghz,5,True,ok,3518383.521792,ok,,100,100,101,False,3250.0,3251.844
+3,esp8266,bell_ghz,6,True,ok,3518383.521792,ok,,100,100,101,False,3233.5,3235.8315000000002
+3,esp8266,bell_ghz,7,True,ok,3518383.521792,ok,,100,100,101,False,3419.5,3421.513
+3,esp8266,bell_ghz,8,True,ok,3518383.521792,ok,,100,100,101,False,3642.5,3644.9065
+3,esp8266,bell_ghz,9,True,ok,3518383.521792,ok,,100,100,101,False,3497.5,3499.3255
+3,esp8266,bell_ghz,10,True,ok,3518383.521792,ok,,100,100,101,False,3914.5,3916.719
+3,esp8266,bell_ghz,11,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra+glitch+count_mismatch+seq_gap,100,0,102,True,4509.5,
+3,esp8266,bell_ghz,12,True,ok,3518383.521792,ok,,100,100,101,False,3868.0,3870.4065
+3,esp8266,bell_ghz,13,True,ok,3518383.521792,ok,,100,100,101,False,4576.0,4578.6625
+3,esp8266,bell_ghz,14,True,ok,3518383.521792,ok,,100,100,101,False,4947.0,4949.0565
+3,esp8266,bell_ghz,15,True,ok,3518383.521792,ok,,100,100,101,False,6646.0,6648.431500000001
+3,esp8266,grover,2,True,ok,3518383.521792,ok,,100,100,101,False,4002.0,4004.2255
+3,esp8266,grover,3,True,ok,3518383.521792,ok,,100,100,101,False,7178.5,7180.9439999999995
+3,esp8266,grover,4,True,ok,3518383.521792,ok,,100,100,101,False,8734.0,8736.669
+3,esp8266,grover,5,True,ok,3518383.521792,ok,,100,100,101,False,24186.5,24189.444
+3,esp8266,grover,6,True,ok,3518383.521792,ok,,100,100,101,False,95679.5,95684.69399999999
+3,esp8266,grover,7,True,ok,3518383.521792,ok,,100,100,101,False,364144.5,364159.119
+3,esp8266,grover,8,True,ok,3518383.521792,ok,,100,100,101,False,1974981.5,1975052.594
+3,esp8266,grover,9,True,ok,3518383.521792,ok,,100,100,101,False,8751309.5,8751617.9505
+3,esp8266,grover,10,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,anomaly,extra+count_mismatch+seq_gap,100,99,101,False,31465469.0,31467095.238
+3,esp8266,grover,11,True,ok,3518383.521792,ok,,42,42,43,False,140845187.0,140850046.40649998
+3,esp8266,grover,12,False,R2 partial join: 6 pairs for 9 reps,3518383.521792,anomaly,extra+glitch+count_mismatch+seq_gap,9,6,154,False,380978292.0,380572643.36300004
+3,esp8266,grover,13,False,R2 partial join: 1 pairs for 2 reps,3518383.521792,anomaly,extra+glitch+count_mismatch+seq_gap,2,1,371,False,3192311858.5,3152696852.2
+3,esp8266,h_all,2,True,ok,3518383.521792,ok,extra,100,100,101,False,3230.0,3232.788
+3,esp8266,h_all,3,True,ok,3518383.521792,ok,extra,100,100,101,False,3176.5,3178.7565
+3,esp8266,h_all,4,True,ok,3518383.521792,ok,extra,100,100,101,False,3165.5,3167.9314999999997
+3,esp8266,h_all,5,True,ok,3518383.521792,ok,extra,100,100,101,False,3257.5,3259.5254999999997
+3,esp8266,h_all,6,True,ok,3518383.521792,ok,extra+glitch+count_mismatch+seq_gap,100,100,130,False,3320.5,3322.5315
+3,esp8266,h_all,7,True,ok,3518383.521792,ok,extra,100,100,101,False,3164.0,3166.2505
+3,esp8266,h_all,8,True,ok,3518383.521792,ok,extra,100,100,101,False,3453.0,3455.8375
+3,esp8266,h_all,9,True,ok,3518383.521792,ok,extra,100,100,101,False,3412.5,3415.075
+3,esp8266,h_all,10,True,ok,3518383.521792,ok,extra,100,100,101,False,3659.0,3660.7565000000004
+3,esp8266,h_all,11,True,ok,3518383.521792,ok,extra,100,100,101,False,4200.0,4202.4815
+3,esp8266,h_all,12,True,ok,3518383.521792,ok,extra,100,100,101,False,4131.5,4133.6314999999995
+3,esp8266,h_all,13,True,ok,3518383.521792,ok,extra,100,100,101,False,4960.0,4961.975
+3,esp8266,h_all,14,True,ok,3518383.521792,ok,extra,100,100,101,False,6442.5,6444.9815
+3,esp8266,h_all,15,True,ok,3518383.521792,ok,extra,100,100,101,False,5894.5,5897.049999999999
+3,esp8266,qft,2,True,ok,3518383.521792,ok,,100,100,101,False,3661.0,3663.469
+3,esp8266,qft,3,True,ok,3518383.521792,ok,,100,100,101,False,2896.0,2898.5005
+3,esp8266,qft,4,True,ok,3518383.521792,ok,,100,100,101,False,3931.5,3933.625
+3,esp8266,qft,5,True,ok,3518383.521792,ok,,100,100,101,False,4849.0,4851.063
+3,esp8266,qft,6,True,ok,3518383.521792,ok,,100,100,101,False,5826.0,5828.144
+3,esp8266,qft,7,True,ok,3518383.521792,ok,,100,100,101,False,6625.5,6628.0815
+3,esp8266,qft,8,True,ok,3518383.521792,ok,,100,100,101,False,7337.0,7339.174999999999
+3,esp8266,qft,9,True,ok,3518383.521792,ok,,100,100,101,False,7456.5,7459.25
+3,esp8266,qft,10,True,ok,3518383.521792,ok,,100,100,101,False,7568.5,7570.762500000001
+3,esp8266,qft,11,True,ok,3518383.521792,ok,,100,100,101,False,8081.0,8083.431500000001
+3,esp8266,qft,12,True,ok,3518383.521792,ok,,100,100,101,False,8487.5,8489.4815
+3,esp8266,qft,13,True,ok,3518383.521792,ok,,100,100,101,False,8689.5,8692.0815
+3,esp8266,qft,14,True,ok,3518383.521792,ok,,100,100,101,False,9649.0,9650.8565
+3,esp8266,qft,15,True,ok,3518383.521792,ok,,100,100,101,False,19595.0,19597.9065
+3,uno,bell_ghz,2,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,99,101,False,3296.0,3303.925
+3,uno,bell_ghz,3,True,ok,3518383.521792,ok,,100,100,101,False,3424.0,3445.8565
+3,uno,bell_ghz,4,True,ok,3518383.521792,ok,,100,100,101,False,3614.0,3637.688
+3,uno,bell_ghz,5,True,ok,3518383.521792,ok,,100,100,101,False,3782.0,3808.05
+3,uno,bell_ghz,6,False,R1 no pairs: arm_failed (counter could not be armed for this point),3518383.521792,refused_arm_failed,,100,0,0,True,3432.0,
+3,uno,bell_ghz,7,True,ok,3518383.521792,ok,,100,100,101,False,2732.0,2749.4939999999997
+3,uno,bell_ghz,8,True,ok,3518383.521792,ok,,100,100,101,False,3638.0,3662.1565
+3,uno,bell_ghz,9,True,ok,3518383.521792,ok,,100,100,101,False,3634.0,3658.538
+3,uno,bell_ghz,10,True,ok,3518383.521792,ok,,100,100,101,False,3860.0,3885.2315
+3,uno,bell_ghz,11,True,ok,3518383.521792,ok,,100,100,101,False,4030.0,4055.6065
+3,uno,bell_ghz,12,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,99,101,False,3842.0,3861.363
+3,uno,bell_ghz,13,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,99,101,False,4156.0,4125.588
+3,uno,bell_ghz,14,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,99,101,False,4172.0,4180.538
+3,uno,bell_ghz,15,False,R2 partial join: 98 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,98,101,False,3654.0,3654.3
+3,uno,bell_ghz,16,True,ok,3518383.521792,ok,,100,100,101,False,4534.0,4560.424999999999
+3,uno,bell_ghz,17,True,ok,3518383.521792,ok,,100,100,101,False,7472.0,7514.025
+3,uno,bell_ghz,18,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,99,101,False,14334.0,14392.713
+3,uno,bell_ghz,19,False,R2 partial join: 98 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,98,101,False,26306.0,26418.525
+3,uno,bell_ghz,20,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,54946.0,
+3,uno,bell_ghz,21,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,109962.0,
+3,uno,bell_ghz,22,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,211420.0,
+3,uno,grover,2,False,R2 partial join: 97 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,97,101,False,4280.0,4278.363
+3,uno,grover,3,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,99,101,False,9710.0,9753.338
+3,uno,grover,4,True,ok,3518383.521792,ok,,100,100,101,False,12406.0,12473.1065
+3,uno,grover,5,True,ok,3518383.521792,ok,,100,100,101,False,13676.0,13751.213
+3,uno,grover,6,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,53554.0,
+3,uno,grover,7,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,207146.0,
+3,uno,grover,8,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,934472.0,
+3,uno,grover,9,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,4146444.0,
+3,uno,grover,10,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,19271194.0,
+3,uno,h_all,2,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra+count_mismatch+seq_gap,100,99,101,False,3234.0,3246.613
+3,uno,h_all,3,False,R1 no pairs: arm_failed (counter could not be armed for this point),3518383.521792,refused_arm_failed,,100,0,0,True,3038.0,
+3,uno,h_all,4,True,ok,3518383.521792,ok,,100,100,101,False,3036.0,3058.4005
+3,uno,h_all,5,False,R2 partial join: 97 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,97,101,False,3188.0,3191.425
+3,uno,h_all,6,True,ok,3518383.521792,ok,,100,100,101,False,3306.0,3327.8315000000002
+3,uno,h_all,7,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,99,101,False,3338.0,3351.763
+3,uno,h_all,8,True,ok,3518383.521792,ok,,100,100,101,False,3580.0,3602.169
+3,uno,h_all,9,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,99,101,False,4028.0,4055.288
+3,uno,h_all,10,True,ok,3518383.521792,ok,,100,100,101,False,3870.0,3894.8940000000002
+3,uno,h_all,11,True,ok,3518383.521792,ok,,100,100,101,False,4094.0,4118.063
+3,uno,h_all,12,True,ok,3518383.521792,ok,,100,100,101,False,4782.0,4811.4130000000005
+3,uno,h_all,13,True,ok,3518383.521792,ok,,100,100,101,False,5476.0,5507.3125
+3,uno,h_all,14,True,ok,3518383.521792,ok,,100,100,101,False,8380.0,8429.4005
+3,uno,h_all,15,True,ok,3518383.521792,ok,,100,100,101,False,2826.0,2846.513
+3,uno,h_all,16,True,ok,3518383.521792,ok,,100,100,101,False,3836.0,3860.5065000000004
+3,uno,h_all,17,True,ok,3518383.521792,ok,,100,100,101,False,5904.0,5939.188
+3,uno,h_all,18,True,ok,3518383.521792,ok,,100,100,101,False,10050.0,10104.5
+3,uno,h_all,19,True,ok,3518383.521792,ok,,100,100,101,False,18622.0,18717.9315
+3,uno,h_all,20,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,35548.0,
+3,uno,h_all,21,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,69766.0,
+3,uno,h_all,22,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,133884.0,
+3,uno,qft,2,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,99,101,False,2968.0,2960.813
+3,uno,qft,3,True,ok,3518383.521792,ok,,100,100,101,False,3406.0,3430.8940000000002
+3,uno,qft,4,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,99,101,False,3548.0,3567.3
+3,uno,qft,5,True,ok,3518383.521792,ok,,100,100,101,False,4498.0,4525.487999999999
+3,uno,qft,6,True,ok,3518383.521792,ok,,100,100,101,False,5112.0,5141.9005
+3,uno,qft,7,True,ok,3518383.521792,ok,,100,100,101,False,5554.0,5588.1815
+3,uno,qft,8,True,ok,3518383.521792,ok,,100,100,101,False,7252.0,7294.25
+3,uno,qft,9,False,R2 partial join: 97 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,97,101,False,8276.0,7990.475
+3,uno,qft,10,False,R2 partial join: 94 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,94,101,False,10542.0,10115.3755
+3,uno,qft,11,False,R2 partial join: 98 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,98,101,False,10684.0,10633.974999999999
+3,uno,qft,12,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,99,101,False,12808.0,12861.025
+3,uno,qft,13,False,R2 partial join: 99 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,99,101,False,12232.0,12232.8
+3,uno,qft,14,False,R2 partial join: 97 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,97,101,False,14010.0,13820.975
+3,uno,qft,15,False,R2 partial join: 97 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,97,101,False,10484.0,10442.575
+3,uno,qft,16,False,R2 partial join: 92 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,92,101,False,16104.0,15391.813
+3,uno,qft,17,False,R2 partial join: 88 pairs for 100 reps,3518383.521792,count_mismatch,extra,100,88,101,False,30182.0,28886.813000000002
+3,uno,qft,18,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,63788.0,
+3,uno,qft,19,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,129878.0,
+3,uno,qft,20,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,218400.0,
+3,uno,qft,21,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,400958.0,
+3,uno,qft,22,False,R1 no pairs: count_mismatch,3518383.521792,refused_count_mismatch,extra,100,0,101,True,713566.0,
