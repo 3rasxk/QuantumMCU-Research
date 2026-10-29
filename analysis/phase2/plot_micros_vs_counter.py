@@ -5,8 +5,8 @@
 # Reads data/raw/phase2/<board>/<circuit>/with_ref/ref/ref_compare.csv read-only (the post-restart dataset: micros() and the
 # counter timed the same rep). A point needs >= MIN_PAIRS paired reps. A line ends where the data ends and breaks at a missing n;
 # nothing is filled or interpolated. A board x circuit without counter data gets no figure and is listed.
-# Each figure (all n, log y in us): the counter's time (reference, solid blue), micros()'s time (dashed orange) and the gap
-# |micros() - counter| (purple) below them, all from the measured medians; hollow dot where micros() is above the counter.
+# Each figure (all n, log y in us): the counter (reference, solid blue) and micros() (dashed orange), both measured median time per rep,
+# y axis zoomed onto the two lines.
 # Writes data/figures/phase2/micros_vs_counter/<board>_<circuit>.png and data/derived/phase2_micros_vs_counter.csv.
 # PNGs carry no timestamp metadata, so a re-run gives identical files.
 #
@@ -132,37 +132,29 @@ def place_legend(ax, handles, segs):
 
 
 def plot_one(s, board, circuit):
-    """All n, log y in us. Three lines, all from the measured medians: the counter's time per rep (reference, solid blue), micros()'s
-    time per rep (dashed orange) and, below them, the gap |micros() - counter| (purple). On a log axis the two time lines lie on top of
-    each other at large n, but the gap line sits a visible distance below them. A hollow dot marks a gap where micros() is above the counter."""
+    """All n, log y in us. Two lines, both measured median times per rep: the counter (reference, solid blue) and micros() (dashed
+    orange). The y axis is zoomed onto them: its limits sit 1.4x outside the lowest and highest plotted value."""
     s = s.sort_values("n")
     fig, ax = plt.subplots(figsize=(9.4, 6.2), layout="constrained")
-    ns, gap = s.n.tolist(), s.diff_us.abs().tolist()
+    ns = s.n.tolist()
     segs = draw_series(ax, ns, s.median_counter_us.tolist(), COUNTER_COLOR, "-")
     segs += draw_series(ax, ns, s.median_micros_us.tolist(), MICROS_COLOR, DASH)
-    segs += draw_series(ax, ns, gap, GAP_COLOR, "-")
     handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, linestyle="-", label="counter (reference)"),
-               Line2D([], [], color=MICROS_COLOR, linewidth=2.0, linestyle=DASH, label="micros()"),
-               Line2D([], [], color=GAP_COLOR, linewidth=2.0, linestyle="-", label="|micros() $-$ counter|")]
-    above = s[s.diff_us > 0]
-    if not above.empty:
-        ax.plot(above.n, above.diff_us.abs(), linestyle="none", marker="o", markersize=7, markerfacecolor="white",
-                markeredgecolor=GAP_COLOR, markeredgewidth=1.6, zorder=4)
-        handles.append(Line2D([], [], linestyle="none", marker="o", markersize=7, markerfacecolor="white",
-                              markeredgecolor=GAP_COLOR, markeredgewidth=1.6, label="micros() above counter"))
-    allv = s.median_counter_us.tolist() + s.median_micros_us.tolist() + gap
-    top = log_axis(ax, min(allv), max(allv))
+               Line2D([], [], color=MICROS_COLOR, linewidth=2.0, linestyle=DASH, label="micros()")]
+    allv = s.median_counter_us.tolist() + s.median_micros_us.tolist()
+    log_axis(ax, min(allv), max(allv))
+    ylim = ax.get_ylim()
     ax.set_xticks(sorted(s.n.unique()))
     ax.set_title(f"Phase 2 -- micros() vs counter, {ps.BOARD_SHORT[board]}, {circuit}")
     ax.set_xlabel("Number of qubits, $n$")
-    ax.set_ylabel("Median time per rep and gap (µs, log scale)")
+    ax.set_ylabel("Median execution time per rep (µs, log scale)")
     loc = place_legend(ax, handles, segs)
     # ps.save_png switches minor ticks off; the unnumbered 2-9 ticks are minor ticks, so save with the same settings
     path = ps._check_output_path(FIG_DIR / f"{board}_{circuit}.png", ".png")
     fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
     print(f"figure -> {path}")
     plt.close(fig)
-    return loc, top
+    return loc, (ns[0], ns[-1], ylim)
 
 
 def main():
@@ -186,7 +178,7 @@ def main():
                 continue
             loc, top = plot_one(s, b, c)
             made += 1
-            print(f"{b}_{c}: legend={loc} y decades {top}")
+            print(f"{b}_{c}: n {top[0]}..{top[1]}  y {top[2][0]:.4g} .. {top[2][1]:.6g} us")
     print(f"{made} figure(s) written")
     for sk in skipped:
         print("skipped:", *sk)
