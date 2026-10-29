@@ -24,6 +24,50 @@ BOARD_SRAM_BYTES = {"uno": 2048, "esp8266": 81920, "esp32": 327680}
 MIN_PAIRS = 10                                                    # fewer counter pairs: no median/IQR drawn
 
 
+YLIM_FILE = REPO_ROOT / "data" / "derived" / "phase2_ylims.json"
+
+
+def record_ylim(key, ax):
+    """Phase 2 charts store the y limits they ended up with, so the matching Phase 3 chart can use the same axis."""
+    data = json.loads(YLIM_FILE.read_text()) if YLIM_FILE.exists() else {}
+    data[key] = [float(v) for v in ax.get_ylim()]
+    YLIM_FILE.parent.mkdir(parents=True, exist_ok=True)
+    YLIM_FILE.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+
+
+def match_phase2_ylim(ax, key):
+    """Phase 3 charts: y axis = the Phase 2 chart's limits (key from record_ylim), widened only if Phase 3 data would
+    fall outside them. No stored limits (Phase 2 chart not made yet): the axis is left as drawn."""
+    if not YLIM_FILE.exists():
+        return
+    lim = json.loads(YLIM_FILE.read_text()).get(key)
+    if lim:
+        ax.set_ylim(lim[0], lim[1])
+        d = [v for line in ax.lines for v in line.get_ydata() if v == v and v > 0]
+        for coll in ax.collections:
+            for path in coll.get_paths():
+                d += [v for v in path.vertices[:, 1] if v == v and v > 0]
+        if d and (min(d) < lim[0] or max(d) > lim[1]):
+            ax.set_ylim(min(lim[0], min(d) / 1.4), max(lim[1], max(d) * 1.4))
+            print(f"note: Phase 3 data outside the Phase 2 y range for {key}; axis widened")
+
+
+def phase3_cutoff(board, circuit, extra=1):
+    """Largest n a Phase 3 chart draws: the n where the offload round trip first drops below Phase 2 local execution
+    (median per n, n measured in both phases) plus `extra` more n so the crossing is a visible line, not one point.
+    None when there is no crossover in the measured range (draw everything)."""
+    import pandas as pd
+    try:
+        loc = pd.read_csv(REPO_ROOT / "data" / "raw" / "phase2" / board / circuit / "with_ref" / "raw.csv") \
+            .groupby("n").exec_time_us.median()
+        off = pd.read_csv(REPO_ROOT / "data" / "raw" / "phase3" / board / circuit / "with_ref" / "raw.csv") \
+            .groupby("n").e2e_latency_us.median()
+    except FileNotFoundError:
+        return None
+    cross = next((n for n in sorted(set(loc.index) & set(off.index)) if off[n] < loc[n]), None)
+    return None if cross is None else int(cross) + extra
+
+
 def read_rows(path):
     path = Path(path)
     if not path.exists():

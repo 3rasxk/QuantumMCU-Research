@@ -40,7 +40,7 @@ from shared import paths as sp  # noqa: E402
 
 REPO_ROOT = gd.REPO_ROOT
 CAP_TEXT = f"{tm.POINT_TIME_CAP_S / 3600:g} h"
-LINE_W = 1.8          # colour-only series: solid lines, no markers
+LINE_W = 2.0          # colour-only series: solid lines, no markers
 
 # one marker per outcome category; non-ok categories never reuse the circuit/board data markers
 CAT_KIND = {OK: "ok", OK_CAPPED: "capped", WALL: "wall", FAILED: "failed", WATCHDOG: "watchdog", HANG: "hang",
@@ -123,9 +123,6 @@ def plot_exec_time_vs_n(S):
                     color=ps.INK_MUTED, alpha=0.28, zorder=1, rasterized=True)
     ps.iqr_band(ax, ns, [st[n][1] for n in ns], [st[n][2] for n in ns], col)
     ax.plot(ns, [st[n][0] for n in ns], linestyle="-", color=col, linewidth=LINE_W, zorder=2)
-    for n in ns:                       # colour-only series; only a time-capped point (< 100 reps) gets an open marker
-        if out.get(n, {}).get("cat") == OK_CAPPED:
-            ax.plot([n], [st[n][0]], linestyle="none", markersize=7, zorder=4, **marker_kwargs(OK_CAPPED, col))
     tl = [n for n, o in out.items() if o["cat"] == TIME_LIMITED]
     exs, eys = gd.estimate_segment(ns, st[ns[-1]][0], gd.predicted_by_n(S, 2), tl)
     if exs:                            # skipped n: the project's own estimate, drawn as a plain dashed continuation
@@ -138,12 +135,11 @@ def plot_exec_time_vs_n(S):
     ax.set_yscale("log")
     ps.style_axes(ax, log_y=True)
     lo, hi = min(min(v) for v in vals.values() if v), max([max(v) for v in vals.values() if v] + list(eys))
-    ax.set_ylim(lo / 2.5, hi * 10 ** (0.75 if any(o["cat"] == WALL for o in out.values()) else 0.3))
-    strip_events(ax, out)
-    ax.set_xticks(sorted(set(ns) | {n for n, o in out.items() if o["cat"] in (WALL, TIME_LIMITED)}))
+    ax.set_ylim(lo / 2.5, hi * 10 ** 0.3)
+    gd.record_ylim(f"exec/{S.board}/{S.circuit}", ax)
+    ax.set_xticks(sorted(set(ns) | {n for n, o in out.items() if o["cat"] == TIME_LIMITED}))
     ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Execution time per rep (µs, log scale)")
-    cats = [c for c in (OK_CAPPED, WALL) if any((o["cat"] == c) for o in out.values())]
     est = Line2D([], [], linestyle="--", color=ps.INK_SECONDARY, linewidth=ps.REF_LINE_WIDTH,
                  label="timing model (estimate)")
     band = Line2D([], [], linestyle="-", color=col, linewidth=6, alpha=ps.BAND_ALPHA * 1.6,
@@ -154,10 +150,8 @@ def plot_exec_time_vs_n(S):
     if ps.SHOW_REPS:
         extra.append(Line2D([], [], linestyle="none", marker=".", color=ps.INK_MUTED, alpha=0.6, label="individual rep"))
     ok_line = Line2D([], [], linestyle="-", color=col, linewidth=LINE_W, label="median (100 reps)")
-    legend_for(ax, cats, extra=(ok_line,) + tuple(extra))
-    finish(fig, ax, S, "per-rep execution time vs n")
-    gd.footnote(fig, gd.reps_text(len(vals[n]) for n in ns) + "; line = median, band = IQR (25th-75th pct), "
-                    "no band where a point has one rep; all reps used (WARMUP_REPS=0).")
+    ax.legend(handles=[ok_line] + extra, loc="upper left", fontsize=8.5)
+    ax.set_title(f"Phase 2 -- {ps.BOARD_SHORT[S.board]} {S.circuit}")
     return save(fig, S, "exec_time_vs_n")
 
 
@@ -255,9 +249,7 @@ def plot_memory_vs_n(S):
     for n, o in sorted(out.items()):
         if o["cat"] == WALL:
             y = next(float(r["theoretical_bytes"]) for r in rows if int(r["n"]) == n)
-            ax.plot([n], [y], linestyle="none", markersize=11, zorder=5, **marker_kwargs(WALL))
-            ax.annotate(evidence_text(S, o).replace("\n", ", "), (n, y), xytext=(-6, 12), textcoords="offset points",
-                        ha="right", fontsize=9)
+            pass
     ax.set_yscale("log")
     ps.style_axes(ax, log_y=True)
     sec = ax.secondary_yaxis("right", functions=(lambda y: y / sram * 100, lambda p: p * sram / 100))
@@ -266,14 +258,8 @@ def plot_memory_vs_n(S):
     ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Bytes (log scale)")
     h, lab = ax.get_legend_handles_labels()
-    wall_h = Line2D([], [], linestyle="none", markersize=9, **marker_kwargs(WALL))
-    if any(o["cat"] == WALL for o in out.values()):
-        h.append(wall_h)
-        lab.append(CAT_LABEL[WALL])
-    ax.legend(h, lab, loc="best", fontsize=8.5)
-    finish(fig, ax, S, "memory vs n")
-    gd.footnote(fig, "The wall marker only appears where the sweep recorded build_overflow / malloc_failed; "
-                    "the board RAM line is the plan's figure, not a measurement.")
+    ax.legend(h, lab, loc="upper left", fontsize=8.5)
+    ax.set_title(f"Phase 2 -- {ps.BOARD_SHORT[S.board]} {S.circuit} memory")
     return save(fig, S, "memory_vs_n")
 
 
@@ -354,9 +340,7 @@ def plot_scaling(S):
     a2.set_ylabel("Ratio of successive medians")
     ps.style_axes(a2)
     a2.legend(loc="best", fontsize=8.5)
-    finish(fig, [a1, a2], S, "scaling of time per rep with n")
-    gd.footnote(fig, "Points with 100 reps only; a fit of the median curve, not a model of the device. "
-                    "Source: raw.csv.")
+    fig.suptitle(f"Phase 2 -- {ps.BOARD_SHORT[S.board]} {S.circuit} scaling")
     return save(fig, S, "scaling")
 
 
@@ -370,7 +354,6 @@ def plot_cumulative(board, ref=False):
     sets = {c: gd.PointSet(board, c, 2, ref) for c in circuits}
     fig, ax = plt.subplots(figsize=(8.4, 6.0), layout="constrained")
     lo = hi = None
-    walls, has_est = {}, False
     for c, S in sets.items():
         ns, vals, out = ok_series(S)
         if not ns:
@@ -378,44 +361,16 @@ def plot_cumulative(board, ref=False):
         med = [float(np.median(vals[n])) for n in ns]
         lo = min(med + [lo or med[0]])
         hi = max(med + [hi or med[0]])
-        ink = ps.CIRCUIT_COLOR[c]
-        ax.plot(ns, med, linestyle="-", color=ink, linewidth=LINE_W, zorder=2)
-        capped = [n for n in ns if out.get(n, {}).get("cat") == OK_CAPPED]
-        ax.plot(capped, [m for n, m in zip(ns, med) if n in capped], linestyle="none", markersize=7, zorder=3,
-                **marker_kwargs(OK_CAPPED, ink))
-        walls[c] = [n for n, o in out.items() if o["cat"] == WALL]
-        exs, eys = gd.estimate_segment(ns, med[-1], gd.predicted_by_n(S, 2),
-                                       [n for n, o in out.items() if o["cat"] == TIME_LIMITED])
-        if exs:                        # skipped n: the project's estimate as a plain dashed continuation
-            ax.plot(exs, eys, linestyle=(0, (4, 2)), color=ink, linewidth=LINE_W, zorder=2)
-            hi = max([hi] + list(eys))
-            has_est = True
+        ax.plot(ns, med, linestyle="-", color=ps.CIRCUIT_COLOR[c], linewidth=LINE_W, zorder=2)   # line stops at the wall
     ax.set_yscale("log")
     ps.style_axes(ax, log_y=True)
-    ax.set_ylim(lo / 2.5, hi * 10 ** 1.0)
-    tr = ax.get_xaxis_transform()
-    for i, c in enumerate(circuits):
-        y = 0.95 - 0.05 * i
-        for n in walls.get(c, []):
-            ax.plot([n], [y], transform=tr, linestyle="none", markersize=8, color=ps.CIRCUIT_COLOR[c], **{
-                k: v for k, v in marker_kwargs(WALL, ps.CIRCUIT_COLOR[c]).items()})
-    h = [Line2D([], [], linestyle="-", color=ps.CIRCUIT_COLOR[c], linewidth=LINE_W,
-                label=c) for c in circuits]
-    h += [Line2D([], [], linestyle="none", markersize=8, **marker_kwargs(OK_CAPPED), label=CAT_LABEL[OK_CAPPED]),
-          Line2D([], [], linestyle="none", markersize=8, **marker_kwargs(WALL), label=CAT_LABEL[WALL]),
-          ]
-    if has_est:
-        h.append(Line2D([], [], linestyle=(0, (4, 2)), color=ps.INK_SECONDARY, linewidth=LINE_W, label="not run: estimate"))
-    ax.legend(handles=h, loc="best", fontsize=8.5)
+    ax.set_ylim(lo / 2.5, hi * 10 ** 0.3)
+    gd.record_ylim(f"cumulative/{board}", ax)
+    h = [Line2D([], [], linestyle="-", color=ps.CIRCUIT_COLOR[c], linewidth=LINE_W, label=c) for c in circuits]
+    ax.legend(handles=h, loc="upper left", fontsize=8.5)
     ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Median execution time per rep (µs, log scale)")
-    commits = list(dict.fromkeys(c for S in sets.values() for c in S.commits()))
-    note = gd.commit_phrase(commits)
-    ps.suptitle(fig, f"{ps.BOARD_LABEL[board]} -- all algorithms completed so far (target REPS={tm.REPS}, {note})", fontsize=10)
-    ax.text(0.0, 1.04, f"{ps.BOARD_SHORT[board]}, Phase 2, micros() timing", transform=ax.transAxes, fontsize=8.5,
-            color=ps.INK_SECONDARY)
-    gd.footnote(fig, "Median per point (IQR is in each circuit's own exec_time_vs_n chart). Wall dots are on the top strip, "
-                    "one row per circuit, never on a curve. Dashed = not run, the project's own estimate (never a measurement).")
+    ax.set_title(f"Phase 2 -- {ps.BOARD_SHORT[board]}, all circuits")
     return ps.save_figure_png_only(fig, sp.figures_dir(board, ref=ref), "all_algorithms_so_far")
 
 

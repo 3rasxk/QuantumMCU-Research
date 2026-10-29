@@ -49,10 +49,8 @@ def subtitle(S):
 
 
 def finish(fig, ax, S, what):
-    ps.suptitle(fig, f"{ps.BOARD_LABEL[S.board]} -- {ps.CIRCUIT_LABEL.get(S.circuit, S.circuit)} -- {what} "
-                     f"(target REPS={tm.REPS}, {S.commit_note()})", fontsize=10)
-    axes = list(np.ravel(ax)) if isinstance(ax, (list, tuple, np.ndarray)) else [ax]
-    axes[0].text(0.0, 1.06, subtitle(S), transform=axes[0].transAxes, fontsize=8.5, color=ps.INK_SECONDARY)
+    """House title: Phase 3 -- <board> <circuit> <what>; no subtitle, no footnote."""
+    ps.suptitle(fig, f"Phase 3 -- {ps.BOARD_SHORT[S.board]} {S.circuit} {what}")
 
 
 def out_dir(S):
@@ -66,6 +64,10 @@ def save(fig, S, stem):
 def load(board, circuit, ref):
     S = gd.PointSet(board, circuit, 3, ref)
     gd.need(S.raw, ["n", "baud_rate", "rep", "e2e_latency_us", "crc_error", "timed_out"], "phase 3 raw.csv")
+    cut = gd.phase3_cutoff(board, circuit)      # draw only up to the crossover with Phase 2 (+1 n)
+    if cut is not None:
+        for name in ("raw", "log", "points"):
+            setattr(S, name, [r for r in getattr(S, name) if int(float(r["n"])) <= cut])
     S.ok_log = {}                       # {(n, baud): row}, later rows of one key win (a re-run appends a newer row)
     for r in S.log:
         S.ok_log[(int(r["n"]), int(r["baud_rate"]))] = r
@@ -140,20 +142,15 @@ def plot_time_breakdown(S):
             a2.plot(ns, vals, linestyle="-", color=greys[i], linewidth=LINE_W, label=names[i], zorder=3)
         a2.set_yscale("log")
         ps.style_axes(a2, log_y=True)
+        gd.match_phase2_ylim(a2, f"exec/{S.board}/{S.circuit}")
         a2.set_xticks(ns)
         a2.set_xlabel("Number of qubits, $n$")
-        a2.set_ylabel("Time per request (µs, log scale)")
+        a2.set_ylabel("Execution time per rep (µs, log scale)")
         a2.legend(loc="upper left", fontsize=9)
         h, lab = a1.get_legend_handles_labels()
         a1.legend(h, lab, loc="best", fontsize=8.5)
-        finish(fig, [a1, a2], S, f"time breakdown per request (baud {baud})")
+        finish(fig, [a1, a2], S, "time breakdown")
         clipped = [r[0] for r in rows if r[5]]
-        gd.footnote(fig, "Per request = point totals / requests. PC simulation = pc_sim_s_total; rest of round trip = "
-                        "sum of the board's own round trips - PC simulation; outside = device_exec_s - sum of round "
-                        "trips (wall time of the loop; includes the board's pacing between requests). The points.csv "
-                        "column serial_transfer_s_total is only wall - PC simulation and is not used."
-                        + (f" At n={clipped} the PC time exceeds the board's round-trip sum (clock difference); "
-                           "that remainder is drawn as 0." if clipped else ""))
         paths += save(fig, S, "time_breakdown" if len(S.bauds) == 1 else f"time_breakdown_{baud}")
     return paths
 
@@ -205,9 +202,10 @@ def plot_latency_vs_n(S):
     ps.style_axes(ax, log_y=True)
     lo, hi = min(all_vals), max(all_vals)
     ax.set_ylim(lo / 2.5, hi * 10 ** 0.3)
+    gd.match_phase2_ylim(ax, f"exec/{S.board}/{S.circuit}")
     ax.set_xticks(sorted({k[0] for k in ok_keys} | ({n for n in nr if n in pred} if est_drawn else set())))
     ax.set_xlabel("Number of qubits, $n$")
-    ax.set_ylabel("Round trip per request (µs, log scale)")
+    ax.set_ylabel("Execution time per rep (µs, log scale)")
     h, lab = ax.get_legend_handles_labels()
     if any(len(lat[k]) < tm.REPS for k in ok_keys):
         h.append(Line2D([], [], linestyle="none", markersize=7, **ps.dot_kwargs("capped")))
@@ -219,9 +217,7 @@ def plot_latency_vs_n(S):
         h.append(Line2D([], [], linestyle=(0, (4, 2)), color=col, linewidth=LINE_W))
         lab.append("not run: estimate")
     ax.legend(h, lab, loc="best", fontsize=8.5)
-    finish(fig, ax, S, f"offload round-trip latency vs n (baud {', '.join(map(str, S.bauds))})")
-    gd.footnote(fig, gd.reps_text(len(lat[k]) for k in ok_keys).replace("repetitions", "requests") +
-                    "; line = median, band = IQR (25th-75th pct), none where a point has one request; all requests used (rep 0 included).")
+    finish(fig, ax, S, "latency")
     return save(fig, S, "latency_vs_n")
 
 
@@ -249,7 +245,7 @@ def plot_reliability(S):
         a1.plot(ns, [100 * (crc[k] + dropped[k]) / reqs[k] for k in keys], linestyle=ls, color=ps.EXTRA_COLOR["vermillion"],
                 linewidth=4.0, label="CRC errors (incl. dropped)", zorder=3)
         a1.plot(ns, [100 * tout[k] / reqs[k] for k in keys], linestyle=ls, color=ps.EXTRA_COLOR["sky"],
-                linewidth=1.6, label="timeouts", zorder=4)   # drawn thinner on top: two zero lines stay visible
+                linewidth=2.0, label="timeouts", zorder=4)   # drawn thinner on top: two zero lines stay visible
         a2.bar(ns, [reqs[k] for k in keys], color=col, hatch=None, label="requests answered", zorder=3)
     top = max([100 * (crc[k] + dropped[k]) / reqs[k] for k in reqs] + [100 * tout[k] / reqs[k] for k in reqs] + [1.0])
     a1.set_ylim(-0.05 * top, top * 1.1)
@@ -267,9 +263,7 @@ def plot_reliability(S):
                if r.get("status") == "ok" and gd.f(r.get("retry_count"), 0) > 0]
     listing = (f"{len(reqs)} points, {tot} requests: {tcrc} CRC errors, {tto} timeouts. "
                f"Failed points: {bad if bad else 'none'}; retried points: {retried if retried else 'none'}.")
-    finish(fig, [a1, a2], S, f"link reliability per n (baud {', '.join(map(str, S.bauds))})")
-    gd.footnote(fig, listing + (" Points below 100 requests were stopped by the per-point time cap."
-                                     if any(v < tm.REPS for v in reqs.values()) else ""))
+    finish(fig, [a1, a2], S, "reliability")
     return save(fig, S, "reliability")
 
 
@@ -313,22 +307,17 @@ def plot_offload_vs_local(S):
     else:
         verdict = (f"No crossover in the measured range n={common[0]}..{common[-1]}: the offload round trip is "
                    "slower than local execution at every n measured in both phases.")
+    gd.match_phase2_ylim(ax, f"exec/{S.board}/{S.circuit}")
     ax.set_xticks(common)
     ax.set_xlabel("Number of qubits, $n$")
-    ax.set_ylabel("Time (µs, log scale)")
+    ax.set_ylabel("Execution time per rep (µs, log scale)")
     h = [Line2D([], [], linestyle="-", color=series[0][2], linewidth=LINE_W, label=series[0][0]),
          Line2D([], [], linestyle="-", color=series[1][2], linewidth=LINE_W, label=series[1][0])]
     if cross is not None:
         h.append(Line2D([], [], linestyle="none", markersize=9, label=f"crossover (n={cross})",
                         **ps.dot_kwargs("wall", ps.INK_PRIMARY)))
     ax.legend(handles=h, loc="best", fontsize=8.5)
-    note = f"Phase 2 {L.commit_note()}; Phase 3 {S.commit_note()}"
-    ps.suptitle(fig, f"{ps.BOARD_LABEL[S.board]} -- {ps.CIRCUIT_LABEL.get(S.circuit, S.circuit)} -- local vs offload (baud {baud}) "
-                     f"(target REPS={tm.REPS}, {note})", fontsize=10)
-    ax.text(0.0, 1.06, f"{ps.BOARD_SHORT[S.board]}, micros() timing on the board in both phases, no counter reference",
-            transform=ax.transAxes, fontsize=8.5, color=ps.INK_SECONDARY)
-    gd.footnote(fig, verdict + " " + NOTE + " Different quantities: local = the board computes one circuit run; offload = "
-                    "serial request, PC simulation and reply. Only n measured in both phases are drawn.")
+    ps.suptitle(fig, f"Phase 3 -- {ps.BOARD_SHORT[S.board]} {S.circuit} offload vs local")
     return save(fig, S, "offload_vs_local")
 
 
@@ -338,6 +327,43 @@ def ignored_reference_summary(S):
     if n:
         print(f"[{S.circuit}] note: {n} reference file(s) in {ref.relative_to(gd.REPO_ROOT)} ignored "
               "(Phase 3 charts do not use the counter)")
+
+
+# --------------------------------------------------------------------------- cumulative
+
+def plot_cumulative(board, ref=False):
+    """Every completed circuit of one board in one chart (median round trip per request vs n): lines only,
+    each line stops at the last ok point."""
+    circuits = gd.known_circuits(board, 3, ref)
+    if not circuits:
+        print(f"[{board}] no phase 3 data -- skipping cumulative chart")
+        return None
+    fig, ax = plt.subplots(figsize=(8.4, 6.0), layout="constrained")
+    lo = hi = None
+    drawn = []
+    for c in circuits:
+        S = load(board, c, ref)
+        lat = lat_by_key(S)
+        keys = [k for k in sorted(lat) if S.ok_log.get(k, {}).get("status") == "ok"]
+        if not keys:
+            continue
+        med = [float(np.median(lat[k])) for k in keys]
+        lo = min(med + [lo or med[0]])
+        hi = max(med + [hi or med[0]])
+        ax.plot([k[0] for k in keys], med, linestyle="-", color=ps.CIRCUIT_COLOR[c], linewidth=2.0, zorder=2)
+        drawn.append(c)
+    if not drawn:
+        plt.close(fig)
+        return None
+    ax.set_yscale("log")
+    ps.style_axes(ax, log_y=True)
+    ax.set_ylim(lo / 2.5, hi * 10 ** 0.3)
+    gd.match_phase2_ylim(ax, f"cumulative/{board}")
+    ax.legend(handles=[Line2D([], [], linestyle="-", color=ps.CIRCUIT_COLOR[c], linewidth=2.0, label=c)
+                       for c in drawn], loc="upper left", fontsize=8.5)
+    ax.set_xlabel("Number of qubits, $n$")
+    ax.set_ylabel("Median execution time per rep (µs, log scale)")
+    return ps.save_figure_png_only(fig, sp.figures_dir(board, phase=3), "all_algorithms_so_far")
 
 
 def main():
@@ -358,6 +384,9 @@ def main():
         if r:
             generated.extend(r)
     ignored_reference_summary(S)
+    r = plot_cumulative(args.board, args.ref)
+    if r:
+        generated.extend(r)
     print(f"\n{len(generated)} figure file(s) written under {out_dir(S)} (PNG only)")
 
 

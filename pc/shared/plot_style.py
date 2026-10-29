@@ -17,17 +17,19 @@ from pathlib import Path
 BOARD_ORDER = ("uno", "esp8266", "esp32")
 BOARD_LABEL = {"uno": "Arduino Uno R3", "esp8266": "NodeMCU ESP8266", "esp32": "ESP32 DevKit V1"}
 BOARD_SHORT = {"uno": "Uno", "esp8266": "ESP8266", "esp32": "ESP32"}
-BOARD_COLOR = {"uno": "#0072B2", "esp8266": "#E69F00", "esp32": "#009E73"}
+# graph-create house style: one hue family per board (blue / orange / green), base tone of the family
+BOARD_COLOR = {"uno": "#1f77b4", "esp8266": "#ff7f0e", "esp32": "#2ca02c"}
 BOARD_MARKER = {"uno": "o", "esp8266": "s", "esp32": "^"}
 # linestyle + marker pair per board, stable in every chart (moved here from _graph_data). Reference / model curves
 # are dashed grey WITHOUT markers; no board pair equals a circuit pair (the markers differ).
 # colour-only series (Phase 1/2/3 charts): one colour per circuit, the same in every chart. Blue / vermillion / green /
 # purple checked with dataviz validate_palette.js (--pairs all): lightness, chroma, normal-vision floor (min dE 18.7)
 # and 3:1 contrast pass; CVD separation is in the 6-8 floor band (purple vs blue 6.7), so every chart also has a legend.
-CIRCUIT_COLOR = {"h_all": "#0072B2", "bell_ghz": "#D55E00", "qft": "#009E73", "grover": "#7B3294"}
+# graph-create "one group only" rule: each circuit takes the base of a different family (blue, orange, green, pink)
+CIRCUIT_COLOR = {"h_all": "#1f77b4", "bell_ghz": "#ff7f0e", "qft": "#2ca02c", "grover": "#e377c2"}
 # extra colours for the non-board, non-circuit lines of one chart (heap, largest block, reliability, ...)
 EXTRA_COLOR = {"purple": "#7B3294", "brown": "#8C510A", "vermillion": "#D55E00", "sky": "#56B4E9", "dark": "#333333"}
-BOARD_LINESTYLE = {"uno": "-", "esp8266": "--", "esp32": ":"}
+BOARD_LINESTYLE = {"uno": "-", "esp8266": "-", "esp32": "-"}   # house style: solid lines, colour tells the board
 
 # --- วงจร: ไม่ยืมสีบอร์ด (สีมีไว้บอกบอร์ดเท่านั้น) ใช้หมึกเทา + marker + linestyle ---
 # 4 วงจร (แผนใหม่ 2026-10-03): h_all, bell_ghz, qft, grover — qpe/steane_encode ถูกถอดออกจากแผน
@@ -100,7 +102,7 @@ MIN_EFFECT = {"local": math.log(1.25), "offload": math.log(1.5)}
 
 
 # --- clean style (2026-10-11): plain matplotlib look, full box, no grid, thin lines, small markers ---
-LINE_WIDTH = 1.3          # pt, data lines
+LINE_WIDTH = 2.0          # pt, data lines (graph-create house style)
 MARKER_SIZE = 4.0         # pt, data-point markers (outcome markers in the run charts stay larger on purpose)
 REF_LINE_WIDTH = 1.0      # pt, dashed reference / model curves
 BAND_ALPHA = IQR_ALPHA    # light IQR band
@@ -130,7 +132,7 @@ def apply_clean_style(paper=False):
         "font.serif": FONT_SERIF,
         "font.sans-serif": FONT_SANS,
         "mathtext.fontset": "stix" if paper else "dejavusans",
-        "font.size": 9.5 if not paper else 7.5,
+        "font.size": 10 if not paper else 7.5,
         "axes.titlesize": title,
         "axes.titleweight": "normal",
         "axes.labelsize": label,
@@ -141,6 +143,7 @@ def apply_clean_style(paper=False):
         "axes.edgecolor": "black",
         "axes.linewidth": 0.7 if paper else 0.8,
         "axes.labelcolor": "black",
+        "axes.titlepad": 8.5,
         "axes.axisbelow": True,
         "axes.grid": False,
         "axes.spines.top": True,
@@ -155,8 +158,8 @@ def apply_clean_style(paper=False):
         "ytick.left": True,
         "xtick.minor.visible": False,    # log axes still draw their own minor ticks
         "ytick.minor.visible": False,
-        "xtick.major.width": 0.7 if paper else 1.1,    # clear tick mark at every labelled number
-        "ytick.major.width": 0.7 if paper else 1.1,
+        "xtick.major.width": 0.7 if paper else 0.8,    # clear tick mark at every labelled number
+        "ytick.major.width": 0.7 if paper else 0.8,
         "xtick.major.size": 3.5 if paper else 6.0,
         "ytick.major.size": 3.5 if paper else 6.0,
         "xtick.minor.width": 0.6 if paper else 0.8,
@@ -168,12 +171,14 @@ def apply_clean_style(paper=False):
         "lines.linewidth": LINE_WIDTH,
         "lines.markersize": MARKER_SIZE,
         "legend.frameon": True,
-        "legend.fancybox": False,
-        "legend.framealpha": 0.9,
-        "legend.edgecolor": "#c8c8c8",
-        "legend.borderpad": 0.4,
-        "legend.labelspacing": 0.3,
-        "legend.handlelength": 2.4,
+        "legend.fancybox": paper,        # house style (non-paper): default rounded frame
+        "legend.framealpha": 0.9 if paper else 1.0,
+        "legend.edgecolor": "#c8c8c8" if paper else "#cccccc",
+        "legend.borderpad": 0.4 if paper else 0.3,
+        "legend.labelspacing": 0.3 if paper else 0.28,
+        "legend.handlelength": 2.4 if paper else 2.5,
+        "legend.columnspacing": 2.0 if paper else 1.1,
+        "lines.solid_capstyle": "butt",
         "figure.facecolor": "white",
         "axes.facecolor": "white",
         "savefig.facecolor": "white",
@@ -406,12 +411,76 @@ def remove_minor_ticks(fig):
             a.minorticks_off()
 
 
+_NO_MARKER = (None, "", " ", "None", "none")
+
+
+def _is_symbol_only(artist):
+    from matplotlib.collections import PathCollection
+    from matplotlib.lines import Line2D
+
+    if isinstance(artist, PathCollection):
+        return True
+    return isinstance(artist, Line2D) and artist.get_linestyle() in ("None", "none", "", " ") \
+        and artist.get_marker() not in _NO_MARKER
+
+
+def strip_symbols(fig):
+    """House style: curves only, no dots / markers / anomaly rings. Symbol-only artists are removed and markers on
+    lines are switched off, with the legend rebuilt without the symbol entries. An axes whose content is ONLY
+    symbols (a scatter / outcome chart) is left alone, since stripping it would empty the chart."""
+    from matplotlib.lines import Line2D
+
+    for ax in fig.axes:
+        curves = [a for a in ax.lines if a.get_linestyle() not in ("None", "none", "", " ") and len(a.get_xdata()) > 2]
+        if not curves:
+            continue
+        for a in list(ax.lines) + list(ax.collections):
+            if _is_symbol_only(a):
+                a.remove()
+            elif isinstance(a, Line2D) and a.get_marker() not in _NO_MARKER:
+                a.set_marker("None")
+        leg = ax.get_legend()
+        if leg is None:
+            continue
+        keep = [(h, t.get_text()) for h, t in zip(leg.legend_handles, leg.get_texts())
+                if not (isinstance(h, Line2D) and h.get_linestyle() in ("None", "none", "", " "))]
+        for h, _ in keep:
+            if isinstance(h, Line2D):
+                h.set_marker("None")
+        fs = leg.get_texts()[0].get_fontsize() if leg.get_texts() else None
+        loc = getattr(leg, "_loc", 0)
+        ncol = getattr(leg, "_ncols", 1)
+        title = leg.get_title().get_text() or None
+        leg.remove()
+        if keep:
+            ax.legend([h for h, _ in keep], [t for _, t in keep], loc=loc, ncol=ncol, fontsize=fs, title=title)
+        for t in list(ax.texts):                   # anomaly labels belong to the removed rings
+            if t.get_text().startswith("anomaly"):
+                t.remove()
+
+
+def strip_titles(fig):
+    """House style: no chart title (the caption / report names the figure). Removes the suptitle, axes titles and
+    any subtitle text sitting above an axes (y > 1 in axes coordinates)."""
+    if getattr(fig, "_suptitle", None) is not None:
+        fig._suptitle.remove()
+        fig._suptitle = None
+    for ax in fig.axes:
+        for loc in ("center", "left", "right"):
+            ax.set_title("", loc=loc)
+        for t in list(ax.texts):
+            if t.get_transform() == ax.transAxes and t.get_position()[1] > 1.0:
+                t.remove()
+
+
 def save_png(fig, path, dpi=None, close=True):
     """Save a PNG (never SVG): 300 dpi for data/figures/, 600 dpi in paper mode. Refuses the raw-data and archived-data trees.
     No Software metadata. Returns the path."""
     import matplotlib.pyplot as plt
 
     path = _check_output_path(path, ".png")
+    strip_symbols(fig)
+    strip_titles(fig)
     remove_minor_ticks(fig)
     fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=dpi or (PAPER_PNG_DPI if _PAPER else RASTER_DPI),
                 metadata=_PNG_META)

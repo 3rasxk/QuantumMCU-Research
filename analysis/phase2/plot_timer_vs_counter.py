@@ -12,7 +12,7 @@
 # Writes data/figures/phase2/timer_vs_counter/<board>/<circuit>.png and data/derived/phase2_timer_vs_counter.csv.
 # PNGs carry no timestamp metadata, so a re-run gives identical files.
 #
-# Use:  .venv/bin/python analysis/phase2/plot_timer_vs_counter.py
+# Use:  .venv/bin/python analysis/phase2/plot_timer_vs_counter.py [--phase 2|3]   (3 = Phase 3 data, same layout under data/figures/phase3/)
 
 import math
 import sys
@@ -27,11 +27,14 @@ from matplotlib.lines import Line2D
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "pc"))
+sys.path.insert(0, str(REPO_ROOT / "analysis"))
 from shared import plot_style as ps  # noqa: E402
+import _graph_data as gd  # noqa: E402
 
-RAW_DIR = REPO_ROOT / "data" / "raw" / "phase2"
-FIG_DIR = REPO_ROOT / "data" / "figures" / "phase2" / "timer_vs_counter"
-CSV_PATH = REPO_ROOT / "data" / "derived" / "phase2_timer_vs_counter.csv"
+PHASE = 3 if "--phase" in sys.argv and sys.argv[sys.argv.index("--phase") + 1] == "3" else 2   # Phase 3: e2e round trip vs counter
+RAW_DIR = REPO_ROOT / "data" / "raw" / f"phase{PHASE}"
+FIG_DIR = REPO_ROOT / "data" / "figures" / f"phase{PHASE}" / "timer_vs_counter"
+CSV_PATH = REPO_ROOT / "data" / "derived" / f"phase{PHASE}_timer_vs_counter.csv"
 MIN_PAIRS = 10          # fewer paired reps: no median drawn (same rule as the other micros()/counter charts)
 OUTLIER_PCT = 5.0
 DASH = (0, (4, 3))
@@ -48,6 +51,8 @@ def load_points():
                 skipped.append((b, c, "no ref_compare.csv"))
                 continue
             d = pd.read_csv(path).dropna(subset=["micros_us", "counter_us"])
+            if PHASE == 3 and gd.phase3_cutoff(b, c) is not None:      # Phase 3: up to the crossover with Phase 2 (+1 n)
+                d = d[d.n <= gd.phase3_cutoff(b, c)]
             for n, g in d.groupby("n"):
                 if len(g) < MIN_PAIRS:
                     skipped.append((b, c, f"n={int(n)}: only {len(g)} paired rep(s)"))
@@ -69,6 +74,18 @@ def draw_series(ax, ns, ys, color, linestyle):
     else:
         ax.plot(ns, ys, color=color, linestyle=linestyle, linewidth=2.0, zorder=3)
     return [np.column_stack([ns, ys])]
+
+
+def save_fig(fig, path):
+    """Phase 2 keeps its own save (the unnumbered 2-9 ticks are minor ticks). Phase 3 follows the graph-create house style:
+    no minor ticks, no title, no markers, so it goes through ps.save_png."""
+    path = ps._check_output_path(path, ".png")
+    if PHASE == 3:
+        return ps.save_png(fig, path)
+    fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
+    print(f"figure -> {path}")
+    plt.close(fig)
+    return path
 
 
 def _sci_label(v, _pos=None):
@@ -129,16 +146,17 @@ def plot_one(s, board, circuit):
                Line2D([], [], color=MICROS_COLOR, linewidth=2.0, linestyle=DASH, label="on-board timer")]
     allv = s.median_counter_us.tolist() + s.median_micros_us.tolist()
     log_axis(ax, min(allv), max(allv))
+    if PHASE == 2:
+        gd.record_ylim(f"timer/{board}/{circuit}", ax)
+    else:
+        gd.match_phase2_ylim(ax, f"timer/{board}/{circuit}")
     ylim = ax.get_ylim()
     ax.set_xticks(sorted(s.n.unique()))
     ax.set_ylabel("Median execution time per rep (µs, log scale)")
     loc = place_legend(ax, handles, segs)
     ax.set_xlabel("Number of qubits, $n$")
     # ps.save_png switches minor ticks off; the unnumbered 2-9 ticks are minor ticks, so save with the same settings
-    path = ps._check_output_path(FIG_DIR / board / f"{circuit}.png", ".png")
-    fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
-    print(f"figure -> {path}")
-    plt.close(fig)
+    save_fig(fig, FIG_DIR / board / f"{circuit}.png")
     return loc, (ns[0], ns[-1], ylim)
 
 
@@ -152,16 +170,19 @@ def plot_ratio(df):
             s = df[(df.board == b) & (df.circuit == c)].sort_values("n")
             if not s.empty:
                 ax.plot(s.n, s.median_micros_us / s.median_counter_us, color=ps.CIRCUIT_COLOR[c], linewidth=2.0, label=c, zorder=3)
-        ax.set_title(ps.BOARD_SHORT[b])
+        if PHASE != 3:                                  # Phase 3: no panel title, the board name is the legend title
+            ax.set_title(ps.BOARD_SHORT[b])
         ax.set_xlabel("Number of qubits, $n$")
         ax.set_xticks(sorted(df[df.board == b].n.unique()))
     axes[0].set_ylabel("on-board timer / external pulse counter (median per rep)")
-    axes[0].set_ylim(0.6, 1.02)
-    axes[-1].legend(loc="lower right")
-    path = ps._check_output_path(FIG_DIR / "ratio_all_boards.png", ".png")
-    fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
-    print(f"figure -> {path}")
-    plt.close(fig)
+    if PHASE != 3:
+        axes[0].set_ylim(0.6, 1.02)
+    if PHASE == 3:
+        for ax, b in zip(axes, ps.BOARD_ORDER):
+            ax.legend(loc="lower right", title=ps.BOARD_SHORT[b])
+    else:
+        axes[-1].legend(loc="lower right")
+    save_fig(fig, FIG_DIR / "ratio_all_boards.png")
 
 
 def darker(color, f=0.55):
@@ -186,14 +207,15 @@ def plot_board(df, board):
                     Line2D([], [], color=dark, linewidth=2.0, linestyle=DASH, label=f"{c} on-board timer")]
     allv = s.median_counter_us.tolist() + s.median_micros_us.tolist()
     log_axis(ax, min(allv), max(allv))
+    if PHASE == 2:
+        gd.record_ylim(f"timer_board/{board}", ax)
+    else:
+        gd.match_phase2_ylim(ax, f"timer_board/{board}")
     ax.set_xticks(sorted(s.n.unique()))
     ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Median execution time per rep (µs, log scale)")
     place_legend(ax, handles, segs, ncol=2)
-    path = ps._check_output_path(FIG_DIR / board / "all_circuits.png", ".png")
-    fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
-    print(f"figure -> {path}")
-    plt.close(fig)
+    save_fig(fig, FIG_DIR / board / "all_circuits.png")
 
 
 def main():

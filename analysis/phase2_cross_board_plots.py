@@ -23,7 +23,7 @@ from shared import plot_style as ps  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 
 CAP_TEXT = f"{tm.POINT_TIME_CAP_S / 3600:g} h"
-LINE_W = 1.8          # colour-only series: solid lines, no markers
+LINE_W = 2.0          # colour-only series: solid lines, no markers
 
 
 def plot_circuit(circuit, ref=False):

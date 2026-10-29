@@ -102,9 +102,9 @@ def draw_series(ax, board, circuit, s, band_alpha=ps.IQR_ALPHA):
     ax.fill_between(ns, s["loc_q1"], s["loc_q3"], color=color, alpha=band_alpha, linewidth=0, zorder=2)
     ax.fill_between(ns, s["off_q1"], s["off_q3"], color=color, alpha=band_alpha * 0.7,
                     linewidth=0, zorder=2)
-    ax.plot(ns, s["loc_med"], color=color, linestyle="-", linewidth=1.8, zorder=3,
+    ax.plot(ns, s["loc_med"], color=color, linestyle="-", linewidth=2.0, zorder=3,
             label=f"{ps.BOARD_SHORT[board]} — local")
-    ax.plot(ns, s["off_med"], color=color, linestyle="--", linewidth=1.8, zorder=3,
+    ax.plot(ns, s["off_med"], color=color, linestyle="--", linewidth=2.0, zorder=3,
             label=f"{ps.BOARD_SHORT[board]} — offload")
 
     label = "anomaly (also flagged in n=30 run)"

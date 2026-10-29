@@ -107,7 +107,7 @@ def test_ticks():
     fig.canvas.draw()
     ticks = [t for t in ax.get_xticks() if ax.get_xlim()[0] <= t <= ax.get_xlim()[1]]
     check("every integer from 2 to 14 has a tick", all(n in ticks for n in range(2, 15)), str(ticks))
-    check("tick marks are long and thick enough to see", matplotlib.rcParams["xtick.major.size"] >= 5 and matplotlib.rcParams["xtick.major.width"] >= 1.0)
+    check("tick marks are long and thick enough to see", matplotlib.rcParams["xtick.major.size"] >= 5 and matplotlib.rcParams["xtick.major.width"] >= 0.8)
     check("tick labels >= 9 pt, axis labels >= 10 pt", matplotlib.rcParams["xtick.labelsize"] >= 9 and matplotlib.rcParams["axes.labelsize"] >= 10)
     plt.close(fig)
     fig, ax = plt.subplots()

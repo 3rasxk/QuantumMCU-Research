@@ -91,7 +91,7 @@ def plot_exec_time(summary_rows):
             medians = [p[1] for p in pts]
             color, ls, mk = ps.board_style(board)
             ps.iqr_band(ax, ns, [p[2] for p in pts], [p[3] for p in pts], color)
-            ax.plot(ns, medians, color=color, linestyle=ls, marker=mk, markersize=ps.MARKER_SIZE,
+            ax.plot(ns, medians, color=color, linestyle=ls, marker=None,
                     linewidth=ps.LINE_WIDTH, label=ps.BOARD_LABEL[board], zorder=3)
             for n in ps.resolve_anomalies(board, circuit, ns, medians, "local", "local"):
                 ps.mark_anomaly(ax, n, medians[ns.index(n)], "anomaly (also flagged in n=30 run)")

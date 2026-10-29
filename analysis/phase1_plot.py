@@ -51,7 +51,7 @@ def load_rows():
 # separation is in the 6-8 floor band (purple vs blue 6.7), so the legend order matches the curve order and the
 # per-algorithm figures carry the algorithm name in the title. The rcParams come from ps.apply_style(). ---
 PUB_COLOR = dict(ps.CIRCUIT_COLOR)       # one colour per circuit, shared with the Phase 2 and 3 charts
-LINE_W = 1.8
+LINE_W = 2.0
 
 
 def _curve(ax, xs, ys, circuit, **kw):
