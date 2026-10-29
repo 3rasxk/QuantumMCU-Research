@@ -84,13 +84,13 @@ def draw_series(ax, ns, ys, color, linestyle):
     return segs
 
 
-def _plain(v, _pos=None):
-    """0.1, 1, 10 ... 100,000 as plain numbers."""
-    return f"{v:,.0f}" if v >= 1 else f"{v:g}"
+def _sci_label(v, _pos=None):
+    """10^k as mathtext (the house-style tick label)."""
+    return rf"$10^{{{int(round(math.log10(v)))}}}$"
 
 
 def gap_axis(ax, ymin, ymax):
-    """Log y: a numbered tick at every decade (0.1, 1, 10 ... in us) and unnumbered small ticks at 2-9 of each decade; limits hug
+    """Log y: a numbered tick (10^k, in us) at every decade and unnumbered small ticks at 2-9 of each decade; limits hug
     the surrounding decades of the data."""
     lo, hi = math.floor(math.log10(ymin) + 0.05), math.ceil(math.log10(ymax) - 0.05)
     hi = max(hi, lo + 1)
@@ -99,7 +99,7 @@ def gap_axis(ax, ymin, ymax):
     decades = [10.0 ** e for e in range(lo - 1, hi + 1)]
     ax.set_yscale("log")
     ax.yaxis.set_major_locator(mticker.FixedLocator(inside(decades)))
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_plain))
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_sci_label))
     ax.yaxis.set_minor_locator(mticker.FixedLocator(inside([m * 10.0 ** e for e in range(lo - 1, hi + 1) for m in range(2, 10)])))
     ax.yaxis.set_minor_formatter(mticker.NullFormatter())
     ax.tick_params(axis="y", which="minor", length=3.5, width=0.8)
