@@ -5,8 +5,8 @@
 # Reads data/raw/phase2/<board>/<circuit>/with_ref/ref/ref_compare.csv read-only (the post-restart dataset: micros() and the
 # counter timed the same rep). A point needs >= MIN_PAIRS paired reps. A line ends where the data ends and breaks at a missing n;
 # nothing is filled or interpolated. A board x circuit without counter data gets no figure and is listed.
-# Each figure: |micros() - counter| in us (measured medians) on a log scope from 0.0125 us (one counter tick) up to 10 us, wider only
-# when a gap is larger; hollow dot where micros() is above the counter.
+# Each figure: the counter (reference, solid) and micros() (dashed), both measured median time per rep in us on one log y axis whose
+# scope starts at 0.0125 us (one counter tick) and reaches at least 10 us.
 # Writes data/figures/phase2/micros_vs_counter/<board>_<circuit>.png and data/derived/phase2_micros_vs_counter.csv.
 # PNGs carry no timestamp metadata, so a re-run gives identical files.
 #
@@ -92,8 +92,8 @@ def _sci_label(v, _pos=None):
 
 
 def gap_axis(ax, ymax):
-    """Log y from 0.0125 us (one counter tick) to at least 10 us, in us: numbered 10^k at every decade, "0.0125" at the bottom
-    edge, unnumbered small ticks at 2-9. The top widens to the next decade only when a gap is larger than 10 us."""
+    """Log y in us from 0.0125 us (one counter tick) to at least 10 us, wider if the data is higher: numbered 10^k at every decade, "0.0125" at the bottom
+    edge, unnumbered small ticks at 2-9. The top widens to the data maximum."""
     hi = max(math.ceil(math.log10(max(ymax, SCOPE_HI_US)) - 0.05), 1)
     ylim = (SCOPE_LO_US, 10.0 ** (hi + 0.12))
     inside = lambda vs: [round(v, 6) for v in vs if ylim[0] <= v <= ylim[1]]  # noqa: E731
@@ -133,24 +133,20 @@ def place_legend(ax, handles, segs):
 
 
 def plot_one(s, board, circuit):
-    """|micros() - counter| in us (measured medians) on a log scope from 0.0125 us to at least 10 us. micros() is below the counter
-    at almost every point; a point where it is above is marked with a hollow dot, so the sign is not lost on a log axis."""
+    """Both lines are measured medians per rep in us on one log axis: the counter (reference, solid blue) and micros() (dashed
+    orange). Nothing is derived or fixed except the bottom of the scope, 0.0125 us (one counter tick)."""
     s = s.sort_values("n")
     fig, ax = plt.subplots(figsize=(9.4, 6.2), layout="constrained")
-    ns, gap = s.n.tolist(), s.diff_us.abs().tolist()
-    segs = draw_series(ax, ns, gap, MICROS_COLOR, "-")
-    handles = [Line2D([], [], color=MICROS_COLOR, linewidth=2.0, label="|micros() $-$ counter|")]
-    above = s[s.diff_us > 0]
-    if not above.empty:
-        ax.plot(above.n, above.diff_us.abs(), linestyle="none", marker="o", markersize=7, markerfacecolor="white",
-                markeredgecolor=MICROS_COLOR, markeredgewidth=1.6, zorder=4)
-        handles.append(Line2D([], [], linestyle="none", marker="o", markersize=7, markerfacecolor="white",
-                              markeredgecolor=MICROS_COLOR, markeredgewidth=1.6, label="micros() above counter"))
-    top = gap_axis(ax, max(gap))
+    ns = s.n.tolist()
+    segs = draw_series(ax, ns, s.median_counter_us.tolist(), COUNTER_COLOR, "-")
+    segs += draw_series(ax, ns, s.median_micros_us.tolist(), MICROS_COLOR, DASH)
+    handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, linestyle="-", label="counter (reference)"),
+               Line2D([], [], color=MICROS_COLOR, linewidth=2.0, linestyle=DASH, label="micros()")]
+    top = gap_axis(ax, s[["median_counter_us", "median_micros_us"]].max().max())
     ax.set_xticks(sorted(s.n.unique()))
     ax.set_title(f"Phase 2 -- micros() vs counter, {ps.BOARD_SHORT[board]}, {circuit}")
     ax.set_xlabel("Number of qubits, $n$")
-    ax.set_ylabel("Gap between micros() and counter (µs, log scale)")
+    ax.set_ylabel("Median execution time per rep (µs, log scale)")
     loc = place_legend(ax, handles, segs)
     # ps.save_png switches minor ticks off; the unnumbered 2-9 ticks are minor ticks, so save with the same settings
     path = ps._check_output_path(FIG_DIR / f"{board}_{circuit}.png", ".png")
