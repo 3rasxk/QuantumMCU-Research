@@ -6,7 +6,8 @@
 # counter timed the same rep). A point needs >= MIN_PAIRS paired reps. A line ends where the data ends and breaks at a missing n;
 # nothing is filled or interpolated. A board x circuit without counter data gets no figure and is listed.
 # Each figure: the counter's time per rep (reference, solid blue) and the gap |micros() - counter| (orange), both in us on one log y
-# axis (hollow dot where micros() is above the counter).
+# axis (hollow dot where micros() is above the counter), plus dotted lines at the counter resolution (0.0125 us) and at the micros()
+# resolution (1 us, Uno 4 us).
 # Writes data/figures/phase2/micros_vs_counter/<board>_<circuit>.png and data/derived/phase2_micros_vs_counter.csv.
 # PNGs carry no timestamp metadata, so a re-run gives identical files.
 #
@@ -33,6 +34,8 @@ MIN_PAIRS = 10          # fewer paired reps: no median drawn (same rule as the o
 OUTLIER_PCT = 5.0
 DASH = (0, (4, 3))
 COUNTER_COLOR, MICROS_COLOR = "#1f77b4", "#ff7f0e"   # single group: each series takes the base of a different family
+COUNTER_TICK_US = 0.0125                                  # 80 MHz capture: one counter tick = 12.5 ns
+MICROS_TICK_US = {"uno": 4.0, "esp8266": 1.0, "esp32": 1.0}   # micros() resolution per board
 
 
 def load_points():
@@ -86,19 +89,20 @@ def draw_series(ax, ns, ys, color, linestyle):
 
 
 def _plain(v, _pos=None):
-    """0.1, 0.2, 0.5, 1, 2, 5, 10 ... 100,000 as plain numbers."""
+    """0.0125, 0.1, 1, 10 ... 100,000 as plain numbers."""
     return f"{v:,.0f}" if v >= 1 else f"{v:g}"
 
 
 def gap_axis(ax, ymin, ymax):
-    """Log y: a numbered tick at every decade (0.1, 1, 10, 100, 1,000 ...) and unnumbered small ticks at 2-9 of each decade, the
-    usual log-paper reading; limits hug the surrounding decades."""
+    """Log y: a numbered tick at every decade from 0.1 up, plus one at 0.0125 (the counter resolution, in place of the 0.01 decade
+    that would sit on top of it), and unnumbered small ticks at 2-9 of each decade; limits hug the surrounding decades."""
     lo, hi = math.floor(math.log10(ymin) + 0.05), math.ceil(math.log10(ymax) - 0.05)
     hi = max(hi, lo + 1)
     ylim = (10.0 ** (lo - 0.17), 10.0 ** (hi + 0.12))
     inside = lambda vs: [round(v, 6) for v in vs if ylim[0] <= v <= ylim[1]]  # noqa: E731
+    decades = [10.0 ** e for e in range(lo - 1, hi + 1) if 10.0 ** e >= 0.1]
     ax.set_yscale("log")
-    ax.yaxis.set_major_locator(mticker.FixedLocator(inside([10.0 ** e for e in range(lo - 1, hi + 1)])))
+    ax.yaxis.set_major_locator(mticker.FixedLocator(inside(decades + [COUNTER_TICK_US])))
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(_plain))
     ax.yaxis.set_minor_locator(mticker.FixedLocator(inside([m * 10.0 ** e for e in range(lo - 1, hi + 1) for m in range(2, 10)])))
     ax.yaxis.set_minor_formatter(mticker.NullFormatter())
@@ -149,7 +153,14 @@ def plot_one(s, board, circuit):
                 markeredgecolor=MICROS_COLOR, markeredgewidth=1.6, zorder=4)
         handles.append(Line2D([], [], linestyle="none", marker="o", markersize=7, markerfacecolor="white",
                               markeredgecolor=MICROS_COLOR, markeredgewidth=1.6, label="micros() above counter"))
-    ticks = gap_axis(ax, min(gap + ref), max(gap + ref))
+    # resolution of each method as a horizontal line: the finer one (counter, 12.5 ns) sits lowest, micros() above it; a gap that is
+    # below the micros() line is smaller than micros() can resolve
+    mt = MICROS_TICK_US[board]
+    for y, color, label in ((COUNTER_TICK_US, COUNTER_COLOR, f"counter resolution ({COUNTER_TICK_US:g} µs)"),
+                            (mt, MICROS_COLOR, f"micros() resolution ({mt:g} µs)")):
+        ax.axhline(y, color=color, linestyle=":", linewidth=1.6, zorder=2)
+        handles.append(Line2D([], [], color=color, linestyle=":", linewidth=1.6, label=label))
+    ticks = gap_axis(ax, min(gap + ref + [COUNTER_TICK_US]), max(gap + ref))
     ax.set_xticks(sorted(s.n.unique()))
     ax.set_title(f"Phase 2 -- micros() vs counter, {ps.BOARD_SHORT[board]}, {circuit}")
     ax.set_xlabel("Number of qubits, $n$")
