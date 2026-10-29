@@ -1,0 +1,12 @@
+board,phase,hash,n_matching_commits,newest,oldest,in_git
+esp32,2,4478147465f99625,0,,,False
+esp32,2,5f10cc9afc3fffe5,179,09f0a38,c50d8c1,True
+esp8266,2,5413c474786bad15,0,,,False
+esp8266,2,6a19c55beaadc693,179,09f0a38,c50d8c1,True
+esp8266,2,6cb0e9ea301922b4,0,,,False
+uno,2,7feb4a04e1208c6b,179,09f0a38,c50d8c1,True
+esp32,3,1e404bfed41a49f2,72,09f0a38,579fe78,True
+esp8266,3,1b7b5ca0cb3143d8,5,3dd3a9e,5076c76,True
+esp8266,3,54bef9c2f8726c37,3,5d08452,27b6094,True
+esp8266,3,e33508351a496315,72,09f0a38,579fe78,True
+uno,3,8ce7531666759bcc,72,09f0a38,579fe78,True
