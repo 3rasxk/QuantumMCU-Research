@@ -59,9 +59,30 @@ def main():
     check("every series: the largest N_TEST n are test, disjoint from and larger than every fit n", bool(ok))
     check("no weak point (reps < 30) is a fit point", not P[(P.role == "fit") & P.weak].any().any() and not ((P.role == "fit") & P.weak).any())
     check("weak rule: 29 weak, 30 not weak (reps and requests share one rule)", weak.is_weak(29) and not weak.is_weak(30) and weak.WEAK_MIN == 30)
-    check("the weak points of the data are the expected ones (ESP32 grover n=11, 12; ESP8266 grover n=10)",
+    check("the weak points of the data are the expected ones (ESP32 grover n=10 [100 rows, 18 independent], 11, 12; ESP8266 grover n=10)",
           sorted(map(tuple, P[P.weak][["board", "circuit", "n"]].drop_duplicates().to_records(index=False).tolist())) ==
-          [("esp32", "grover", 11), ("esp32", "grover", 12), ("esp8266", "grover", 10)])
+          [("esp32", "grover", 10), ("esp32", "grover", 11), ("esp32", "grover", 12), ("esp8266", "grover", 10)])
+    # effective repetitions (exact copies are not independent): synthetic and real cases
+    rng = np.random.default_rng(3)
+    uniq = list(rng.integers(1000, 2000, 60))
+    check("effective_reps: an independent series keeps all its rows", weak.effective_reps(uniq) == 60)
+    copied = uniq[:12] + (uniq[12:22] * 8)
+    check("effective_reps: rows 22.. are exact copies of rows 12..21 (period 10) -> 22 independent", weak.effective_reps(copied) == 22, str(weak.effective_reps(copied)))
+    check("effective_reps: a constant series is NOT flagged as a copy", weak.effective_reps([3] * 100) == 100)
+    check("effective_reps: a two-valued series is NOT flagged as a copy", weak.effective_reps([2, 3] * 50) == 100)
+    check("a series with 100 rows but 22 independent repetitions is weak", weak.is_weak_values(copied) and not weak.is_weak_values(uniq))
+    l = C.load_local()
+    r10 = l[(l.board == "esp32") & (l.circuit == "grover") & (l.n == 10)].iloc[0]
+    r9 = l[(l.board == "esp32") & (l.circuit == "grover") & (l.n == 9)].iloc[0]
+    check("ESP32 grover n=10: 100 recorded rows, 18 independent; n=9: 39 independent (not weak)", r10.reps_recorded == 100 and r10.reps == 18 and r9.reps == 39)
+    # the weak and hash rules must act on the points they name: shrink the held-out set so those points become fit CANDIDATES
+    s1 = TM.split(TM.load_points(), n_test=1)
+    role = lambda b, c, n: s1[(s1.board == b) & (s1.circuit == c) & (s1.n == n)].role.iloc[0]
+    check("with held-out = 1, the weak ESP32 grover n=11 is a fit candidate and is refused (role not_fitted_weak)", role("esp32", "grover", 11) == "not_fitted_weak", role("esp32", "grover", 11))
+    check("... ESP32 grover n=10 (18 independent reps) is refused too", role("esp32", "grover", 10) == "not_fitted_weak")
+    check("... and the hash-flagged ESP8266 grover n=9 (class B) is refused (role not_fitted_hash)", role("esp8266", "grover", 9) == "not_fitted_hash", role("esp8266", "grover", 9))
+    check("... and ESP8266 grover n=8 (class X) is refused (role not_fitted_hash)", role("esp8266", "grover", 8) == "not_fitted_hash")
+    check("... while an ordinary point (ESP32 grover n=9, 39 independent reps, class A) is a fit point", role("esp32", "grover", 9) == "fit")
     prim, withw = TM.score(P, "M2"), TM.score(P, "M2", include_weak=True)
     check("primary MAPE excludes weak test points; the secondary number includes them (more points)", prim["n"] < withw["n"], f"{prim['n']} vs {withw['n']}")
     # the fit does not change when a weak point's measurement is altered
@@ -84,6 +105,7 @@ def main():
     check("assert_homogeneous raises when a fit spans timing classes A and B", raised)
     check("... and passes when explicitly allowed", TM.assert_homogeneous(mixed, allow_mixed=True) == ["A", "B"])
     hf = base[base.hash_flagged][["board", "circuit", "n"]]
+    base = TM.load_points()
     check("hash-flagged points are exactly ESP8266 grover n=8, 9, 10 (classes X, B, B); none is ever a fit point",
           sorted(map(tuple, hf.to_records(index=False).tolist())) == [("esp8266", "grover", 8), ("esp8266", "grover", 9), ("esp8266", "grover", 10)]
           and not ((P.role == "fit") & P.hash_flagged).any())

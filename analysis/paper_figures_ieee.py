@@ -39,7 +39,7 @@ DEFAULT_RAW = REPO_ROOT / "data" / "raw"
 DEFAULT_OUT = REPO_ROOT / "paper" / "figures"
 SINGLE_COL_IN, DOUBLE_COL_IN = 3.5, 7.16
 FULL_REPS = 100
-MIN_PAIRS = 10                                           # fewer paired reps: no median/IQR drawn, point listed instead
+MIN_PAIRS = 30                                           # fewer paired reps (= analysis/common/weak.WEAK_MIN): no median/IQR drawn, point listed instead
 WALL_STATUSES = ("malloc_failed", "build_overflow")      # positive evidence of a memory wall
 TIME_LIMITED_STATUSES = ("skipped_compute_infeasible", "skipped_sim_cost_infeasible")   # not run: predicted over the cap / PC memory
 JOINED_STATUSES = ("ok", "anomaly", "count_mismatch")    # ref_compare_points statuses that still carry paired reps

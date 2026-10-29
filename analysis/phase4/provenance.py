@@ -38,7 +38,8 @@ def main():
         e = json.load(open(ep))
         h = e.get("firmware_source_hash", "")
         commit = e.get("git_commit", "")
-        match = (A.fw_hash_commit(ROOT, commit, b, ph) == h) if commit else None
+        tree_hash = A.fw_hash_commit(ROOT, commit, b, ph) if commit else None
+        match = None if tree_hash is None else (tree_hash == h)          # None = not decidable (no git history available), never False
         rows.append(dict(session=e.get("session_id"), phase=ph, board=b, circuit=c, start_utc=e.get("recorded_utc"), git_commit=commit[:10],
                          git_dirty=e.get("git_dirty"), firmware_source_hash=h, hash_in_git=in_git.get((b, ph, h), False),
                          tree_at_recorded_commit_matches=match, binary_hash_recorded="no", pio_env=e.get("pio_env"),

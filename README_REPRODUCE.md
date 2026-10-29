@@ -34,12 +34,15 @@ Exact part numbers beyond the PlatformIO board ids above (module revisions, USB-
 cd <repo>
 .venv/bin/python analysis/reproduce.py            # about 2 minutes; same as:  make paper-figures
 .venv/bin/python analysis/reproduce.py --full     # also re-runs the PC-only grover C++ builds (float32 and double) against Aer, n = 2..12 (about 15 minutes)
+.venv/bin/python analysis/reproduce.py --full --heavy   # additionally grover n = 13 (about 20 min) and n = 14 (hours); no Aer at these n
 ```
+Without `--full` the grover diagnosis rows n = 9..14 are reused from the committed `data/derived/grover_diagnosis.csv` (they are produced by `--full` and `--heavy`; Aer
+sums with several threads, so the last digits of Aer columns below 1e-12 differ between runs and the report prints them as a bound).
 
 It rebuilds, in order, and prints the sha256 of every output: the Phase 4 audit and Phase 1 table, gate-count cross-check (C++), grover diagnosis,
 firmware-hash audit, session provenance, counter validity table, the models, `figures/phase4/F1..F5` (PDF and PNG), `tables/phase4_memory_wall.tex`,
 the legacy micros()-vs-counter charts under `data/figures/phase{2,3}/timer_vs_counter/` (usable counter points only) and `docs/phase4_report.md`.
-Running it twice gives byte-identical figures, tables and report (checked in the report, section 10).
+Running it twice from a clean state gives byte-identical figures, tables, derived CSVs and report; the script prints the sha256 of every output so two runs can be compared.
 
 ## 4. Every figure and table from raw data
 

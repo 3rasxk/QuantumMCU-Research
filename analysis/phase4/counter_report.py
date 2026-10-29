@@ -20,7 +20,7 @@ CM = "firmware/counter_esp32/src/main.cpp"
 CODE_RULE = {
     "missing": f"{CM}:236 (falls < reps armed)", "extra": f"{CM}:237 (falls > reps armed)",
     "glitch": f"{CM}:221 (pulse < min_width_ns)", "stuck_high": f"{CM}:234,:471-473 (still high at END / above max_width_s)",
-    "count_mismatch": f"{CM}:211,:215 (two rises without a fall / a fall without a rise)",
+    "count_mismatch": f"{CM}:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count)",
     "seq_gap": f"{CM}:402 (frame sequence gap, REPLAY requested)", "never_started": f"{CM}:235,:477 (no pulse seen)",
     "clock_fault": f"{CM}:347 (clock vs PC > 50 ppm)", "ring_overflow": f"{CM}:201,:240 (frame or edge ring overflow)"}
 HOST_RULES = ("pc/counter/session.py:192-199 sets ref_status (no_target_run / count_mismatch if clean pulses != reps / anomaly if any code); "

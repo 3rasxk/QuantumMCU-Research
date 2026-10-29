@@ -9,14 +9,19 @@ Models (all fitted per board on small n only, relative-error least squares):
 Honest status of the choice of M2 (also written in docs/phase4_report.md): M2 has the functional form of "Model B" of
 analysis/phase2_gate_cost_fit.py / docs/report/paper_outline.md, whose out-of-sample errors on grover were already known before the Phase 4
 analysis was started. M2 was written down in the first Phase 4 commit (bf9b692) before this analysis was first run, but it was NOT blind with
-respect to grover. The split (held-out = largest N_TEST n, floor FLOOR_US) was fixed before any test point was scored; the sensitivity to
+respect to grover. What was fixed before any test point was scored: the split (held-out = largest N_TEST = 3 n) and FLOOR_US. What was NOT: the weak
+rule (reps < 30; the base analysis had used 10), the hash classes and the identifiability rule were all added in the fix round, after the
+first test scores were known. Their effect is small (M2 overall 18.0 -> 18.7 % when the weak points are dropped). The sensitivity to
 N_TEST in {2, 3, 4} is reported in full and N_TEST = 3 stays primary.
 
 A point is
   weak        reps < 30 (analysis/common/weak.py): not fitted, not in the primary test MAPE (secondary number only)
   hash-flagged its firmware hash is in a timing class other than A (analysis/phase4/firmware_hash_classes.csv): not fitted; reported separately
 Identifiability: a model fit is identifiable if n_fit >= p + 2, the design matrix has full column rank, its column-scaled condition number
-is <= COND_MAX, and no NNLS coefficient sits on the zero boundary. COND_MAX = 1e4 was fixed before looking at the numbers.
+is <= COND_MAX, and no NNLS coefficient is <= 1e-12 (the zero boundary). COND_MAX = 1e4 never binds (the largest condition number is about 5).
+WARNING: the boundary condition is a knife edge. A coefficient of 0.0013 passes and 0.0000 fails, and the verdict for a board changes with
+the held-out size (see time_sensitivity.csv, column identifiable_boards). Read 'identifiable' as 'the NNLS solution has no exact zero', not as
+'the parameters are physically determined'.
 """
 import os
 import sys
@@ -173,7 +178,8 @@ def time_model(n_test=C.N_TEST, floor=C.FLOOR_US, write=True, loc=None, allow_mi
                 M2_params_shared_per_board=4, M2_board_fit_points=d2["n_fit"], M2_board_rank=d2["rank"], M2_board_cond=d2["cond"],
                 M2_board_boundary_coef=d2["boundary"], M2_board_identifiable=d2["identifiable"],
                 M2_series_alone_rank=s2["rank"], M2_series_alone_identifiable=s2["identifiable"],
-                M2_c_H=coef[0], M2_c_CNOT=coef[1], M2_c_CPHASE=coef[2], M2_a_call=coef[3]))
+                M2_c_H=coef[0], M2_c_CNOT=coef[1], M2_c_CPHASE=coef[2], M2_a_call=coef[3],
+                M2_min_over_max_kernel_coef=float(min(coef[:3]) / max(coef[:3])) if max(coef[:3]) > 0 else float("nan")))
         preds.append(lb)
     P = pd.concat(preds)
     ident = pd.DataFrame(ident_rows)
@@ -249,13 +255,14 @@ def time_sensitivity():
     """pre-registered: held-out = largest 2, 3, 4 n. N_TEST = 3 is primary."""
     rows = []
     for nt in (2, 3, 4):
-        P, _ = time_model(nt, write=False)
+        P, ident_nt = time_model(nt, write=False)
+        idb = ",".join(sorted(ident_nt[ident_nt.M2_board_identifiable].board.unique()))
         for model in MODELS:
             for scope in ("all", "identifiable", "no_grover"):
                 r = score(P, model, None, scope)
                 rw = score(P, model, None, scope, include_weak=True)
                 rc = score(P, model, None, scope, clean=True)
-                rows.append(dict(n_test=nt, model=model, scope=scope, n_primary=r["n"], mape_primary=r["mape"], n_with_weak=rw["n"],
+                rows.append(dict(n_test=nt, model=model, scope=scope, identifiable_boards=idb, n_primary=r["n"], mape_primary=r["mape"], n_with_weak=rw["n"],
                                  mape_with_weak=rw["mape"], n_clean=rc["n"], mape_clean=rc["mape"]))
     S = pd.DataFrame(rows)
     S.to_csv(os.path.join(C.PROC, "time_sensitivity.csv"), index=False)

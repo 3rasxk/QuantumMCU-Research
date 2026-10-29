@@ -28,7 +28,15 @@ def pulses(widths, codes=None, flags=None):
 
 def main():
     # ---- T_max from the firmware's own numbers
-    check("T_max = (2^16-1) wraps x 2^32 ticks / 80 MHz", abs(cv.T_MAX_S - 65535 * 2 ** 32 / 80e6) < 1e-6 and 3.5e6 < cv.T_MAX_S < 3.6e6, str(cv.T_MAX_S))
+    import re
+    fw = open(os.path.join(ROOT, "firmware", "counter_esp32", "src", "main.cpp")).read()
+    wrap_bits = int(re.search(r"uint(\d+)_t wraps = 0;", fw).group(1))                 # width of the whole-wrap counter in the firmware
+    apb = int(re.search(r"static uint32_t apb_hz = (\d+);", fw).group(1))                # APB clock the capture counter runs at
+    fine_bits = 32 if re.search(r"uint32_t fine = f32 - r32;", fw) else None            # width of the MCPWM capture counter
+    check("firmware: whole-wrap counter is 16 bits, capture counter 32 bits, APB 80 MHz (parsed from main.cpp)", (wrap_bits, fine_bits, apb) == (16, 32, 80_000_000), str((wrap_bits, fine_bits, apb)))
+    t_from_firmware = ((1 << wrap_bits) - 1) * (1 << fine_bits) / apb
+    check("T_max in the module equals the value derived from the firmware source text", abs(cv.T_MAX_S - t_from_firmware) < 1e-6 and 3.5e6 < cv.T_MAX_S < 3.6e6, str(cv.T_MAX_S))
+    check("firmware flags a pulse longer than the armed max_width_s as stuck-high (the extra, host-set limit named in the docstring)", "(esp_timer_get_time() - rise_us) > (int64_t)max_width_s" in fw and "A_STUCK_HIGH" in fw)
     t = cv.validity_table((2,))
     ticks = pd.read_csv(os.path.join(ROOT, "data/raw/phase2/esp32/h_all/with_ref/ref/ref_pulses.csv")).head(200)
     check("80 MHz APB assumption: width_us == width_ticks x 0.0125 in the data (all of 200 pulses)",

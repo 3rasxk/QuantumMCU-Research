@@ -21,7 +21,7 @@ from shared.telemetry import is_warmup  # noqa: E402
 
 BOARD_LINESTYLE = ps.BOARD_LINESTYLE      # second encoding next to BOARD_MARKER (grayscale); defined in plot_style
 BOARD_SRAM_BYTES = {"uno": 2048, "esp8266": 81920, "esp32": 327680}
-MIN_PAIRS = 10                                                    # fewer counter pairs: no median/IQR drawn
+MIN_PAIRS = 30                                                    # fewer counter pairs (= analysis/common/weak.WEAK_MIN, the weak rule): no median/IQR drawn
 
 
 YLIM_FILE = REPO_ROOT / "data" / "derived" / "phase2_ylims.json"

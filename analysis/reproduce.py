@@ -11,7 +11,10 @@ Steps (each is a script that can be run alone, see README_REPRODUCE.md):
   3 Phase 4  gate counts (C++ cross-check), grover diagnosis summary, models, figures F1-F5, tables/phase4_memory_wall.tex
   4 legacy micros()-vs-counter charts (usable counter points only)
   5 docs/phase4_report.md
-Prints the sha256 of every output so two runs can be compared.
+The grover diagnosis table keeps the rows it does not recompute: without --full the committed rows n = 9..12 (and 13, 14 if present) are reused
+(they come from `--full` and `--heavy`); the report prints the table either way. Prints the sha256 of every output so two runs can be compared.
+The report needs no git history (the numbers of the previous report are kept in data/derived/previous_report_0d94d2e); `provenance.py` needs git
+only to check the recorded commit trees and writes 'undecidable' (None) when there is none.
 """
 import argparse
 import hashlib
@@ -32,6 +35,7 @@ def run(args, **kw):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--full", action="store_true", help="re-run the PC-only grover builds against Aer for n = 2..12")
+    ap.add_argument("--heavy", action="store_true", help="also run grover n = 13 and 14 (C++ float32 and double only; about 20 minutes and 2 hours)")
     a = ap.parse_args()
     env = dict(os.environ, SOURCE_DATE_EPOCH="1767225600")
     run([PY, os.path.join(P4, "audit.py")], stdout=subprocess.DEVNULL)
@@ -39,6 +43,9 @@ def main():
     run([PY, os.path.join(ROOT, "analysis", "audit_coverage.py")], stdout=subprocess.DEVNULL) if os.path.exists(os.path.join(ROOT, "analysis", "audit_coverage.py")) else None
     ns = list(map(str, range(2, 13) if a.full else range(2, 9)))
     run([PY, os.path.join(P4, "grover_diagnosis.py"), "--ns", *ns], stdout=subprocess.DEVNULL)
+    if a.heavy:
+        for n in ("13", "14"):
+            run([PY, os.path.join(P4, "grover_diagnosis.py"), "--ns", n], stdout=subprocess.DEVNULL)
     run([PY, os.path.join(P4, "grover_findings.py")])
     run([PY, os.path.join(P4, "firmware_hash_audit.py")], stdout=subprocess.DEVNULL)
     run([PY, os.path.join(P4, "provenance.py")])

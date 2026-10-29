@@ -1,6 +1,6 @@
 board,circuit,n_range,n_local_max,first_n_offload_faster,stable_to_n_local_max,n_star_interpolated,ratio_at_n_largest_overlap,n_largest_overlap,largest_overlap_is_weak,n_largest_overlap_nonweak,ratio_at_nonweak,min_offload_req,min_local_reps,crossover_weak,label
 esp32,bell_ghz,2-13,13,13.0,True,12.632423725971247,0.7762063227953411,13,False,13,0.7762063227953411,100,100,False,interpolated between measured n; never extrapolated
-esp32,grover,2-12,12,9.0,True,8.895304158474865,0.0807948986801837,12,True,10,0.5093558804874496,9,1,False,interpolated between measured n; never extrapolated
+esp32,grover,2-12,12,9.0,True,8.895303046258672,0.0807948986801837,12,True,9,0.9387550011889413,9,1,False,interpolated between measured n; never extrapolated
 esp32,h_all,2-13,13,,False,,1.1059230952949606,13,False,13,1.1059230952949606,100,100,False,no crossover in the measured range
 esp32,qft,2-13,13,13.0,True,12.19438346501466,0.4697787016814462,13,False,13,0.4697787016814462,100,100,False,interpolated between measured n; never extrapolated
 esp8266,bell_ghz,2-12,12,10.0,True,9.938039425689915,0.21424615043757617,12,False,12,0.21424615043757617,100,100,False,interpolated between measured n; never extrapolated

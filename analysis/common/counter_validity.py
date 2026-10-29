@@ -15,10 +15,11 @@ Rules (a point is usable only if every one holds; the FIRST failing rule is the 
   R4 range       the board's micros() median for the point does not exceed T_MAX_S (below). Not binding for any point on disk.
 T_MAX_S: the counter timestamps rise and fall with the 32-bit MCPWM capture counter at the APB clock and recovers whole wraps
 from the 64-bit esp_timer (firmware/counter_esp32/src/main.cpp:184-189, `unwrap_ticks`); the wrap count is a uint16_t (:188, :217).
-So the largest representable width is (2^16 - 1) wraps of 2^32 ticks at apb_hz = 80 MHz (width_us = width_ticks x 0.0125 in the
+So the largest REPRESENTABLE width is (2^16 - 1) wraps of 2^32 ticks at apb_hz = 80 MHz (width_us = width_ticks x 0.0125 in the
 data: 2441 ticks = 30.513 us). The unwrap additionally needs the esp_timer stamps of the two edges to be within 2^31 ticks
 (26.8 s) of the true width; the data show no violation. Whether the counter is CORRECT at long widths is a separate, measured
-question: the longest clean agreement in the data is reported by `validated_max_us()`.
+question: the longest clean agreement in the data is reported by `validated_max_us()`. T_max is a representation limit, not a guarantee: the firmware also
+flags any pulse longer than the host-armed `max_width_s` (default 130 s, :81, :304; checked at :471-473) as stuck-high (anomaly code 4), which rule R3 then rejects.
 """
 import os
 from collections import Counter
