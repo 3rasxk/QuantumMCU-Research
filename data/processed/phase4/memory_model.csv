@@ -1,0 +1,17 @@
+board,circuit,predictor,B_bytes,overhead_bytes,n_max_pred,last_ok_n,wall_n,wall_evidence,match,state_bytes_at_pred,state_bytes_at_pred_plus1
+uno,h_all,static_ram,1846.0,202.0,7,7,8.0,build_overflow (data/raw/phase2/uno/h_all/with_ref/memory_wall.csv),True,1024,2048
+uno,bell_ghz,static_ram,1842.0,206.0,7,7,8.0,build_overflow (data/raw/phase2/uno/bell_ghz/with_ref/memory_wall.csv),True,1024,2048
+uno,qft,static_ram,1848.0,200.0,7,7,8.0,build_overflow (data/raw/phase2/uno/qft/with_ref/memory_wall.csv),True,1024,2048
+uno,grover,static_ram,1844.0,204.0,7,7,8.0,build_overflow (data/raw/phase2/uno/grover/with_ref/memory_wall.csv),True,1024,2048
+esp8266,h_all,total_free_heap,52240.0,0.0,12,12,13.0,malloc_failed (data/raw/phase2/esp8266/h_all/with_ref/memory_wall.csv),True,32768,65536
+esp8266,bell_ghz,total_free_heap,52240.0,0.0,12,12,13.0,malloc_failed (data/raw/phase2/esp8266/bell_ghz/with_ref/memory_wall.csv),True,32768,65536
+esp8266,qft,total_free_heap,52240.0,0.0,12,12,13.0,malloc_failed (data/raw/phase2/esp8266/qft/with_ref/memory_wall.csv),True,32768,65536
+esp8266,grover,total_free_heap,51264.0,0.0,12,10,,none observed,n/a (no wall observed),32768,65536
+esp32,h_all,total_free_heap,256328.0,0.0,14,13,14.0,malloc_failed (data/raw/phase2/esp32/h_all/with_ref/memory_wall.csv),False,131072,262144
+esp32,h_all,largest_block,110580.0,0.0,13,13,14.0,malloc_failed (data/raw/phase2/esp32/h_all/with_ref/memory_wall.csv),True,65536,131072
+esp32,bell_ghz,total_free_heap,256328.0,0.0,14,13,14.0,malloc_failed (data/raw/phase2/esp32/bell_ghz/with_ref/memory_wall.csv),False,131072,262144
+esp32,bell_ghz,largest_block,110580.0,0.0,13,13,14.0,malloc_failed (data/raw/phase2/esp32/bell_ghz/with_ref/memory_wall.csv),True,65536,131072
+esp32,qft,total_free_heap,256328.0,0.0,14,13,14.0,malloc_failed (data/raw/phase2/esp32/qft/with_ref/memory_wall.csv),False,131072,262144
+esp32,qft,largest_block,110580.0,0.0,13,13,14.0,malloc_failed (data/raw/phase2/esp32/qft/with_ref/memory_wall.csv),True,65536,131072
+esp32,grover,total_free_heap,256328.0,0.0,14,12,,none observed,n/a (no wall observed),131072,262144
+esp32,grover,largest_block,110580.0,0.0,13,12,,none observed,n/a (no wall observed),65536,131072

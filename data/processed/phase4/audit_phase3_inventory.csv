@@ -1,0 +1,13 @@
+board,circuit,n_min,n_max,n_points,bauds,min_requests_per_point
+uno,h_all,2,22,21,115200,100
+uno,bell_ghz,2,22,21,115200,100
+uno,qft,2,22,21,115200,100
+uno,grover,2,10,9,115200,100
+esp8266,h_all,2,15,14,115200,100
+esp8266,bell_ghz,2,15,14,115200,100
+esp8266,qft,2,15,14,115200,100
+esp8266,grover,2,13,12,115200,2
+esp32,h_all,2,14,13,115200,100
+esp32,bell_ghz,2,14,13,115200,100
+esp32,qft,2,14,13,115200,100
+esp32,grover,2,13,12,115200,2
