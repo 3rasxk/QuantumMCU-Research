@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-# plot_micros_vs_counter.py
+# plot_timer_vs_counter.py
 #
 # Phase 2 micros() vs ESP32-counter timing: one figure per board x circuit (up to 12), graph-create house style.
 # Reads data/raw/phase2/<board>/<circuit>/with_ref/ref/ref_compare.csv read-only (the post-restart dataset: micros() and the
-# counter timed the same rep). A point needs >= MIN_PAIRS paired reps. A line ends where the data ends and breaks at a missing n;
-# nothing is filled or interpolated. A board x circuit without counter data gets no figure and is listed.
+# counter timed the same rep). A point needs >= MIN_PAIRS paired reps. A line runs through the measured n only: a missing n is skipped, so the line joins its neighbours
+# straight across; no value is made up for it. A board x circuit without counter data gets no figure and is listed.
 # Each figure (all n, log y in us): the counter (reference, solid blue) and micros() (dashed orange), both measured median time per rep,
 # y axis zoomed onto the two lines.
-# Writes data/figures/phase2/micros_vs_counter/<board>_<circuit>.png and data/derived/phase2_micros_vs_counter.csv.
+# Also timer_vs_counter/<board>/all_circuits.png (all 4 circuits in one chart, colour = circuit, solid counter / dashed darker-shade micros()) and
+# timer_vs_counter/ratio_all_boards.png: micros() / counter per n, a panel per board, a line per circuit (shows the small-n gap).
+# Writes data/figures/phase2/timer_vs_counter/<board>/<circuit>.png and data/derived/phase2_timer_vs_counter.csv.
 # PNGs carry no timestamp metadata, so a re-run gives identical files.
 #
-# Use:  .venv/bin/python analysis/phase2/plot_micros_vs_counter.py
+# Use:  .venv/bin/python analysis/phase2/plot_timer_vs_counter.py
 
 import math
 import sys
 from pathlib import Path
 
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
@@ -27,8 +30,8 @@ sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared import plot_style as ps  # noqa: E402
 
 RAW_DIR = REPO_ROOT / "data" / "raw" / "phase2"
-FIG_DIR = REPO_ROOT / "data" / "figures" / "phase2" / "micros_vs_counter"
-CSV_PATH = REPO_ROOT / "data" / "derived" / "phase2_micros_vs_counter.csv"
+FIG_DIR = REPO_ROOT / "data" / "figures" / "phase2" / "timer_vs_counter"
+CSV_PATH = REPO_ROOT / "data" / "derived" / "phase2_timer_vs_counter.csv"
 MIN_PAIRS = 10          # fewer paired reps: no median drawn (same rule as the other micros()/counter charts)
 OUTLIER_PCT = 5.0
 DASH = (0, (4, 3))
@@ -57,32 +60,15 @@ def load_points():
     return pd.DataFrame(rows), skipped
 
 
-def runs(ns):
-    """Split sorted n values into runs of consecutive integers: a missing n breaks the line instead of bridging it."""
-    out, cur = [], []
-    for n in ns:
-        if cur and n != cur[-1] + 1:
-            out.append(cur)
-            cur = []
-        cur.append(n)
-    if cur:
-        out.append(cur)
-    return out
-
-
 def draw_series(ax, ns, ys, color, linestyle):
-    """2 pt line per run of consecutive n. A single isolated point cannot form a line, so it gets one small dot (the only
-    marker in the figures). Returns the drawn (x, y) arrays for the legend overlap test."""
-    segs = []
-    lookup = dict(zip(ns, ys))
-    for run in runs(list(ns)):
-        xs, vs = run, [lookup[n] for n in run]
-        if len(run) == 1:
-            ax.plot(xs, vs, color=color, marker="o", markersize=3, linestyle="none", zorder=3)
-        else:
-            ax.plot(xs, vs, color=color, linestyle=linestyle, linewidth=2.0, zorder=3)
-        segs.append(np.column_stack([xs, vs]))
-    return segs
+    """2 pt line through every measured n in order; an n with no measurement is skipped, so the line runs straight from its neighbour
+    to the next measured point (no value is made up for the missing n). A single point cannot form a line, so it gets one small dot
+    (the only marker in the figures). Returns the drawn (x, y) array for the legend overlap test."""
+    if len(ns) == 1:
+        ax.plot(ns, ys, color=color, marker="o", markersize=3, linestyle="none", zorder=3)
+    else:
+        ax.plot(ns, ys, color=color, linestyle=linestyle, linewidth=2.0, zorder=3)
+    return [np.column_stack([ns, ys])]
 
 
 def _sci_label(v, _pos=None):
@@ -106,12 +92,12 @@ def log_axis(ax, ymin, ymax):
     return lo, hi
 
 
-def place_legend(ax, handles, segs):
+def place_legend(ax, handles, segs, ncol=1):
     """Upper left like the house style; another corner only when it would cover a line."""
     fig = ax.figure
     best, best_n = None, None
     for loc in ("upper left", "upper right", "lower right", "lower left"):
-        leg = ax.legend(handles=handles, loc=loc, ncol=1)
+        leg = ax.legend(handles=handles, loc=loc, ncol=ncol)
         leg.set_zorder(2.4)                    # below the spines (2.5)
         fig.canvas.draw()
         bb = leg.get_window_extent().expanded(1.03, 1.06)
@@ -126,7 +112,7 @@ def place_legend(ax, handles, segs):
             return loc
         if best_n is None or hit < best_n:
             best, best_n = loc, hit
-    leg = ax.legend(handles=handles, loc=best, ncol=1)
+    leg = ax.legend(handles=handles, loc=best, ncol=ncol)
     leg.set_zorder(2.4)
     return best
 
@@ -139,22 +125,75 @@ def plot_one(s, board, circuit):
     ns = s.n.tolist()
     segs = draw_series(ax, ns, s.median_counter_us.tolist(), COUNTER_COLOR, "-")
     segs += draw_series(ax, ns, s.median_micros_us.tolist(), MICROS_COLOR, DASH)
-    handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, linestyle="-", label="counter (reference)"),
-               Line2D([], [], color=MICROS_COLOR, linewidth=2.0, linestyle=DASH, label="micros()")]
+    handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, linestyle="-", label="external pulse counter"),
+               Line2D([], [], color=MICROS_COLOR, linewidth=2.0, linestyle=DASH, label="on-board timer")]
     allv = s.median_counter_us.tolist() + s.median_micros_us.tolist()
     log_axis(ax, min(allv), max(allv))
     ylim = ax.get_ylim()
     ax.set_xticks(sorted(s.n.unique()))
-    ax.set_title(f"Phase 2 -- micros() vs counter, {ps.BOARD_SHORT[board]}, {circuit}")
-    ax.set_xlabel("Number of qubits, $n$")
     ax.set_ylabel("Median execution time per rep (µs, log scale)")
     loc = place_legend(ax, handles, segs)
+    ax.set_xlabel("Number of qubits, $n$")
     # ps.save_png switches minor ticks off; the unnumbered 2-9 ticks are minor ticks, so save with the same settings
-    path = ps._check_output_path(FIG_DIR / f"{board}_{circuit}.png", ".png")
+    path = ps._check_output_path(FIG_DIR / board / f"{circuit}.png", ".png")
     fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
     print(f"figure -> {path}")
     plt.close(fig)
     return loc, (ns[0], ns[-1], ylim)
+
+
+def plot_ratio(df):
+    """One summary figure: micros() / counter per n, one panel per board, one line per circuit. The counter is the reference at 1,
+    so a line below 1 means micros() read shorter. Linear y: this is where the two series differ (small n of the short circuits)."""
+    fig, axes = plt.subplots(1, len(ps.BOARD_ORDER), figsize=(15.0, 5.2), sharey=True, layout="constrained")
+    for ax, b in zip(axes, ps.BOARD_ORDER):
+        ax.axhline(1.0, color=ps.REFERENCE_LINE, linewidth=1.0, zorder=1)
+        for c in ps.CIRCUIT_ORDER:
+            s = df[(df.board == b) & (df.circuit == c)].sort_values("n")
+            if not s.empty:
+                ax.plot(s.n, s.median_micros_us / s.median_counter_us, color=ps.CIRCUIT_COLOR[c], linewidth=2.0, label=c, zorder=3)
+        ax.set_title(ps.BOARD_SHORT[b])
+        ax.set_xlabel("Number of qubits, $n$")
+        ax.set_xticks(sorted(df[df.board == b].n.unique()))
+    axes[0].set_ylabel("on-board timer / external pulse counter (median per rep)")
+    axes[0].set_ylim(0.6, 1.02)
+    axes[-1].legend(loc="lower right")
+    path = ps._check_output_path(FIG_DIR / "ratio_all_boards.png", ".png")
+    fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
+    print(f"figure -> {path}")
+    plt.close(fig)
+
+
+def darker(color, f=0.55):
+    """Darker shade of the same hue: micros() takes the shade of its own circuit's colour."""
+    return tuple(ch * f for ch in mcolors.to_rgb(color))
+
+
+def plot_board(df, board):
+    """One figure per board, all circuits together (log y in us). Each circuit has its own pair: counter (reference) solid in the
+    circuit colour, micros() dashed in a darker shade of that colour. The dashed line is drawn on top so it shows over the solid one."""
+    s = df[df.board == board]
+    fig, ax = plt.subplots(figsize=(9.4, 6.2), layout="constrained")
+    segs, handles = [], []
+    for c in ps.CIRCUIT_ORDER:
+        g = s[s.circuit == c].sort_values("n")
+        if g.empty:
+            continue
+        col, dark = ps.CIRCUIT_COLOR[c], darker(ps.CIRCUIT_COLOR[c])
+        segs += draw_series(ax, g.n.tolist(), g.median_counter_us.tolist(), col, "-")
+        segs += draw_series(ax, g.n.tolist(), g.median_micros_us.tolist(), dark, DASH)
+        handles += [Line2D([], [], color=col, linewidth=2.0, label=f"{c} external pulse counter"),
+                    Line2D([], [], color=dark, linewidth=2.0, linestyle=DASH, label=f"{c} on-board timer")]
+    allv = s.median_counter_us.tolist() + s.median_micros_us.tolist()
+    log_axis(ax, min(allv), max(allv))
+    ax.set_xticks(sorted(s.n.unique()))
+    ax.set_xlabel("Number of qubits, $n$")
+    ax.set_ylabel("Median execution time per rep (µs, log scale)")
+    place_legend(ax, handles, segs, ncol=2)
+    path = ps._check_output_path(FIG_DIR / board / "all_circuits.png", ".png")
+    fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=ps.RASTER_DPI, metadata=ps._PNG_META)
+    print(f"figure -> {path}")
+    plt.close(fig)
 
 
 def main():
@@ -179,6 +218,9 @@ def main():
             loc, top = plot_one(s, b, c)
             made += 1
             print(f"{b}_{c}: n {top[0]}..{top[1]}  y {top[2][0]:.4g} .. {top[2][1]:.6g} us")
+    plot_ratio(df)
+    for b in ps.BOARD_ORDER:
+        plot_board(df, b)
     print(f"{made} figure(s) written")
     for sk in skipped:
         print("skipped:", *sk)

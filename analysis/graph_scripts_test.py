@@ -232,7 +232,7 @@ print('count', len(ys), 'max', max(ys))
         r = run(root, "phase2_uno_run_plots.py", "--board", "uno", "--circuit", "h_all")
         check("no_ref run succeeds on the no_ref bucket", r.returncode == 0, r.stderr[-200:])
 
-        # --- the per-run micros() vs counter chart is gone (superseded by analysis/phase2/plot_micros_vs_counter.py)
+        # --- the per-run micros() vs counter chart is gone (superseded by analysis/phase2/plot_timer_vs_counter.py)
         check("no per-run micros_vs_counter chart is written",
               not any(n.endswith("micros_vs_counter.png") for n in names))
 
