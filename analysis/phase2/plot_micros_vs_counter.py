@@ -5,8 +5,8 @@
 # Reads data/raw/phase2/<board>/<circuit>/with_ref/ref/ref_compare.csv read-only (the post-restart dataset: micros() and the
 # counter timed the same rep). A point needs >= MIN_PAIRS paired reps. A line ends where the data ends and breaks at a missing n;
 # nothing is filled or interpolated. A board x circuit without counter data gets no figure and is listed.
-# Each figure: the counter is the reference at 1.0 (solid), micros() is median micros() / median counter at each n (dashed); linear y
-# zoomed onto the two lines. Every value comes from the measured medians in ref_compare.csv.
+# Each figure: the counter (reference, solid) and micros() (dashed), both measured median time per rep in us on a linear y axis, for the
+# leading n whose values stay within SPAN_LIMIT_US (the cut n are named on the figure and stay in the CSV).
 # Writes data/figures/phase2/micros_vs_counter/<board>_<circuit>.png and data/derived/phase2_micros_vs_counter.csv.
 # PNGs carry no timestamp metadata, so a re-run gives identical files.
 #
@@ -29,6 +29,7 @@ from shared import plot_style as ps  # noqa: E402
 RAW_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 FIG_DIR = REPO_ROOT / "data" / "figures" / "phase2" / "micros_vs_counter"
 CSV_PATH = REPO_ROOT / "data" / "derived" / "phase2_micros_vs_counter.csv"
+SPAN_LIMIT_US = 100.0   # widest y range (highest - lowest measured median) drawn; beyond it the two lines touch on a linear axis
 MIN_PAIRS = 10          # fewer paired reps: no median drawn (same rule as the other micros()/counter charts)
 OUTLIER_PCT = 5.0
 DASH = (0, (4, 3))
@@ -111,30 +112,42 @@ def place_legend(ax, handles, segs):
 
 
 def plot_one(s, board, circuit):
-    """Both lines are relative to the counter, which is the reference and sits at 1.0 (solid blue): the dashed orange line is
-    median micros() / median counter at each n, so micros() reading 0.5 % short shows as 0.995. Linear y, zoomed onto the two lines."""
+    """Both lines are measured median times per rep in us (counter solid blue = reference, micros() dashed orange) on a LINEAR y axis,
+    so the gap between them is a visible distance. Only the leading n are drawn whose highest and lowest value stay within
+    SPAN_LIMIT_US of each other; the first n that would break that and everything after it is named on the figure (still in the CSV)."""
     s = s.sort_values("n")
+    keep = []
+    for _, r in s.iterrows():
+        vals = [v for k in keep for v in (k["median_counter_us"], k["median_micros_us"])] + [r.median_counter_us, r.median_micros_us]
+        if keep and max(vals) - min(vals) > SPAN_LIMIT_US:
+            break
+        keep.append(r)
+    kept = pd.DataFrame(keep)
+    cut = [int(n) for n in s.n if n > kept.n.max()]
     fig, ax = plt.subplots(figsize=(9.4, 6.2), layout="constrained")
-    ns = s.n.tolist()
-    ratio = (s.median_micros_us / s.median_counter_us).tolist()
-    segs = draw_series(ax, ns, [1.0] * len(ns), COUNTER_COLOR, "-")
-    segs += draw_series(ax, ns, ratio, MICROS_COLOR, DASH)
-    handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, linestyle="-", label="counter (reference = 1)"),
+    ns = kept.n.astype(int).tolist()
+    segs = draw_series(ax, ns, kept.median_counter_us.tolist(), COUNTER_COLOR, "-")
+    segs += draw_series(ax, ns, kept.median_micros_us.tolist(), MICROS_COLOR, DASH)
+    handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, linestyle="-", label="counter (reference)"),
                Line2D([], [], color=MICROS_COLOR, linewidth=2.0, linestyle=DASH, label="micros()")]
-    lo, hi = min(ratio + [1.0]), max(ratio + [1.0])
-    pad = 0.12 * (hi - lo)
-    ax.set_ylim(lo - pad, hi + pad)
+    both = kept.median_counter_us.tolist() + kept.median_micros_us.tolist()
+    lo, hi = min(both), max(both)
+    pad = 0.15 * (hi - lo) if hi > lo else 0.5
+    ax.set_ylim(max(lo - pad, 0.0), hi + pad)                  # a time cannot be negative
     ax.yaxis.set_major_locator(mticker.MaxNLocator(nbins=7))
     fmt = mticker.ScalarFormatter(useOffset=False)
     fmt.set_scientific(False)
     ax.yaxis.set_major_formatter(fmt)
-    ax.set_xticks(sorted(s.n.unique()))
+    ax.set_xticks(ns)
     ax.set_title(f"Phase 2 -- micros() vs counter, {ps.BOARD_SHORT[board]}, {circuit}")
     ax.set_xlabel("Number of qubits, $n$")
-    ax.set_ylabel("Median time per rep relative to counter (counter = 1)")
+    ax.set_ylabel("Median execution time per rep (µs)")
     loc = place_legend(ax, handles, segs)
+    if cut:
+        ax.text(0.99, 0.02, "n = " + ", ".join(map(str, cut)) + f" not shown (times differ by more than {SPAN_LIMIT_US:g} µs)",
+                transform=ax.transAxes, ha="right", va="bottom", fontsize=9)
     ps.save_png(fig, FIG_DIR / f"{board}_{circuit}.png")
-    return loc, (round(lo, 4), round(hi, 4))
+    return loc, (ns, cut)
 
 
 def main():
@@ -158,7 +171,7 @@ def main():
                 continue
             loc, top = plot_one(s, b, c)
             made += 1
-            print(f"{b}_{c}: legend={loc} ratio range {top}")
+            print(f"{b}_{c}: legend={loc} n shown={top[0]} not shown={top[1]}")
     print(f"{made} figure(s) written")
     for sk in skipped:
         print("skipped:", *sk)
