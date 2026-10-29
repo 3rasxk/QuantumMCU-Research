@@ -5,9 +5,7 @@
 # Reads data/raw/phase2/<board>/<circuit>/with_ref/ref/ref_compare.csv read-only (the post-restart dataset: micros() and the
 # counter timed the same rep). A point needs >= MIN_PAIRS paired reps. A line ends where the data ends and breaks at a missing n;
 # nothing is filled or interpolated. A board x circuit without counter data gets no figure and is listed.
-# Each figure: the counter's time per rep (reference, solid blue) and the gap |micros() - counter| (orange), both in us on one log y
-# axis (hollow dot where micros() is above the counter), plus dotted lines at the counter resolution (0.0125 us) and at the micros()
-# resolution (1 us, Uno 4 us).
+# Each figure: the counter (reference, solid) and micros() (dashed), both measured median time per rep in us on one log y axis.
 # Writes data/figures/phase2/micros_vs_counter/<board>_<circuit>.png and data/derived/phase2_micros_vs_counter.csv.
 # PNGs carry no timestamp metadata, so a re-run gives identical files.
 #
@@ -34,8 +32,6 @@ MIN_PAIRS = 10          # fewer paired reps: no median drawn (same rule as the o
 OUTLIER_PCT = 5.0
 DASH = (0, (4, 3))
 COUNTER_COLOR, MICROS_COLOR = "#1f77b4", "#ff7f0e"   # single group: each series takes the base of a different family
-COUNTER_TICK_US = 0.0125                                  # 80 MHz capture: one counter tick = 12.5 ns
-MICROS_TICK_US = {"uno": 4.0, "esp8266": 1.0, "esp32": 1.0}   # micros() resolution per board
 
 
 def load_points():
@@ -89,20 +85,20 @@ def draw_series(ax, ns, ys, color, linestyle):
 
 
 def _plain(v, _pos=None):
-    """0.0125, 0.1, 1, 10 ... 100,000 as plain numbers."""
+    """0.1, 1, 10 ... 100,000 as plain numbers."""
     return f"{v:,.0f}" if v >= 1 else f"{v:g}"
 
 
 def gap_axis(ax, ymin, ymax):
-    """Log y: a numbered tick at every decade from 0.1 up, plus one at 0.0125 (the counter resolution, in place of the 0.01 decade
-    that would sit on top of it), and unnumbered small ticks at 2-9 of each decade; limits hug the surrounding decades."""
+    """Log y: a numbered tick at every decade (0.1, 1, 10 ... in us) and unnumbered small ticks at 2-9 of each decade; limits hug
+    the surrounding decades of the data."""
     lo, hi = math.floor(math.log10(ymin) + 0.05), math.ceil(math.log10(ymax) - 0.05)
     hi = max(hi, lo + 1)
     ylim = (10.0 ** (lo - 0.17), 10.0 ** (hi + 0.12))
     inside = lambda vs: [round(v, 6) for v in vs if ylim[0] <= v <= ylim[1]]  # noqa: E731
-    decades = [10.0 ** e for e in range(lo - 1, hi + 1) if 10.0 ** e >= 0.1]
+    decades = [10.0 ** e for e in range(lo - 1, hi + 1)]
     ax.set_yscale("log")
-    ax.yaxis.set_major_locator(mticker.FixedLocator(inside(decades + [COUNTER_TICK_US])))
+    ax.yaxis.set_major_locator(mticker.FixedLocator(inside(decades)))
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(_plain))
     ax.yaxis.set_minor_locator(mticker.FixedLocator(inside([m * 10.0 ** e for e in range(lo - 1, hi + 1) for m in range(2, 10)])))
     ax.yaxis.set_minor_formatter(mticker.NullFormatter())
@@ -137,34 +133,21 @@ def place_legend(ax, handles, segs):
 
 
 def plot_one(s, board, circuit):
-    """Both lines are measured medians in us on one log axis: the counter's time per rep (the reference, solid blue) and the gap
-    |micros() - counter| (orange). micros() is below the counter at almost every point; a point where it is above is marked with a
-    hollow dot, so the sign is not lost on a log axis."""
+    """Both lines are measured medians per rep in us on one log axis: the counter (reference, solid blue) and micros() (dashed
+    orange). Nothing is derived or fixed: every plotted value is a median of ref_compare.csv."""
     s = s.sort_values("n")
     fig, ax = plt.subplots(figsize=(9.4, 6.2), layout="constrained")
-    ns, gap, ref = s.n.tolist(), s.diff_us.abs().tolist(), s.median_counter_us.tolist()
-    segs = draw_series(ax, ns, ref, COUNTER_COLOR, "-")
-    segs += draw_series(ax, ns, gap, MICROS_COLOR, "-")
-    handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, label="counter (reference)"),
-               Line2D([], [], color=MICROS_COLOR, linewidth=2.0, label="|micros() $-$ counter|")]
-    above = s[s.diff_us > 0]
-    if not above.empty:
-        ax.plot(above.n, above.diff_us.abs(), linestyle="none", marker="o", markersize=7, markerfacecolor="white",
-                markeredgecolor=MICROS_COLOR, markeredgewidth=1.6, zorder=4)
-        handles.append(Line2D([], [], linestyle="none", marker="o", markersize=7, markerfacecolor="white",
-                              markeredgecolor=MICROS_COLOR, markeredgewidth=1.6, label="micros() above counter"))
-    # resolution of each method as a horizontal line: the finer one (counter, 12.5 ns) sits lowest, micros() above it; a gap that is
-    # below the micros() line is smaller than micros() can resolve
-    mt = MICROS_TICK_US[board]
-    for y, color, label in ((COUNTER_TICK_US, COUNTER_COLOR, f"counter resolution ({COUNTER_TICK_US:g} µs)"),
-                            (mt, MICROS_COLOR, f"micros() resolution ({mt:g} µs)")):
-        ax.axhline(y, color=color, linestyle=":", linewidth=1.6, zorder=2)
-        handles.append(Line2D([], [], color=color, linestyle=":", linewidth=1.6, label=label))
-    ticks = gap_axis(ax, min(gap + ref + [COUNTER_TICK_US]), max(gap + ref))
+    ns = s.n.tolist()
+    segs = draw_series(ax, ns, s.median_counter_us.tolist(), COUNTER_COLOR, "-")
+    segs += draw_series(ax, ns, s.median_micros_us.tolist(), MICROS_COLOR, DASH)
+    handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, linestyle="-", label="counter (reference)"),
+               Line2D([], [], color=MICROS_COLOR, linewidth=2.0, linestyle=DASH, label="micros()")]
+    ticks = gap_axis(ax, s[["median_counter_us", "median_micros_us"]].min().min(),
+                     s[["median_counter_us", "median_micros_us"]].max().max())
     ax.set_xticks(sorted(s.n.unique()))
     ax.set_title(f"Phase 2 -- micros() vs counter, {ps.BOARD_SHORT[board]}, {circuit}")
     ax.set_xlabel("Number of qubits, $n$")
-    ax.set_ylabel("Median time per rep and gap (µs, log scale)")
+    ax.set_ylabel("Median execution time per rep (µs, log scale)")
     loc = place_legend(ax, handles, segs)
     # ps.save_png switches minor ticks off; the unnumbered 2-9 ticks are minor ticks, so save with the same settings
     path = ps._check_output_path(FIG_DIR / f"{board}_{circuit}.png", ".png")
