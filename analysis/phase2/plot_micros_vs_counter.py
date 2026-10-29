@@ -5,8 +5,8 @@
 # Reads data/raw/phase2/<board>/<circuit>/with_ref/ref/ref_compare.csv read-only (the post-restart dataset: micros() and the
 # counter timed the same rep). A point needs >= MIN_PAIRS paired reps. A line ends where the data ends and breaks at a missing n;
 # nothing is filled or interpolated. A board x circuit without counter data gets no figure and is listed.
-# Each figure: the counter (reference, solid) and micros() (dashed), both measured median time per rep in us on one log y axis whose
-# scope starts at 0.0125 us (one counter tick) and reaches at least 10 us.
+# Each figure: the counter (reference, solid) and micros() (dashed), both measured median time per rep in us on one log y axis zoomed
+# onto the two lines.
 # Writes data/figures/phase2/micros_vs_counter/<board>_<circuit>.png and data/derived/phase2_micros_vs_counter.csv.
 # PNGs carry no timestamp metadata, so a re-run gives identical files.
 #
@@ -29,7 +29,6 @@ from shared import plot_style as ps  # noqa: E402
 RAW_DIR = REPO_ROOT / "data" / "raw" / "phase2"
 FIG_DIR = REPO_ROOT / "data" / "figures" / "phase2" / "micros_vs_counter"
 CSV_PATH = REPO_ROOT / "data" / "derived" / "phase2_micros_vs_counter.csv"
-SCOPE_LO_US, SCOPE_HI_US = 0.0125, 10.0   # y scope: from one counter tick (12.5 ns) up to 10 us; a larger gap widens the top
 MIN_PAIRS = 10          # fewer paired reps: no median drawn (same rule as the other micros()/counter charts)
 OUTLIER_PCT = 5.0
 DASH = (0, (4, 3))
@@ -91,20 +90,20 @@ def _sci_label(v, _pos=None):
     return rf"$10^{{{int(round(math.log10(v)))}}}$"
 
 
-def gap_axis(ax, ymax):
-    """Log y in us from 0.0125 us (one counter tick) to at least 10 us, wider if the data is higher: numbered 10^k at every decade, "0.0125" at the bottom
-    edge, unnumbered small ticks at 2-9. The top widens to the data maximum."""
-    hi = max(math.ceil(math.log10(max(ymax, SCOPE_HI_US)) - 0.05), 1)
-    ylim = (SCOPE_LO_US, 10.0 ** (hi + 0.12))
+def zoom_axis(ax, ymin, ymax):
+    """Log y zoomed onto the data: the limits sit 1.4x outside the lowest and highest plotted value. A numbered tick (10^k, in us) at
+    every decade inside, unnumbered small ticks at 2-9 of each decade."""
+    ylim = (ymin / 1.4, ymax * 1.4)
+    lo, hi = math.floor(math.log10(ylim[0])), math.ceil(math.log10(ylim[1]))
     inside = lambda vs: [round(v, 6) for v in vs if ylim[0] <= v <= ylim[1]]  # noqa: E731
     ax.set_yscale("log")
-    ax.yaxis.set_major_locator(mticker.FixedLocator(inside([SCOPE_LO_US] + [10.0 ** e for e in range(-1, hi + 1)])))
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _p: f"{v:g}" if v < 0.1 else _sci_label(v)))
-    ax.yaxis.set_minor_locator(mticker.FixedLocator(inside([m * 10.0 ** e for e in range(-2, hi + 1) for m in range(2, 10)])))
+    ax.yaxis.set_major_locator(mticker.FixedLocator(inside([10.0 ** e for e in range(lo, hi + 1)])))
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_sci_label))
+    ax.yaxis.set_minor_locator(mticker.FixedLocator(inside([m * 10.0 ** e for e in range(lo, hi + 1) for m in range(2, 10)])))
     ax.yaxis.set_minor_formatter(mticker.NullFormatter())
     ax.tick_params(axis="y", which="minor", length=3.5, width=0.8)
     ax.set_ylim(*ylim)
-    return hi
+    return lo, hi
 
 
 def place_legend(ax, handles, segs):
@@ -134,7 +133,7 @@ def place_legend(ax, handles, segs):
 
 def plot_one(s, board, circuit):
     """Both lines are measured medians per rep in us on one log axis: the counter (reference, solid blue) and micros() (dashed
-    orange). Nothing is derived or fixed except the bottom of the scope, 0.0125 us (one counter tick)."""
+    orange). Nothing is derived or fixed; the y axis is zoomed onto the two lines."""
     s = s.sort_values("n")
     fig, ax = plt.subplots(figsize=(9.4, 6.2), layout="constrained")
     ns = s.n.tolist()
@@ -142,7 +141,8 @@ def plot_one(s, board, circuit):
     segs += draw_series(ax, ns, s.median_micros_us.tolist(), MICROS_COLOR, DASH)
     handles = [Line2D([], [], color=COUNTER_COLOR, linewidth=2.0, linestyle="-", label="counter (reference)"),
                Line2D([], [], color=MICROS_COLOR, linewidth=2.0, linestyle=DASH, label="micros()")]
-    top = gap_axis(ax, s[["median_counter_us", "median_micros_us"]].max().max())
+    top = zoom_axis(ax, s[["median_counter_us", "median_micros_us"]].min().min(),
+                    s[["median_counter_us", "median_micros_us"]].max().max())
     ax.set_xticks(sorted(s.n.unique()))
     ax.set_title(f"Phase 2 -- micros() vs counter, {ps.BOARD_SHORT[board]}, {circuit}")
     ax.set_xlabel("Number of qubits, $n$")
@@ -177,7 +177,7 @@ def main():
                 continue
             loc, top = plot_one(s, b, c)
             made += 1
-            print(f"{b}_{c}: legend={loc} y scope 0.0125 .. 1e{top} us")
+            print(f"{b}_{c}: legend={loc} y decades {top}")
     print(f"{made} figure(s) written")
     for sk in skipped:
         print("skipped:", *sk)
