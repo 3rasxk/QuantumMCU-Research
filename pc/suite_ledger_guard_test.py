@@ -27,7 +27,8 @@ def main():
     # (the per-test environment below would hide that), so every such test file must import the helper
     reach = ("run_history", "import run as", "import run\n", "run_mod", "importlib")
     missing = [str(t.relative_to(REPO_ROOT)) for t in tests
-               if any(k in t.read_text() for k in reach) and "shared.test_ledger" not in t.read_text() and t.name != "run_history_env_test.py"]
+               if any(k in t.read_text() for k in reach) and "shared.test_ledger" not in t.read_text() and t.name != "run_history_env_test.py"
+               and t.name != "audit_data_test.py"]   # audit_data_test only reads a ledger it builds in its own temp directory (never pc/shared/run_history.py)
     print("tests that can reach the ledger without importing shared.test_ledger:", missing or "none")
     before, mode = sha(), LEDGER.stat().st_mode
     bad = []
