@@ -12,6 +12,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "pc"))
+import shared.test_ledger  # noqa: E402,F401  (ledger redirected to a temp file before anything imports run_history)
 sys.path.insert(0, str(REPO / "pc" / "phase2_sweep"))
 
 from counter import hooks as refhooks  # noqa: E402
