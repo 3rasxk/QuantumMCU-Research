@@ -44,6 +44,7 @@ def main():
     run([PY, os.path.join(P4, "provenance.py")])
     run([PY, os.path.join(P4, "counter_report.py")], stdout=subprocess.DEVNULL)
     run([PY, os.path.join(P4, "make_figures.py")], env=env)
+    run([PY, os.path.join(P4, "recollection_plan.py")], stdout=subprocess.DEVNULL)
     run([PY, os.path.join(ROOT, "analysis", "phase2", "plot_timer_vs_counter.py")], stdout=subprocess.DEVNULL)
     run([PY, os.path.join(ROOT, "analysis", "phase2", "plot_timer_vs_counter.py"), "--phase", "3"], stdout=subprocess.DEVNULL)
     run([PY, os.path.join(P4, "build_report.py")])
