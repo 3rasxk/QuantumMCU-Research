@@ -71,6 +71,7 @@ import chunked_sim  # noqa: E402
 from phase1_compare import build_qiskit_circuit  # noqa: E402
 from shared.circuit_ids import CIRCUIT_IDS, CIRCUIT_NAMES, n_values_for_sweep, EXPERIMENT_CIRCUITS, reject_removed_circuits  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
+from shared import sweep_ranges  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
 from shared import paths as sp  # noqa: E402
@@ -291,13 +292,13 @@ def main():
     ap.add_argument("--port", required=True)
     ap.add_argument("--circuits", nargs="+",
                      default=list(EXPERIMENT_CIRCUITS))
-    ap.add_argument("--n-start", type=int, default=2)
+    ap.add_argument("--n-start", type=int, default=None,
+                     help="default: the circuit's minimum n from config/sweep_ranges.toml")
     ap.add_argument("--n-max", type=int, default=None,
-                     help="ถ้าไม่ระบุ จะไล่ n ขึ้นเรื่อย ๆ จนกว่าจะพบ error จริง "
-                          "(offload ไม่ผูกกับ Memory Wall ฝั่ง MCU เพราะ MCU ไม่ได้จองหน่วยความจำเอง "
-                          "ขีดจำกัดจริงคือฝั่ง PC — เวลาจำลอง/หน่วยความจำของ Qiskit Aer) "
-                          f"เพดานความปลอดภัยสูงสุดคือ n={N_SAFETY_CAP} กัน PC หน่วยความจำพัง")
-    ap.add_argument("--bauds", nargs="+", type=int, default=[115200])
+                     help="default: config/sweep_ranges.toml -- the board's Phase 2 memory-wall n + offload_beyond_wall, limited by the "
+                          "circuit's PC-time limit (offload has no board memory wall; the real limit is the PC's Aer time/memory). "
+                          f"Hard safety cap n={N_SAFETY_CAP} (PC memory) and protocol cap n=32.")
+    ap.add_argument("--bauds", nargs="+", type=int, default=sweep_ranges.baud_rates())
     ap.add_argument("--force-infeasible", action="store_true",
                      help="พยายามรันจุดที่ timing_model บอกว่าเก็บครบ 100 reps ไม่ไหว "
                           "(ปกติจะข้ามพร้อมบันทึกเหตุผล)")
@@ -311,7 +312,10 @@ def main():
     refhooks.add_args(ap)   # --ref {none,counter}, --counter-port (pc/counter/hooks.py)
     args = ap.parse_args()
     reject_removed_circuits(args.circuits)
-    n_max = args.n_max if args.n_max is not None else N_SAFETY_CAP
+    if args.n_max is not None and args.n_max > sweep_ranges.meta("protocol_n_max"):
+        ap.error(f"--n-max {args.n_max} exceeds the protocol limit n={sweep_ranges.meta('protocol_n_max')} "
+                 "(the sampled outcome is a uint32, firmware/common/protocol.hpp)")
+    n_max = args.n_max   # None = the config range of each (board, circuit), resolved in _run_circuit
 
     from qiskit_aer import AerSimulator
     sim = AerSimulator(method="statevector")
@@ -335,9 +339,9 @@ def _run_circuit(args, circuit, n_max, sim, ref_active=False):
     circuits are now fully independent calls; each circuit now probes every
     configured baud on its own. Disclosed in run_log.md, not a correctness
     change -- Phase 3 has no collected data yet either way."""
-    n_values = n_values_for_sweep(circuit, args.n_start, n_max)
+    n_values = sweep_ranges.n_values(args.board, circuit, 3, args.n_start, n_max)
     if not n_values:
-        print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {n_max}]")
+        print(f"skip: {circuit} has no n in the requested range [{args.n_start}, {n_max}]")
         return
 
     raw_directory = sp.raw_dir(args.board, circuit, phase=3, ref=ref_active)

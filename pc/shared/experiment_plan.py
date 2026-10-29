@@ -5,40 +5,27 @@
 # pc/shared/eta.py (run-time estimates), analysis/phase1_compare.py (which n to
 # validate) and docs/design/experiment_plan.md.
 #
-# Nothing here changes what a sweep script collects: the sweeps still climb n
-# from --n-start until their own wall logic stops them (pc/shared/resume.py).
-# This module only PREDICTS where that stops, for planning and ETA display.
+# The n ranges are read from config/sweep_ranges.toml (pc/shared/sweep_ranges.py), the same single source the sweep scripts use for
+# their default --n-start / --n-max, so this plan, the ETA tables and what a default sweep collects cannot drift apart.
 
 from shared.circuit_ids import EXPERIMENT_CIRCUITS
+from shared import sweep_ranges
 
 BOARDS = ("uno", "esp8266", "esp32")
 PHASES = (2, 3)
 
-# Minimum meaningful n per circuit -- same table as pc/run.py MIN_VALID_N
-# (kept in sync by pc/shared/eta_test.py).
-MIN_N = {"h_all": 1, "bell_ghz": 2, "qft": 1, "grover": 2}
+# Every n range below comes from config/sweep_ranges.toml through pc/shared/sweep_ranges.py (the same file the sweep scripts read).
+# Minimum meaningful n per circuit -- same table as pc/run.py MIN_VALID_N (kept in sync by pc/shared/eta_test.py).
+MIN_N = {c: sweep_ranges.circuit_min_n(c) for c in EXPERIMENT_CIRCUITS}
 
-# Predicted memory wall per board: the first n that is expected to FAIL (and
-# is still attempted, because the failure itself is the evidence).
-#   uno:     state is a static array, 8 * 2^n B vs 2048 B RAM -> the linker
-#            overflows at n=8 (firmware/uno/src/main.cpp:30).
-#   esp8266: malloc'ed state (firmware/esp8266/src/main.cpp:67), 64 KiB at n=13
-#            cannot fit in 81 920 - 29 200 B static = 52 720 B (arithmetic, no measurement).
-#   esp32:   malloc'ed (firmware/esp32/src/main.cpp:65), 128 KiB at n=14; prediction rests on a
-#            ~110 KB largest free block seen in retired data (docs/design/experiment_plan.md,
-#            'Prior observations'); the new run records its own.
-# All three are re-verified only when the restarted run reaches them.
-# docs/design/experiment_plan.md has the full derivation (UNVERIFIED values marked).
-WALL_PREDICTION = {
-    "uno": {"wall_n": 8, "evidence": "build_overflow"},
-    "esp8266": {"wall_n": 13, "evidence": "malloc_failed"},
-    "esp32": {"wall_n": 14, "evidence": "malloc_failed"},
-}
+# Memory wall per board: the first n that FAILS (and is still attempted, because the failure itself is the evidence). Observed in
+# data/raw/phase2 for h_all, bell_ghz, qft on every board and for all four circuits on the Uno; grover on the ESP boards never
+# reached it (time-limited). Derivation: docs/design/experiment_plan.md.
+WALL_PREDICTION = {b: {"wall_n": sweep_ranges.wall_n(b), "evidence": sweep_ranges.wall_evidence(b)} for b in BOARDS}
 
-# Phase 3 offloads the state to the PC, so no board memory wall applies; the
-# plan keeps the same n range as Phase 2 (so the two phases compare at equal
-# n, as docs/run/phase3.md already did) and caps grover by PC-side Aer cost.
-PHASE3_GROVER_N_MAX = 10
+# Phase 3 offloads the state to the PC, so no board memory wall applies. The plan runs it from the same minimum n up to the Phase 2
+# wall PLUS sweep_ranges.meta("offload_beyond_wall") (offload is the only option there), limited per circuit by the PC time / memory
+# budget ([phase3_limit.*] in the config) -- so it always covers every n Phase 2 can have.
 
 # A point is FLAGGED time-limited above this device time. This is a display
 # threshold only, NOT a ceiling: nothing is skipped. The ceiling is an owner
@@ -56,12 +43,8 @@ def wall_evidence(board):
 
 def plan_n_values(board, circuit, phase):
     """n values the plan expects to be attempted, in order. For Phase 2 this
-    includes the predicted wall point (attempted as evidence)."""
-    lo = MIN_N[circuit]
-    hi = wall_n(board)
-    if phase == 3 and circuit == "grover":
-        hi = min(hi, PHASE3_GROVER_N_MAX)
-    return list(range(lo, hi + 1))
+    includes the wall point (attempted as evidence)."""
+    return sweep_ranges.planned_n(board, circuit, phase)
 
 
 def is_wall_point(board, circuit, n, phase):
@@ -75,10 +58,9 @@ def all_rows():
 
 
 def phase1_n_values(circuit):
-    """Union of n over every board and phase: what Phase 1 (C++ vs Qiskit)
+    """Union of n over every board's Phase 2 range: what Phase 1 (C++ vs Qiskit)
     must validate for this circuit."""
     ns = set()
     for b in BOARDS:
-        for p in PHASES:
-            ns.update(plan_n_values(b, circuit, p))
+        ns.update(plan_n_values(b, circuit, 2))   # the C++ build runs on the boards in Phase 2 only; Phase 3 uses the Qiskit side alone
     return sorted(ns)
