@@ -1,0 +1,11 @@
+% h_all, bell_ghz, qft share these values on every board. grover: Uno wall at n=8 (build_overflow), same as above; ESP8266 and ESP32 grover were never run to a memory wall (time-limited at n=10 and n=12), so their predicted n_max is untested.
+\begin{tabular}{llrrrrl}
+\hline
+Board & Predictor $B$ & $B$ (bytes) & Pred. $n_{\max}$ & Last ok $n$ & First failing $n$ & Evidence \\
+\hline
+Uno R3 & static SRAM $-$ overhead & 1{,}846 & 7 & 7 & 8 & build\_overflow \\
+ESP8266 & total free heap & 52{,}240 & 12 & 12 & 13 & malloc\_failed \\
+ESP32 & total free heap & 256{,}328 & 14 (wrong) & 13 & 14 & malloc\_failed \\
+ESP32 & largest free block & 110{,}580 & 13 & 13 & 14 & malloc\_failed \\
+\hline
+\end{tabular}
