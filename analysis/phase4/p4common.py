@@ -1,6 +1,8 @@
 """Shared loaders and constants for the Phase 4 analysis. Read-only on data/raw/."""
 import os
 
+import sys
+
 import numpy as np
 import pandas as pd
 
@@ -19,7 +21,9 @@ CIRCUIT_LABEL = {"h_all": "h_all", "bell_ghz": "bell_ghz", "qft": "qft", "grover
 # Fixed a priori, before any test point was looked at (see docs/phase4_report.md section 4):
 N_TEST = 3          # held-out points = the largest N_TEST ok n of each (board, circuit)
 FLOOR_US = 100.0    # a fit point needs median >= 100 us = 25 ticks of the coarsest clock (Uno micros(), 4 us)
-SMALL_REPS = 10     # points with fewer reps are flagged small-sample
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from common import weak as _weak  # noqa: E402  (analysis/common/weak.py: the one definition of a weak point)
+SMALL_REPS = _weak.WEAK_MIN   # points with fewer reps / requests are weak (item 5)
 
 
 def series_dir(phase, board, circuit):

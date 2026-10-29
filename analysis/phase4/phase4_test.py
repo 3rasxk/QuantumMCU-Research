@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import p4common as C
 import gatecount as G
 import model as M
+import timemodel as TM
 
 FAILS = []
 
@@ -28,10 +29,10 @@ def main():
     # closed-form relative-error fit recovers an exact constant
     import pandas as pd
     d = pd.DataFrame({"work": [1e3, 4e3, 1.6e4], "median_us": [2e3, 8e3, 3.2e4]})
-    check("fit_m1_pooled recovers c=2", abs(M.fit_m1_pooled(d) - 2.0) < 1e-12)
+    check("fit_m1 recovers c=2", abs(TM.fit_m1(d) - 2.0) < 1e-12)
 
     # no leakage: held-out points are never in the fit set, and are the largest n of their series
-    loc = M.split(C.load_local())
+    loc = TM.split(TM.load_points())
     ok = True
     for (b, c), g in loc.groupby(["board", "circuit"]):
         t = g[g.role == "test"]
