@@ -1,0 +1,3 @@
+schema_version,session_id,phase,board,circuit,n,baud,attempt_index,start_utc,end_utc,wall_s,build_compile_s,upload_s,boot_wait_s,device_exec_s,pc_sim_s_total,pc_sim_s_median,serial_transfer_s_total,avg_round_trip_latency_s,crc_error_count,bytes_transferred,retry_count,timeout_hit,failure_type,failure_message,status
+2,20261030T131312-1788afc6,2,esp32,grover,9,,0,2026-10-30T13:13:14.987254+00:00,2026-10-30T13:26:48.971146+00:00,807.852,16.926,54.889,1.5,734.537,,,,,,,0,False,none,,ok
+2,20261030T131312-1788afc6,2,esp32,grover,10,,0,2026-10-30T13:26:48.995880+00:00,2026-10-30T15:13:54.332637+00:00,6425.29,12.424,53.787,1.5,6357.579,,,,,,,0,False,none,,ok

@@ -1,0 +1,3 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,esp32,grover,9,0,,,,,,,refused_count_mismatch,True,1.0,34 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp32,grover,10,100,1282.888,1283.147,2.19,1.771,1300.675,0.002,ok,False,1.0,

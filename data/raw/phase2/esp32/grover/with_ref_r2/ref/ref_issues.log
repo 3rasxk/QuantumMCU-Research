@@ -1,0 +1,8 @@
+2026-10-30T13:26:42.877127+00:00  esp32/grover/n=9  sequence gap: missing [104, 105]; requesting REPLAY from 104
+2026-10-30T13:26:45.929245+00:00  esp32/grover/n=9  sequence gap: missing [104, 105]; requesting REPLAY from 104
+2026-10-30T13:26:48.956224+00:00  esp32/grover/n=9  4 target runs seen by the counter ([1, 2, 67, 34] pulses); pairing the LAST run (the one whose rows the sweep read)
+2026-10-30T13:26:48.956618+00:00  esp32/grover/n=9  anomaly code 2 (extra pulse)
+2026-10-30T13:26:48.956884+00:00  esp32/grover/n=9  anomaly code 5 (count mismatch)
+2026-10-30T13:26:48.957073+00:00  esp32/grover/n=9  anomaly code 6 (sequence gap)
+2026-10-30T13:26:48.968744+00:00  esp32/grover/n=9  comparison refused: refused_count_mismatch 34 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+2026-10-30T15:13:54.298756+00:00  esp32/grover/n=10  2 target runs seen by the counter ([1, 100] pulses); pairing the LAST run (the one whose rows the sweep read)
