@@ -28,6 +28,22 @@ def _is_bridge(pid):
     return "bridge.py" in out
 
 
+def holds_port(tcp_port, pidfile=PIDFILE):
+    """True if the bridge we started earlier is alive AND is the process listening on tcp_port (run.py stops it before the sweep)."""
+    try:
+        pid = int(Path(pidfile).read_text().strip())
+    except (OSError, ValueError):
+        return False
+    if not (_alive(pid) and _is_bridge(pid)):
+        return False
+    try:
+        out = subprocess.run(["lsof", "-nP", f"-iTCP:{int(tcp_port)}", "-sTCP:LISTEN", "-t"],
+                             capture_output=True, text=True, timeout=10).stdout.split()
+    except Exception:  # noqa: BLE001
+        return False
+    return str(pid) in out
+
+
 def stop(pidfile=PIDFILE):
     """Stop the bridge we started earlier (never any other process). -> True if one was stopped."""
     try:

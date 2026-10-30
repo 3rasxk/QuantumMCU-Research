@@ -53,6 +53,17 @@ class SweepRef:
             return ok
         return None
 
+    def plan(self, items):
+        """Dashboard only: the points this run will do, [(circuit, n, expected_s)] in order. Read-only context for the
+        live page's overall progress; never affects the run (any failure is swallowed)."""
+        if not self.enabled or getattr(self.s, "live", None) is None:
+            return
+        try:
+            self.s.live.set_context(plan={"items": [{"circuit": c, "n": n, "exp_s": round(float(e), 1)} for c, n, e in items],
+                                          "t0": __import__("time").time()})
+        except Exception:  # noqa: BLE001
+            pass
+
     def target_failed(self, n):
         if self.enabled and self.s.armed_n == n:
             self.s.finish_point(n, None, target_ran=False)   # also records arm_failed points

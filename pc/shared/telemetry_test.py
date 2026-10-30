@@ -235,7 +235,7 @@ def test_phase3_crc_vs_serial_dry_run(scratch: Path):
     sweep_dir.mkdir(parents=True)
     sp.REPO_ROOT = sweep_dir
 
-    def fake_build_and_upload(board, circuit, n, baud, port_hint, build_timeout_s=None):
+    def fake_build_and_upload(board, circuit, n, baud, port_hint, build_timeout_s=None, **kwargs):  # kwargs: reps, response_timeout_ms
         return {"ok": True, "port": "/dev/fake", "compile_s": 1.0, "upload_s": 1.0, "log": ""}
 
     def fake_find_port(board, hint):

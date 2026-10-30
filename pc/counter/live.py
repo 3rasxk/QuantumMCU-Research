@@ -59,6 +59,7 @@ class LiveState:
         with self.lock:
             s = json.loads(json.dumps(self.d))
         tr, cl = self.transport, self.client
+        s["server_utc"] = time.time()
         s["connected"] = bool(getattr(tr, "connected", False)) if tr is not None else False
         peer = getattr(tr, "peer", None)
         s["peer"] = None if peer is None else f"{peer[0]}:{peer[1]}"

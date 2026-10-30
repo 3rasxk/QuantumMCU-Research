@@ -33,7 +33,10 @@ details p,details li{font-size:14px;margin:6px 0}details ul{padding-left:20px;ma
 <div id="banner">กำลังโหลด…</div>
 <main>
 <div class="card"><h2>จุดที่กำลังรัน</h2><div class="big" id="ctx">–</div><div class="sub" id="ctx2">–</div>
- <div class="bar" id="bar"><i id="barf"></i></div><div class="sub" id="barl">–</div></div>
+ <div class="bar" id="bar"><i id="barf"></i></div><div class="sub" id="barl">–</div><div class="big" id="clock" style="font-size:1.4em">–</div><div class="sub" id="clock2">เวลาที่ใช้ในจุดนี้ (นับตั้งแต่เริ่มวัด) · เดินอยู่แปลว่ายังทำงาน</div></div>
+<div class="card" id="runcard" style="grid-column:1/-1"><h2>ความก้าวหน้าทั้งรัน</h2><div class="big" id="runtxt">–</div>
+ <div class="bar" id="runbar"><i id="runbarf"></i></div><div class="sub" id="runsub">–</div><div id="runchips" style="margin-top:8px;line-height:2"></div>
+ <div class="sub">เวลาคาดการณ์มาจากโมเดลเวลา (ประมาณ ไม่ใช่ค่าวัด) · จุดที่ติดเพดาน 2 ชม. จะใช้รอบน้อยกว่า 100</div></div>
 <div class="card"><h2>เวลารัน 1 รอบ (พัลส์ปกติ)</h2><div class="big" id="med">–</div><div class="sub" id="iqr">–</div><div class="sub" id="last">–</div></div>
 <div class="card"><h2>สุขภาพการวัด</h2><div id="health" class="sub">–</div></div>
 <div class="card wide"><h2>ความกว้างพัลส์ของจุดนี้ (1 จุด = 1 รอบ)</h2><canvas id="cv" width="1000" height="230"></canvas>
@@ -119,6 +122,21 @@ function render(s){
  $("ctx").textContent=c.circuit?(c.board+" "+c.circuit+" n="+c.n):"ไม่มี run";
  $("ctx2").textContent=c.phase||"";
  const pct=Math.min(100,got/reps*100);$("barf").style.width=(c.circuit?pct:0)+"%";$("bar").className="bar"+(got===reps?" full":"");
+ (function(){const pl=c.plan,box=$("runcard");if(!pl||!pl.items||!pl.items.length){box.style.display="none";return}box.style.display="";
+  const it=pl.items,cur=c.circuit?it.findIndex(x=>x.n===c.n&&x.circuit===c.circuit):-1,idle=c.phase==="idle",
+   done=cur<0?0:(idle?cur+1:cur),tot=it.length,expAll=it.reduce((a,x)=>a+x.exp_s,0);
+  const run0=(s.server_utc-pl.t0),runNow=run0+0; window.__run0=run0;
+  const pe=(c.circuit&&c.point_started_utc!=null&&!idle)?(s.server_utc-c.point_started_utc):0;
+  const curExp=(cur>=0&&!idle)?Math.max(0,it[cur].exp_s-pe):0;
+  const left=it.slice(done+((cur>=0&&!idle)?1:0)).reduce((a,x)=>a+x.exp_s,0)+curExp;
+  window.__left=left;window.__rx2=Date.now();
+  const allDone=done>=tot;
+  $("runtxt").textContent=allDone?("ครบทุกจุดแล้ว ("+tot+" จุด)"):("จุดที่ "+Math.min(tot,done+1)+" / "+tot+(cur>=0&&!idle?" · กำลังรัน n="+c.n:" · รอจุดถัดไป"));
+  $("runbarf").style.width=(Math.min(100,(expAll-left)/Math.max(1,expAll)*100))+"%";$("runbar").className="bar"+(allDone?" full":"");
+  $("runchips").innerHTML=it.map((x,i)=>{const st=i<done?"ok":(i===cur&&!idle?"warn":"mut"),t=x.circuit+" n="+x.n+" · คาด "+hms(x.exp_s);return '<span class="chip '+st+'" title="'+t+'" style="margin:2px">n='+x.n+(i<done?" ✓":(i===cur&&!idle?" ▶":""))+'</span>'}).join("");
+  window.__runsub=allDone;
+ })();
+ window.__t0=(c.circuit&&c.point_started_utc!=null&&s.server_utc!=null)?(s.server_utc-c.point_started_utc):null;window.__rx=Date.now();
  $("barl").textContent=c.circuit?("พัลส์ "+got+" / "+reps+(got>reps?" (เกิน)":"")):"–";
  // stats
  const good=w.filter(v=>v>=0.5);
@@ -145,5 +163,11 @@ async function tick(){
 }
 function sched(){clearTimeout(timer);timer=setTimeout(tick,Math.min(5000,500*Math.pow(2,Math.min(fails,4))))}
 window.addEventListener("resize",()=>{if(last)render(last)});
+function hms(t){t=Math.max(0,Math.floor(t));const h=Math.floor(t/3600),m=Math.floor(t%3600/60),x=t%60;return(h?h+" ชม. ":"")+(h||m?String(m).padStart(2,"0")+" นาที ":"")+String(x).padStart(2,"0")+" วิ"}
+setInterval(()=>{const el=$("clock");if(window.__t0==null){el.textContent="–";return}
+ const stale=fails>0||(last&&last.connected===false);el.textContent=hms(window.__t0+(Date.now()-window.__rx)/1000)+(stale?" (หยุดนับ: ข้อมูลเก่า)":"")},1000);
+setInterval(()=>{const el=$("runsub");if(!el||window.__left==null||window.__run0==null)return;if(window.__runsub){el.textContent="รันเสร็จแล้ว";return}
+ const d=(Date.now()-window.__rx2)/1000,left=Math.max(0,window.__left-d),fin=new Date(Date.now()+left*1000);
+ el.textContent="ใช้ไปแล้ว "+hms(window.__run0+(Date.now()-window.__rx)/1000)+" · เหลือประมาณ "+hms(left)+" · คาดเสร็จราว "+fin.toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"})},1000);
 tick();
 </script></body></html>

@@ -395,6 +395,7 @@ def _run_circuit(args, circuit, n_max, sim, ref_active=False):
         remaining_preview = [p for p in planned_with_baud if p not in completed]
         real_remaining = [(c, n) for c, n, b in remaining_preview if (c, n) not in infeasible]
         est_s = sum(tm.phase3_rep_time_s(c, n) * tm.phase3_point_reps(c, n) for c, n in real_remaining)
+        ref.plan([(c, n, tm.phase3_rep_time_s(c, n) * tm.phase3_point_reps(c, n)) for c, n in real_remaining])   # dashboard progress, no-op without --ref counter
         n_inf_remaining = len(remaining_preview) - len(real_remaining)
         remaining_human = tm.human_duration(est_s)
         if n_inf_remaining:

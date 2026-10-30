@@ -450,9 +450,9 @@ def test_paths_helper_resolves_per_board_per_algorithm_layout(scratch: Path):
     check("paths: ref_dir (always with_ref, no ref= parameter)",
           sp.ref_dir("uno", "h_all", phase=2) == root / "data/raw/phase2/uno/h_all/with_ref/ref")
     check("paths: figures_dir per-circuit",
-          sp.figures_dir("uno", "h_all") == root / "data/figures/uno/h_all/no_ref")
+          sp.figures_dir("uno", "h_all") == root / "data/figures/phase2/uno/h_all")
     check("paths: figures_dir cumulative (circuit=None)",
-          sp.figures_dir("uno") == root / "data/figures/uno/no_ref")
+          sp.figures_dir("uno") == root / "data/figures/phase2/uno")
 
     # late-binding check: re-point REPO_ROOT and confirm a function called
     # WITHOUT re-importing picks up the new value (this is the exact bug class

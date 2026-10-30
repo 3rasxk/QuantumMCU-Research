@@ -64,8 +64,10 @@
 # ปกติมีแค่ 1 circuit ต่อการเรียกอยู่แล้ว
 
 import argparse
+import contextlib
 import csv
 import glob
+import io
 import os
 import re
 import shutil
@@ -82,11 +84,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep, EXPERIMENT_CIRCUITS, reject_removed_circuits  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
+from shared import predicted as pred  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
 from counter import hooks as refhooks  # noqa: E402
 from shared import paths as sp  # noqa: E402
 from shared import upload_retry as ur  # noqa: E402
+
+# set by pc/run.py: the runner already printed the run-time table once, so the sweep prints ONE line per point
+COMPACT = os.environ.get("QLAB_COMPACT") == "1"
 
 RESUME_KEY_SPEC = [("circuit", str), ("n", int)]
 
@@ -296,6 +302,7 @@ def read_serial_trials(port: str, circuit: str, n: int, timeout_s: int,
     stopped_by_operator)
     """
     rows = []
+    exec_us = []
     reset_count = 0
     old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
     ser = None
@@ -323,10 +330,18 @@ def read_serial_trials(port: str, circuit: str, n: int, timeout_s: int,
                 break
             if line.startswith("uno,"):
                 rows.append(line)
+                # per-point time cap (tm.POINT_TIME_CAP_S): stop when the next rep would pass it
+                try:
+                    exec_us.append(float(line.split(",")[4]))
+                except (IndexError, ValueError):
+                    pass
+                if tm.time_cap_reached(exec_us):
+                    return True, rows, f"time_capped={len(rows)},reset_count={reset_count}"
             elif line.startswith("board,circuit"):
                 # header ซ้ำ = บอร์ด reset กลางทาง (watchdog/brown-out/stack overflow)
                 reset_count += 1
                 rows.clear()  # เริ่มนับ trial ใหม่หลัง reset
+                exec_us.clear()
         return done, rows, f"reset_count={reset_count}"
     except serial.SerialException as e:
         return False, [], f"serial_error={e}"
@@ -482,8 +497,8 @@ def _run_circuit(args, circuit, ref_active):
             print(f"resume: purged {removed} orphan raw row(s) from interrupted point(s) "
                   f"{sorted(removed_keys)} — these will be redone from scratch, not topped up")
 
-    raw_is_new = not raw_path.exists()
-    wall_is_new = not wall_path.exists()
+    raw_is_new = not raw_path.exists() or raw_path.stat().st_size == 0  # empty file (killed before first flush) still needs its header
+    wall_is_new = not wall_path.exists() or wall_path.stat().st_size == 0  # empty file (killed before first flush) still needs its header
     raw_f = open(raw_path, "a", newline="")
     wall_f = open(wall_path, "a", newline="")
     raw_w = csv.writer(raw_f)
@@ -502,7 +517,8 @@ def _run_circuit(args, circuit, ref_active):
         # preflight: โชว์ budget ของทุกจุดก่อนเริ่ม ให้คนกดรันเห็นว่าจุดไหนแพง/จุดไหนทำไม่ได้
         # ตั้งแต่ก่อนเริ่ม ไม่ใช่ไปเจอตอนชั่วโมงที่หก
         planned = [(circuit, n) for n in n_values]
-        infeasible = tm.print_budget_plan("uno", planned, phase=2)
+        with (contextlib.redirect_stdout(io.StringIO()) if COMPACT else contextlib.nullcontext()):
+            infeasible = tm.print_budget_plan("uno", planned, phase=2)
         if args.force_infeasible:
             print("--force-infeasible: จะพยายามรันจุดที่เกินเพดานด้วย\n")
             infeasible = set()
@@ -512,13 +528,15 @@ def _run_circuit(args, circuit, ref_active):
         # ของมัน (เช่น 95 วัน) ปนเข้าไปในตัวเลข "เหลืออีกกี่ชั่วโมง" ที่ผู้ใช้จะดูจริง
         remaining_preview = [p for p in planned if p not in completed]
         real_remaining = [p for p in remaining_preview if p not in infeasible]
-        est_s = sum(tm.expected_point_time_s("uno", c, n) for c, n in real_remaining)
+        est_s = sum(tm.expected_point_time_s("uno", c, n, reps=tm.point_reps_under_cap("uno", c, n)) for c, n in real_remaining)
+        ref.plan([(c, n, tm.expected_point_time_s("uno", c, n, reps=tm.point_reps_under_cap("uno", c, n))) for c, n in real_remaining])   # dashboard progress, no-op without --ref counter
         n_inf_remaining = len(remaining_preview) - len(real_remaining)
         remaining_human = tm.human_duration(
             sum(tm.point_wall_estimate_s("uno", c, n) for c, n in real_remaining))
         if n_inf_remaining:
             remaining_human += f" (+{n_inf_remaining} infeasible point(s), skipped near-instantly)"
-        rs.print_resume_summary("uno", planned, completed, remaining_human)
+        with (contextlib.redirect_stdout(io.StringIO()) if COMPACT else contextlib.nullcontext()):
+            rs.print_resume_summary("uno", planned, completed, remaining_human)
         wall_n_by_circuit = rs.known_wall_n(completed)
 
         # telemetry: session wrapper + environment metadata ครั้งเดียวตอน circuit นี้เริ่ม
@@ -613,11 +631,37 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
             continue
 
         theoretical_bytes = (1 << n) * 8
-        budget_s = tm.timeout_budget_s("uno", circuit, n)
-        expected_s = tm.expected_point_time_s("uno", circuit, n)
+        plan_reps = tm.point_reps_under_cap("uno", circuit, n)  # 2 h per-point cap (POINT_TIME_CAP_S)
+        budget_s = tm.timeout_budget_s("uno", circuit, n, reps=plan_reps)
+        expected_s = tm.expected_point_time_s("uno", circuit, n, reps=plan_reps)
         may_retry = tm.retry_allowed(budget_s)
         retry_policy = "allowed" if may_retry else "skipped_high_budget"
         ts = datetime.now(timezone.utc).isoformat()
+
+        per_rep_s = tm.expected_exec_time_us("uno", circuit, n) / 1e6
+        if tm.max_reps_under_cap(per_rep_s) == 0:
+            # 2026-10-05 owner rule: board run time per point <= tm.POINT_TIME_CAP_S;
+            # even one rep is predicted over it, so the point is not run (no compile/upload);
+            # recorded as skipped_compute_infeasible (telemetry schema v1 has no separate status)
+            print(f"n={n:2d}  SKIP time cap: 1 rep predicted {tm.human_duration(per_rep_s)} "
+                  f"> cap {tm.human_duration(tm.POINT_TIME_CAP_S)} per point")
+            pred_row = pred.record_skipped_point(
+                "uno", circuit, n, sp.raw_csv_path("uno", circuit, ref=ref_active),
+                sp.predicted_csv_path("uno", circuit, ref=ref_active))
+            print("      " + pred.summary_line(pred_row))
+            wall_w.writerow(["uno", circuit, n, theoretical_bytes, None, None,
+                              "skipped_compute_infeasible", ts, 0,
+                              budget_s, round(expected_s, 1), "n/a"])
+            wall_f.flush()
+            tel.write_point_row({
+                "session_id": session.session_id, "phase": 2, "board": "uno",
+                "circuit": circuit, "n": n, "attempt_index": 0,
+                "start_utc": ts, "end_utc": ts, "wall_s": 0,
+                "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                "status": "skipped_compute_infeasible",
+            }, points_csv)
+            session.note_point(status="skipped_compute_infeasible")
+            continue
 
         if (circuit, n) in infeasible:
             # 2026-09-22: `infeasible` is always empty for Phase 2 now (see
@@ -669,12 +713,15 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
         #     otherwise have matched.
         attempt = 0
         while True:
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] "
-                  f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  "
-                  f"({theoretical_bytes / tm.TOTAL_RAM_BYTES['uno'] * 100:.1f}% RAM)  "
-                  f"budget={budget_s}s (expected {tm.human_duration(expected_s)})  "
-                  f"run done <= {tm.finish_clock_estimate('uno', circuit, n, n_values, completed)}  "
-                  f"attempt={attempt + 1}  ", end="", flush=True)
+            if COMPACT:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] n={n:2d}  ", end="", flush=True)
+            else:
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] "
+                      f"n={n:2d}  theoretical={theoretical_bytes:6d} bytes  "
+                      f"({theoretical_bytes / tm.TOTAL_RAM_BYTES['uno'] * 100:.1f}% RAM)  "
+                      f"budget={budget_s}s (expected {tm.human_duration(expected_s)})  "
+                      f"run done <= {tm.finish_clock_estimate('uno', circuit, n, n_values, completed)}  "
+                      f"attempt={attempt + 1}  ", end="", flush=True)
             if attempt > 0:
                 print("(retry) ", end="", flush=True)
 
@@ -838,7 +885,7 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
             remaining_needed = tm.REPS - reps_already_done
             exec_t0 = time.perf_counter()
             done, rows, note = read_serial_trials(find_uno_port(args.port), circuit, n, budget_s,
-                                                   expected_s=expected_s, target_reps=tm.REPS)
+                                                   expected_s=expected_s, target_reps=plan_reps)
             device_exec_s = time.perf_counter() - exec_t0
             point_device_s += device_exec_s
             if "hard_timeout=true" in note:
@@ -896,10 +943,28 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                 suffix = f"  (succeeded after {retry_used} retry)" if retry_used else ""
                 resumed_note = f"  (resumed, {reps_already_done} prior + {n_written} this attempt)" \
                     if reps_already_done else ""
-                print(f"OK  compile_ram={result['ram_pct']}%  trials_captured={total_reps_now}"
-                      f"{suffix}{resumed_note}\n      "
-                      + tm.format_memory_note("uno", theoretical_bytes, rows,
-                                               result.get("ram_pct"), result.get("ram_bytes")))
+                capped_note = ""
+                if "time_capped=" in note:
+                    capped_note = (f"  (TIME CAP: stopped at {total_reps_now}/{tm.REPS} reps, "
+                                   f"next rep would pass {tm.human_duration(tm.POINT_TIME_CAP_S)})")
+                    resumed_note += capped_note
+                if COMPACT:
+                    left = [m for m in n_values if m > n and (circuit, m) not in completed
+                            and (1 << m) * 8 <= tm.TOTAL_RAM_BYTES["uno"]]
+                    eta_txt = (f"left {len(left)} ~{tm.finish_clock_estimate('uno', circuit, n + 1, n_values, completed)}"
+                               if left else "last point")
+                    ref_txt = ref.summary_text()
+                    print(f"OK  state={theoretical_bytes}B {theoretical_bytes / tm.TOTAL_RAM_BYTES['uno'] * 100:.1f}%  "
+                          f"ram={result['ram_pct']}% ({result['ram_bytes']}B)  reps={total_reps_now}  "
+                          f"board run {tm.human_duration(device_exec_s)}, point {tm.human_duration(reflash_s + BOOT_WAIT_S + device_exec_s)}"
+                          + (f"  {ref_txt}" if ref_txt else "") + f"  | {eta_txt}{suffix}{resumed_note}")
+                else:
+                    print(f"OK  compile_ram={result['ram_pct']}%  trials_captured={total_reps_now}  "
+                          f"board run {tm.human_duration(device_exec_s)} "
+                          f"(point total {tm.human_duration(reflash_s + BOOT_WAIT_S + device_exec_s)})"
+                          f"{suffix}{resumed_note}\n      "
+                          + tm.format_memory_note("uno", theoretical_bytes, rows,
+                                                   result.get("ram_pct"), result.get("ram_bytes")))
                 tel.write_point_row({
                     "session_id": session.session_id, "phase": 2, "board": "uno",
                     "circuit": circuit, "n": n, "attempt_index": attempt,
@@ -910,7 +975,10 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                     "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
                     "retry_count": retry_used, "timeout_hit": False,
                     "failure_type": "none", "status": "ok",
+                    **({"failure_message": f"time_capped reps={total_reps_now}/{tm.REPS} "
+                                           f"cap_s={tm.POINT_TIME_CAP_S}"} if capped_note else {}),
                 }, points_csv)
+                pred.drop_row(sp.predicted_csv_path("uno", circuit, ref=ref_active), circuit, n)  # measured now
                 session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="ok")
                 break
 

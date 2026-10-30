@@ -79,6 +79,7 @@ sys.path.insert(0, str(REPO_ROOT / "pc"))
 from counter import hooks as refhooks  # noqa: E402
 from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep, EXPERIMENT_CIRCUITS, reject_removed_circuits  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
+from shared import predicted as pred  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
 from shared import paths as sp  # noqa: E402
@@ -229,6 +230,9 @@ def _alarm_handler(signum, frame):
 # anymore -- re-armed every loop iteration, only fires if a SINGLE readline()
 # call itself never returns control at all.
 STUCK_READ_ALARM_S = 900  # 15 min
+# header lines (boots) seen with zero reps before the point is declared a watchdog reset loop;
+# the first header is the normal boot after upload, so 3 extra boots = 4 headers
+WDT_LOOP_RESETS = 3
 PROGRESS_INTERVAL_S = 1800  # 30 min
 
 
@@ -240,6 +244,14 @@ def _print_progress(circuit, n, n_rows, target_reps, start_monotonic, expected_s
     else:
         remaining_s = max((expected_s or 0.0) - elapsed, 0.0)
         source = "model estimate, no reps received yet"
+    if n_rows == 0 and elapsed > (expected_s or 0.0):
+        # past the model's whole-point estimate with nothing received: the model is wrong or the
+        # board is not finishing a rep (e.g. watchdog reset loop) -- do not pretend an ETA exists
+        print(f"\n-- progress {circuit} n={n}: 0/{target_reps} reps received after "
+              f"{tm.human_duration(elapsed)} (model expected the whole point in "
+              f"{tm.human_duration(expected_s or 0.0)}) -- ETA unknown; board may be resetting "
+              "(watchdog) or one rep is far slower than the model", flush=True)
+        return
     finish_clock = (datetime.now() + timedelta(seconds=remaining_s)).strftime("%H:%M")
     print(f"\n-- progress {circuit} n={n}: {n_rows}/{target_reps} reps received, "
           f"elapsed {tm.human_duration(elapsed)}, ETA {tm.human_duration(remaining_s)} "
@@ -256,6 +268,7 @@ def read_serial_trials(port: str, circuit: str, n: int, timeout_s: int,
     True (DONE จริง), False (hang/reset/malloc/stuck-read), None (ผู้ควบคุมหยุดเอง —
     `rows` ยังมีข้อมูลที่เก็บมาได้แล้วอยู่ ไม่ทิ้ง — ดู resume.py's stopped_by_operator)"""
     rows = []
+    exec_us = []
     malloc_failed = False
     reset_count = 0
     old_handler = signal.signal(signal.SIGALRM, _alarm_handler)
@@ -265,8 +278,12 @@ def read_serial_trials(port: str, circuit: str, n: int, timeout_s: int,
         target_reps = tm.REPS
     try:
         with serial.Serial(port, BAUD, timeout=2) as ser:
-            ser.dtr = False
+            # RTS first, then DTR: the NodeMCU/DevKit auto-reset circuit resets the chip on (DTR=0, RTS=1);
+            # the old order (DTR first) passed through that state at every open, so the target ran a second
+            # time per point (counter: "2 target runs seen"). UNVERIFIED on hardware (board not connected
+            # when this was changed); the counter's run splitting still handles a second run.
             ser.rts = False
+            ser.dtr = False
             done = False
             while True:
                 signal.alarm(STUCK_READ_ALARM_S)
@@ -291,9 +308,27 @@ def read_serial_trials(port: str, circuit: str, n: int, timeout_s: int,
                     # ตัดขยะจาก ROM bootloader (baud ไม่ตรง) ที่อาจติดมาก่อนบรรทัดจริง
                     idx = line.index("esp8266,")
                     rows.append(line[idx:])
-                elif line.startswith("board,circuit"):
+                    # เพดานเวลาต่อจุด (tm.POINT_TIME_CAP_S): ถ้า rep ถัดไปจะทำให้เวลาบอร์ดรัน
+                    # รวมเกินเพดาน หยุดเก็บแค่นี้ (นับจากเวลาที่วัดได้ exec_time_us)
+                    try:
+                        exec_us.append(float(rows[-1].split(",")[4]))
+                    except (IndexError, ValueError):
+                        pass
+                    if tm.time_cap_reached(exec_us):
+                        return True, rows, malloc_failed, \
+                            f"time_capped={len(rows)},reset_count={reset_count}"
+                # `in`, not startswith: ROM boot garbage (74880 baud) is often glued in front of the header
+                elif "board,circuit,n,rep" in line:
                     reset_count += 1
+                    if not rows and reset_count > WDT_LOOP_RESETS:
+                        # the board re-booted several times without finishing one rep: a rep
+                        # longer than the hardware watchdog restarts from rep 0 forever (seen:
+                        # esp8266 grover n=8, D1 pulses of 8.39 s). Give up on this point
+                        # instead of looping; the caller records watchdog_suspected.
+                        return False, rows, malloc_failed, \
+                            f"watchdog_reset_loop=true,reset_count={reset_count}"
                     rows.clear()
+                    exec_us.clear()
                     malloc_failed = False
             return done, rows, malloc_failed, f"reset_count={reset_count}"
     except serial.SerialException as e:
@@ -418,8 +453,8 @@ def _run_circuit(args, circuit, ref_active=False):
             print(f"resume: purged {removed} orphan raw row(s) from interrupted point(s) "
                   f"{sorted(removed_keys)} — these will be redone from scratch, not topped up")
 
-    raw_is_new = not raw_path.exists()
-    wall_is_new = not wall_path.exists()
+    raw_is_new = not raw_path.exists() or raw_path.stat().st_size == 0  # empty file (killed before first flush) still needs its header
+    wall_is_new = not wall_path.exists() or wall_path.stat().st_size == 0  # empty file (killed before first flush) still needs its header
     raw_f = open(raw_path, "a", newline="")
     wall_f = open(wall_path, "a", newline="")
     raw_w = csv.writer(raw_f)
@@ -446,7 +481,8 @@ def _run_circuit(args, circuit, ref_active=False):
 
         remaining_preview = [p for p in planned if p not in completed]
         real_remaining = [p for p in remaining_preview if p not in infeasible]
-        est_s = sum(tm.expected_point_time_s("esp8266", c, n) for c, n in real_remaining)
+        est_s = sum(tm.expected_point_time_s("esp8266", c, n, reps=tm.point_reps_under_cap("esp8266", c, n)) for c, n in real_remaining)
+        ref.plan([(c, n, tm.expected_point_time_s("esp8266", c, n, reps=tm.point_reps_under_cap("esp8266", c, n))) for c, n in real_remaining])   # dashboard progress, no-op without --ref counter
         n_inf_remaining = len(remaining_preview) - len(real_remaining)
         remaining_human = tm.human_duration(
             sum(tm.point_wall_estimate_s("esp8266", c, n) for c, n in real_remaining))
@@ -540,11 +576,37 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
             continue
 
         theoretical_bytes = (1 << n) * 8
-        budget_s = tm.timeout_budget_s("esp8266", circuit, n)
-        expected_s = tm.expected_point_time_s("esp8266", circuit, n)
+        plan_reps = tm.point_reps_under_cap("esp8266", circuit, n)  # 2 h per-point cap (POINT_TIME_CAP_S)
+        budget_s = tm.timeout_budget_s("esp8266", circuit, n, reps=plan_reps)
+        expected_s = tm.expected_point_time_s("esp8266", circuit, n, reps=plan_reps)
         may_retry = tm.retry_allowed(budget_s)
         retry_policy = "allowed" if may_retry else "skipped_high_budget"
         ts = datetime.now(timezone.utc).isoformat()
+
+        per_rep_s = tm.expected_exec_time_us("esp8266", circuit, n) / 1e6
+        if tm.max_reps_under_cap(per_rep_s) == 0:
+            # 2026-10-05 owner rule: board run time per point <= tm.POINT_TIME_CAP_S;
+            # even one rep is predicted over it, so the point is not run (no compile/upload);
+            # recorded as skipped_compute_infeasible (telemetry schema v1 has no separate status)
+            print(f"n={n:2d}  SKIP time cap: 1 rep predicted {tm.human_duration(per_rep_s)} "
+                  f"> cap {tm.human_duration(tm.POINT_TIME_CAP_S)} per point")
+            pred_row = pred.record_skipped_point(
+                "esp8266", circuit, n, sp.raw_csv_path("esp8266", circuit, ref=ref.enabled),
+                sp.predicted_csv_path("esp8266", circuit, ref=ref.enabled))
+            print("      " + pred.summary_line(pred_row))
+            wall_w.writerow(["esp8266", circuit, n, theoretical_bytes, None, None,
+                              "skipped_compute_infeasible", ts, 0,
+                              budget_s, round(expected_s, 1), "n/a"])
+            wall_f.flush()
+            tel.write_point_row({
+                "session_id": session.session_id, "phase": 2, "board": "esp8266",
+                "circuit": circuit, "n": n, "attempt_index": 0,
+                "start_utc": ts, "end_utc": ts, "wall_s": 0,
+                "retry_count": 0, "timeout_hit": False, "failure_type": "none",
+                "status": "skipped_compute_infeasible",
+            }, points_csv)
+            session.note_point(status="skipped_compute_infeasible")
+            continue
 
         if (circuit, n) in infeasible:
             # 2026-09-22: unreachable in practice -- `infeasible` is always
@@ -699,7 +761,7 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
             exec_t0 = time.perf_counter()
             done, rows, malloc_failed, note = read_serial_trials(
                 find_esp_port(args.port), circuit, n, budget_s,
-                expected_s=expected_s, target_reps=tm.REPS)
+                expected_s=expected_s, target_reps=plan_reps)
             device_exec_s = time.perf_counter() - exec_t0
             point_device_s += device_exec_s
             if "hard_timeout=true" in note:
@@ -747,7 +809,13 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                 suffix = f"  (succeeded after {retry_used} retry)" if retry_used else ""
                 resumed_note = f"  (resumed, {reps_already_done} prior + {n_written} this attempt)" \
                     if reps_already_done else ""
-                print(f"OK  trials_captured={total_reps_now}{suffix}{resumed_note}\n      "
+                capped_note = ""
+                if "time_capped=" in note:
+                    capped_note = (f"  (TIME CAP: stopped at {total_reps_now}/{tm.REPS} reps, "
+                                   f"next rep would pass {tm.human_duration(tm.POINT_TIME_CAP_S)})")
+                print(f"OK  trials_captured={total_reps_now}  board run {tm.human_duration(device_exec_s)} "
+                      f"(point total {tm.human_duration(reflash_s + BOOT_WAIT_S + device_exec_s)})"
+                      f"{suffix}{resumed_note}{capped_note}\n      "
                       + tm.format_memory_note("esp8266", theoretical_bytes, rows,
                                                result.get("ram_pct"), result.get("ram_bytes")))
                 tel.write_point_row({
@@ -760,7 +828,10 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
                     "boot_wait_s": BOOT_WAIT_S, "device_exec_s": round(device_exec_s, 3),
                     "retry_count": retry_used, "timeout_hit": False,
                     "failure_type": "none", "status": "ok",
+                    **({"failure_message": f"time_capped reps={total_reps_now}/{tm.REPS} "
+                                           f"cap_s={tm.POINT_TIME_CAP_S}"} if capped_note else {}),
                 }, points_csv)
+                pred.drop_row(sp.predicted_csv_path("esp8266", circuit, ref=ref.enabled), circuit, n)  # measured now
                 session.note_point(device_s=point_device_s, reflash_s=point_reflash_s, status="ok")
                 break
 
@@ -797,7 +868,15 @@ def _sweep_body(args, circuit, n_values, completed, wall_n_by_circuit, infeasibl
             # ถ้าเวลาต่อ rep ที่ประเมินไว้เกินเกณฑ์ WDT ของบอร์ดนี้ การที่บอร์ดเงียบ
             # มีคำอธิบายที่เป็นไปได้มากกว่าหน่วยความจำ — บันทึกแยก และห้ามตีความเป็น
             # Memory Wall (ดู timing_model.watchdog_suspected, finding H1)
-            wdt_suspected = tm.watchdog_suspected("esp8266", circuit, n, args.wdt_threshold_s)
+            wdt_loop = "watchdog_reset_loop=true" in note
+            wdt_suspected = wdt_loop or tm.watchdog_suspected("esp8266", circuit, n, args.wdt_threshold_s)
+            if wdt_loop:
+                # no rep ever finished: record what the rep time would be (ESTIMATE, predicted.csv)
+                pred_row = pred.record_skipped_point(
+                    "esp8266", circuit, n, sp.raw_csv_path("esp8266", circuit, ref=ref.enabled),
+                    sp.predicted_csv_path("esp8266", circuit, ref=ref.enabled), reason="watchdog_reset_loop")
+                print(f"-- board kept resetting with 0 reps (watchdog): gave up on n={n} instead of looping\n      "
+                      + pred.summary_line(pred_row))
             status = (f"watchdog_suspected({note})" if wdt_suspected
                       else f"runtime_hang_or_reset({note})")
             tel.write_point_row({

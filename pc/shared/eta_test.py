@@ -288,9 +288,11 @@ def test_plan_report():
           approx(sum(d["total_s"] for d in res["per_board"].values()), res["grand"]["total_s"], 1e-3))
     check("grand total equals the sum of every row",
           approx(sum(t["total_s"] for _, _, _, _, t in rows), res["grand"]["total_s"], 1e-3))
-    check("excluding-time-limited total is smaller and consistent",
+    # time-limited points that are skipped cost 0 s, and a point already measured on disk is not
+    # time-limited any more, so with real data present the two totals can be equal: <=, not <
+    check("excluding-time-limited total is consistent (not larger than the total)",
           approx(res["grand"]["total_s"] - res["grand"]["limited_s"], res["grand"]["excl_s"], 1e-3)
-          and res["grand"]["excl_s"] < res["grand"]["total_s"])
+          and res["grand"]["excl_s"] <= res["grand"]["total_s"])
     check("predicted wall n shown per phase-2 row", "build_overflow" in text and "malloc_failed" in text)
     check("no removed circuit appears", "qpe" not in text and "steane" not in text)
     check("GRAND TOTAL line present", "GRAND TOTAL" in text)

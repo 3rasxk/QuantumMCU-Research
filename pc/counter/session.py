@@ -68,14 +68,23 @@ class CounterSession:
         try:
             import statistics as st
             good = [p[3] / 1000.0 for p in pulses if not p[5] & 1]
+            micros_med = micros_us
+            if self.phase == 3 and micros_us and len(good) != len(micros_us):
+                # extra counter pulses (noise bursts) would drag the unpaired median far from the board's
+                # (grover n=3 showed +4.5 % on the dashboard while the width-aligned join gave -0.005 %):
+                # compare only the pulses that match a board round trip, same rule as the final join
+                aligned = cc.align_by_width(pulses, micros_us, self.reps)
+                if aligned:
+                    good = [pl[3] / 1000.0 for _, pl in aligned]
+                    micros_med = [micros_us[r] for r, _ in aligned]
             row = {"n": n, "ref_status": status, "pulses": len(pulses), "clean": len(good), "reps": self.reps,
                    "counter_median_us": round(st.median(good), 3) if good else None,
-                   "micros_median_us": round(st.median(micros_us), 3) if micros_us else None}
+                   "micros_median_us": round(st.median(micros_med), 3) if micros_med else None}
             if row["counter_median_us"] and row["micros_median_us"]:
                 row["diff_us"] = round(row["micros_median_us"] - row["counter_median_us"], 3)
                 row["diff_pct"] = round(row["diff_us"] / row["counter_median_us"] * 100, 3)
             self.live.point_result(row)
-            self.live.set_context(phase="idle", ref_status=status)
+            self.live.set_context(phase="idle", ref_status=status, point_started_utc=None)
         except Exception:  # noqa: BLE001
             pass
 
@@ -96,7 +105,7 @@ class CounterSession:
             self.reps = reps
         self.max_width_s = max_width_s
         self.armed_n, self.armed_ok = n, False
-        self._ctx(board=self.board, circuit=self.circuit, n=n, reps=self.reps, phase="arming", reset_pulses=True, ref_status=None)
+        self._ctx(board=self.board, circuit=self.circuit, n=n, reps=self.reps, phase="arming", reset_pulses=True, ref_status=None, point_started_utc=time.time())
         self.client.drain()
         hb = self.client.last_heartbeat
         if hb is not None and hb[1][2] == 1:   # counter still ARMED from an interrupted run: ARM would be refused (BUSY)
@@ -140,7 +149,7 @@ class CounterSession:
         report = None
         status = "ok"
         self.last_result = None
-        self._ctx(phase="point done: collecting reference")
+        self._ctx(phase="point done: collecting reference", point_started_utc=None)
         if not self.armed_ok:
             status = "arm_failed"
         else:

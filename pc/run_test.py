@@ -369,7 +369,7 @@ def _make_fake_dataset(root, board, algorithm, phase, n_points=2, ref=False):
             w.writerow([board, algorithm, n, "ok"])
     (raw_dir / "env" / "fake-session.json").write_text('{"schema_version": 2}')
 
-    figures_dir = root / "data" / "figures" / board / algorithm / bucket
+    figures_dir = root / "data" / "figures" / f"phase{phase}" / board / algorithm
     figures_dir.mkdir(parents=True, exist_ok=True)
     (figures_dir / "exec_time_vs_n.png").write_bytes(b"fake-png-bytes")
 
@@ -568,7 +568,7 @@ def test_archive_independence():
 
         def run_and_hash():
             subprocess.run(cmd, cwd=copy_root, capture_output=True, text=True, timeout=60)
-            fig_dir = copy_root / "data" / "figures" / "uno" / "h_all" / "no_ref"
+            fig_dir = copy_root / "data" / "figures" / "phase2" / "uno" / "h_all"
             return {f.name: hashlib.sha256(f.read_bytes()).hexdigest()
                     for f in sorted(fig_dir.glob("*.png"))} if fig_dir.exists() else {}
 
