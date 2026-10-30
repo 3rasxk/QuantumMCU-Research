@@ -116,7 +116,19 @@ time exceeds the WDT threshold, and flags TIME-LIMITED (above 1 h) as a display 
 only. Nothing is skipped, nothing is capped. Cumulative-time facts for the ceiling decision
 are in `docs/design/ceiling_facts.md`.
 
-### Time ceiling: DECIDED 2026-10-03 — no ceiling, run to the memory wall
+### Time cap: DECIDED 2026-10-05 — board run time per point <= 2 h (fewer reps instead of skipping)
+
+Supersedes the decision below. Rule (`timing_model.POINT_TIME_CAP_S = 7200`):
+
+- Only the board's run time counts (sum of `exec_time_us` of the reps); compile, upload and boot are not counted.
+- If 100 reps would exceed 2 h, collect as many reps as fit: the sweep stops when the **next** rep (taken as the mean of the reps so far) would pass 2 h. Example: 80 reps = 1 h 54 min fit, 81 would pass 2 h, so the point keeps 80 reps (status `ok`, `failure_message` = `time_capped reps=80/100 cap_s=7200` in `points.csv`).
+- If even one rep is predicted to exceed 2 h, the point is not run (recorded as `skipped_compute_infeasible`, the existing status; the telemetry schema is frozen). The run continues to the next n, so the predicted memory wall is still reached.
+- `pc/run.py --plan` shows the planned reps per point and the plan total with the cap. Durations are written in base-60 units (`3 h 6 min`, not `3.1 h`).
+- Limits: the planned reps come from the UNVERIFIED timing model; the runtime stop uses measured times. A point resumed after Ctrl+C does not count the reps already stored toward the cap.
+- A skipped point is not left empty: `predicted.csv` (beside `raw.csv`, `pc/shared/predicted.py`) gets one row with `kind=ESTIMATE_not_measured`: per-rep time from the timing model, the same value calibrated by the measured/model ratio of the largest measured n (up to 3) of that circuit when raw data exist, 100-rep total, state bytes and %RAM, watchdog risk. Never written to `raw.csv`. The skip decision itself uses the uncalibrated model.
+- Plan effect: ESP8266 grover n=9 -> 55 reps, n=10 -> 6 reps, n=11, 12 skipped (total 4 h 32 min instead of 107 d); ESP32 grover n=11 -> 13 reps, n=12 -> 1 rep, n=13 skipped.
+
+### Time ceiling (superseded): DECIDED 2026-10-03 — no ceiling, run to the memory wall
 
 Owner answer: "hit memory wall". No per-point ceiling is set; every point up to the predicted wall is attempted (Ctrl+C by the operator remains the only stop). The options below are kept for reference only.
 

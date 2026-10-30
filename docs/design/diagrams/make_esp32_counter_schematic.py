@@ -1,6 +1,6 @@
 """Draw docs/design/esp32_counter_schematic.png (ESP32 DevKit target -> ESP32 counter).
 
-Run: .venv/bin/python docs/design/make_esp8266_counter_schematic.py
+Run: .venv/bin/python docs/design/diagrams/make_esp32_counter_schematic.py
 Values follow docs/design/wiring.md section 3 (3.3 V target: 330 ohm series + 10 kohm pull-down)
 (counter powered from its own USB).
 """
