@@ -279,12 +279,12 @@ def read_serial_trials(port: str, circuit: str, n: int, timeout_s: int,
         target_reps = tm.REPS
     try:
         with serial.Serial(port, BAUD, timeout=2) as ser:
-            # RTS first, then DTR: the NodeMCU/DevKit auto-reset circuit resets the chip on (DTR=0, RTS=1);
-            # the old order (DTR first) passed through that state at every open, so the target ran a second
-            # time per point (counter: "2 target runs seen"). UNVERIFIED on hardware (board not connected
-            # when this was changed); the counter's run splitting still handles a second run.
-            ser.rts = False
+            # DTR first, then RTS: opening the port passes through (DTR=0, RTS=1), which resets the NodeMCU, so the point's
+            # output is printed after the port is open and nothing is lost. The RTS-first order (2026-10) never reset the
+            # board: a short point (h_all n=2) finished during upload+boot, before this open, and readline() waited forever
+            # (hardware test 2026-10-30). The target then runs a second time per point; the counter's run splitting handles it.
             ser.dtr = False
+            ser.rts = False
             done = False
             while True:
                 signal.alarm(STUCK_READ_ALARM_S)
