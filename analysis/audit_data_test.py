@@ -47,7 +47,7 @@ SESSION = "20261005T000000-aaaaaaaa"
 
 
 def make_data(tmp):
-    """Valid synthetic data for uno/h_all, phase 2 (n=1..7 ok, n=8 build_overflow) and phase 3 (n=1..8 ok)."""
+    """Valid synthetic data for uno/h_all, phase 2 (n=1..7 ok, n=8 build_overflow) and phase 3 (n=1..11 ok: Phase 2 wall 8 + 3)."""
     root = Path(tmp) / "repo"
     raw = root / "data" / "raw"
     d2 = raw / "phase2" / "uno" / "h_all" / "with_ref"
@@ -90,7 +90,7 @@ def make_data(tmp):
     # phase 3
     d3 = raw / "phase3" / "uno" / "h_all" / "with_ref"
     r3, log, p3 = [], [], []
-    for n in range(1, 9):
+    for n in range(1, 12):   # Phase 3 plan = Phase 2 wall (8) + 3, config/sweep_ranges.toml
         for rep in range(100):
             r3.append(["uno", "h_all", n, 115200, rep, 3000 + 10 * n, 0, 0])
         log.append(["uno", "h_all", n, 115200, "ok", 100, 0, 100, "", "t", 300, 8, 0.01])

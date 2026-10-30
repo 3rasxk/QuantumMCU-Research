@@ -48,6 +48,7 @@ from shared import paths as sp  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import run_history as rh  # noqa: E402
 from shared import eta  # noqa: E402
+from shared import sweep_ranges  # noqa: E402
 from counter import bridge_ctl  # noqa: E402
 from shared.telemetry import check_sleep_prevention  # noqa: E402
 
@@ -65,22 +66,15 @@ PHASE2_SCRIPTS = {
 }
 PHASE3_SCRIPT = REPO_ROOT / "pc" / "phase3_offload" / "sweep.py"
 
-# Each underlying script's own --n-max default (uno_sweep.py:326, esp8266_sweep.py:221,
-# esp32_sweep.py:211; phase3's is None -> its own N_SAFETY_CAP=22, sweep.py:280-284).
-# pc/run.py never overrides these unless the user passes --n-max explicitly --
-# this table exists only so --dry-run and the preflight summary can report the
-# value that will actually be used.
-DEFAULT_N_MAX = {
-    2: {"uno": 14, "esp8266": 16, "esp32": 18},
-    3: {"uno": 22, "esp8266": 22, "esp32": 22},  # phase3_offload/sweep.py N_SAFETY_CAP
-}
+# The n range of every (board, circuit, phase) comes from config/sweep_ranges.toml (pc/shared/sweep_ranges.py): the four sweep scripts
+# resolve their own default --n-start / --n-max from it, and this runner only reports the same numbers in its preflight / --dry-run.
+# (Before the config each script had its own hard-coded default -- Phase 2 14 / 16 / 18, Phase 3 22 -- and the Phase 3 range was chosen
+# per invocation with --n-max; see docs/audit/phase2_phase3_coverage.md.)
 
-# The delegated scripts' own uniform default when --n-start is omitted (every
-# one of them: uno_sweep.py:325, esp8266_sweep.py:220, esp32_sweep.py:210,
-# phase3_offload/sweep.py:279 -- all "type=int, default=2", identical across
-# every circuit). Only used to describe today's status quo in notices below;
-# never changed for a non-fresh run (standing decision, see module docstring).
-LEGACY_UNIFORM_N_START_DEFAULT = 2
+def default_n_max(phase, board, algorithm):
+    """the n the delegated script will climb to when --n-max is omitted"""
+    return sweep_ranges.n_range(board, algorithm, phase)[1]
+
 
 # Per-circuit minimum n at which the circuit is actually MEANINGFUL, not just
 # "doesn't crash." Investigated read-only against firmware/common/circuits.hpp,
@@ -104,12 +98,7 @@ LEGACY_UNIFORM_N_START_DEFAULT = 2
 # analysis/phase1_compare.py:31's own N_VALUES_DEFAULT starts at 2 for every
 # circuit. The 2026-10-03 re-validation (data/raw/phase1/) covers every n the
 # new plan collects, including n=1 for h_all/qft.
-MIN_VALID_N = {
-    "h_all": 1,
-    "bell_ghz": 2,
-    "qft": 1,
-    "grover": 2,
-}
+MIN_VALID_N = {c: sweep_ranges.circuit_min_n(c) for c in ("h_all", "bell_ghz", "qft", "grover")}  # config/sweep_ranges.toml [circuit_min_n]
 
 # --ref counter (ESP32 pulse counter) is implemented in all three Phase 2 sweep scripts through
 # pc/counter/hooks.py. Phase 3 (offload) too since 2026-10-07: the offload firmware raises GPIO_TIMING_PIN for one
@@ -706,7 +695,7 @@ def main(argv=None):
                           "minimum is clamped up with a notice, never sent to the board")
     ap.add_argument("--n-max", type=int, default=None,
                      help="passed through as --n-max; omit to use the delegated "
-                          "script's own per-board default -- see DEFAULT_N_MAX in this file")
+                          "script's default, which is config/sweep_ranges.toml (see default_n_max in this file)")
     ap.add_argument("--reps", type=int, default=None,
                      help="VALIDATION ONLY, not passed through -- REPS is a compile-time "
                           "firmware constant (pc/shared/timing_model.REPS, currently "
@@ -778,7 +767,7 @@ def main(argv=None):
             print(f"timing reference: ESP32 counter on {args.counter_port} (bucket with_ref/); the counter port is never "
                   f"shared with the target port {args.port}")
 
-        n_max_effective = args.n_max if args.n_max is not None else DEFAULT_N_MAX[args.phase][args.board]
+        n_max_effective = args.n_max if args.n_max is not None else default_n_max(args.phase, args.board, args.algorithm)
 
         fresh_timestamp = _utc_timestamp() if args.fresh else None
         if args.fresh:
@@ -790,7 +779,7 @@ def main(argv=None):
             n_start_for_command = args.n_start
 
         n_start_effective_for_notice = n_start_for_command if n_start_for_command is not None \
-            else LEGACY_UNIFORM_N_START_DEFAULT
+            else sweep_ranges.circuit_min_n(args.algorithm)
         note = n_range_note(args.algorithm, n_start_effective_for_notice, n_max_effective)
         if note:
             print(note)
@@ -807,7 +796,7 @@ def main(argv=None):
         # run-time table (pc/shared/eta.py): estimates only, no hardware, also in --dry-run
         run_start_bkk = eta.now_bangkok()
         eta_n_start = n_start_for_command if n_start_for_command is not None \
-            else LEGACY_UNIFORM_N_START_DEFAULT
+            else sweep_ranges.circuit_min_n(args.algorithm)
         eta_done = set() if args.fresh else completed_ns(args.board, args.algorithm, args.phase, args.ref)
         eta_points = eta.print_run_table(args.board, args.algorithm, args.phase,
                                          n_start=eta_n_start, n_max=args.n_max,

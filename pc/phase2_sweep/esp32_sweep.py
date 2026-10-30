@@ -70,6 +70,7 @@ from counter import hooks as refhooks  # noqa: E402
 from shared.circuit_ids import CIRCUIT_IDS, n_values_for_sweep, EXPERIMENT_CIRCUITS, reject_removed_circuits  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import predicted as pred  # noqa: E402
+from shared import sweep_ranges  # noqa: E402
 from shared import resume as rs  # noqa: E402
 from shared import telemetry as tel  # noqa: E402
 from shared import paths as sp  # noqa: E402
@@ -349,8 +350,10 @@ def main():
     ap.add_argument("--port", required=True)
     ap.add_argument("--circuits", nargs="+",
                      default=list(EXPERIMENT_CIRCUITS))
-    ap.add_argument("--n-start", type=int, default=2)
-    ap.add_argument("--n-max", type=int, default=18)
+    ap.add_argument("--n-start", type=int, default=None,
+                    help="default: the circuit's minimum n from config/sweep_ranges.toml")
+    ap.add_argument("--n-max", type=int, default=None,
+                    help="default: the board's memory-wall n from config/sweep_ranges.toml (the wall point is attempted as evidence)")
     ap.add_argument("--force-infeasible", action="store_true",
                      help="พยายามรันจุดที่ timing_model บอกว่าเกินเพดานเวลาไปแล้วด้วย "
                           "(ปกติจะข้ามพร้อมบันทึกเหตุผล เพราะได้แค่ timeout เปล่า ๆ)")
@@ -407,9 +410,9 @@ def _run_circuit(args, circuit, ref_active=False):
     """One algorithm's directory/files/telemetry session — see pc/shared/paths.py
     and uno_sweep.py's module docstring for the per-board-per-algorithm layout
     this replaced (2026-09-20, run_log.md)."""
-    n_values = n_values_for_sweep(circuit, args.n_start, args.n_max)
+    n_values = sweep_ranges.n_values("esp32", circuit, 2, args.n_start, args.n_max)
     if not n_values:
-        print(f"skip: {circuit} is fixed-n and its n is outside [{args.n_start}, {args.n_max}]")
+        print(f"skip: {circuit} has no n in the requested range [{args.n_start}, {args.n_max}]")
         return
 
     ref = refhooks.from_args(args, "esp32", circuit)   # SweepRef; disabled (no-op) unless --ref counter

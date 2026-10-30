@@ -1,0 +1,45 @@
+# config/sweep_ranges.toml -- the ONE source of truth for the n range of every (board, circuit) in Phase 2 and Phase 3.
+# Read by pc/shared/sweep_ranges.py, which is used by pc/phase2_sweep/*_sweep.py, pc/phase3_offload/sweep.py, pc/run.py
+# (preflight / --dry-run), pc/shared/experiment_plan.py (ETA) and pc/plan_collection.py. Do not hard-code n ranges anywhere else.
+# Explicit --n-start / --n-max on the command line still override (operator decision, e.g. to collect only missing points).
+#
+# Rules (checked by pc/shared/sweep_ranges_test.py against this file AND against data/raw):
+#   Phase 2: n from the circuit's minimum n up to the board's memory wall n. The wall point is attempted because the failure
+#            is the evidence; the sweep stops at the first point with positive wall evidence (build_overflow / malloc_failed).
+#   Phase 3: n from the same minimum up to min(wall_n + offload_beyond_wall, circuit limit). Offload has no board memory wall,
+#            so n beyond the Phase 2 wall is where offload is the only option. Hence Phase 3 covers every n Phase 2 can have.
+#   Same reps (reps), same statistic (median, IQR) and same four circuits in both phases.
+#   A circuit limit is a REAL limit with evidence (category b in docs/audit/phase2_phase3_coverage.md), never a config choice.
+
+[meta]
+version = 1
+reps = 100
+statistic = "median"
+baud_rates = [115200]
+offload_beyond_wall = 3        # Phase 3 runs this many n past the Phase 2 wall
+protocol_n_max = 32            # firmware/common/protocol.hpp:8 -- the sampled outcome is a u32 (n <= 32); the n field is one byte
+pc_safety_cap_n = 22           # pc/phase3_offload/sweep.py N_SAFETY_CAP (Aer statevector memory on the PC)
+point_time_cap_s = 7200        # pc/shared/timing_model.py POINT_TIME_CAP_S: per-point cap (2 h), fewer reps / skipped above it
+
+[circuit_min_n]                # pc/run.py MIN_VALID_N (n=1 bell_ghz is no Bell state, n=1 grover has no control qubit)
+h_all = 1
+bell_ghz = 2
+qft = 1
+grover = 2
+
+# memory wall per board: the first n whose failure is recorded as evidence (data/raw/phase2/<board>/*/with_ref/memory_wall.csv)
+[wall.uno]
+n = 8
+evidence = "build_overflow"    # 8 * 2^8 = 2048 B state + 200 B static > 2048 B SRAM (observed, all four circuits)
+[wall.esp8266]
+n = 13
+evidence = "malloc_failed"     # observed for h_all, bell_ghz, qft. grover never reached it (time-limited at n=10).
+[wall.esp32]
+n = 14
+evidence = "malloc_failed"     # observed for h_all, bell_ghz, qft. grover never reached it (time-limited at n=12).
+
+# Phase 3 circuit limits: the largest n for which at least one request fits the 2 h per-point cap and the PC's memory
+# (pc/shared/timing_model.py phase3_point_reps; measured on this PC, 8.6 GB RAM). Absent = no limit below the safety cap.
+[phase3_limit.grover]
+n_max = 13
+evidence = "data/raw/phase3/esp32/grover/with_ref/predicted.csv: n=14 one request 3 h 37 min (model) > 2 h cap; measured n=13: 2 requests in 2 h"
