@@ -57,8 +57,8 @@ def test_plan_scope_and_ranges():
           plan.plan_n_values("uno", "h_all", 2) == list(range(1, 9)))
     check("phase3 grover on esp32: n=2..13 (PC time limit, config [phase3_limit.grover])",
           plan.plan_n_values("esp32", "grover", 3) == list(range(2, 14)))
-    check("phase3 h_all on esp32: n=1..17 (Phase 2 wall 14 + 3)",
-          plan.plan_n_values("esp32", "h_all", 3) == list(range(1, 18)))
+    check("phase3 h_all on esp32: n=1..14 (Phase 2 wall 14, offload_beyond_wall 0)",
+          plan.plan_n_values("esp32", "h_all", 3) == list(range(1, 15)))
     check("phase1 n union covers n=1 for h_all/qft and odd n up to 14",
           plan.phase1_n_values("h_all")[0] == 1 and plan.phase1_n_values("qft")[0] == 1
           and plan.phase1_n_values("bell_ghz")[0] == 2 and 13 in plan.phase1_n_values("h_all")

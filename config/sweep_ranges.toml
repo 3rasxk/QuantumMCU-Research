@@ -16,7 +16,7 @@ version = 1
 reps = 100
 statistic = "median"
 baud_rates = [115200]
-offload_beyond_wall = 3        # Phase 3 runs this many n past the Phase 2 wall
+offload_beyond_wall = 0        # Phase 3 stops at the Phase 2 wall n (decision 2026-10-30; was 3). Raise it to run offload past the wall.
 protocol_n_max = 32            # firmware/common/protocol.hpp:8 -- the sampled outcome is a u32 (n <= 32); the n field is one byte
 pc_safety_cap_n = 22           # pc/phase3_offload/sweep.py N_SAFETY_CAP (Aer statevector memory on the PC)
 point_time_cap_s = 7200        # pc/shared/timing_model.py POINT_TIME_CAP_S: per-point cap (2 h), fewer reps / skipped above it
