@@ -15,6 +15,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
 #include "../../common/circuits.hpp"
 
 #ifndef N_QUBITS
@@ -79,14 +80,18 @@ void setup() {
         uint32_t heap_before = esp_get_free_heap_size();
 
         digitalWrite(GPIO_TIMING_PIN, HIGH);
-        unsigned long t0 = micros();
+        // 64-bit timer: micros() is 32-bit and wraps every 71.6 min, so a rep longer than that
+        // (grover n=12, about 74 min) was reported modulo 71.6 min and the host's 2 h cap never fired.
+        int64_t t0 = esp_timer_get_time();
         run_circuit(n_states);
-        unsigned long t1 = micros();
+        int64_t t1 = esp_timer_get_time();
         digitalWrite(GPIO_TIMING_PIN, LOW);
 
         uint32_t heap_after = esp_get_free_heap_size();
         uint32_t largest_block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-        unsigned long exec_us = t1 - t0;
+        uint64_t exec_us = (uint64_t)(t1 - t0);
+        char exec_buf[24];
+        snprintf(exec_buf, sizeof exec_buf, "%llu", (unsigned long long)exec_us);
 
         Serial.print("esp32,");
         Serial.print(circuit_name());
@@ -95,7 +100,7 @@ void setup() {
         Serial.print(',');
         Serial.print(rep);
         Serial.print(',');
-        Serial.print(exec_us);
+        Serial.print(exec_buf);
         Serial.print(',');
         Serial.print(heap_before);
         Serial.print(',');

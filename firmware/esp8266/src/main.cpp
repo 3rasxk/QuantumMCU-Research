@@ -28,6 +28,19 @@
 
 static Cplx* g_state = nullptr;
 
+// Hardware watchdog feed (2026-10-06). ESP.wdtDisable() only stops the SOFTWARE watchdog; the
+// hardware watchdog resets the chip after about 8.4 s without a feed, so any single rep longer than
+// that (grover n>=8: measured 8.389 s pulses on D1, board rebooting forever) never finishes.
+// timer1 is a real hardware interrupt: it fires inside the busy loop of run_circuit() (an
+// os_timer/Ticker callback would not, it needs the cooperative scheduler). 1 s period, one register
+// write per interrupt, so the timing overhead is a few microseconds per second.
+// UNVERIFIED on hardware: the feed address 0x60000914 / value 0x73 is from general ESP8266 knowledge.
+#define HW_WDT_FEED_REG (*((volatile uint32_t*)0x60000914))
+static void IRAM_ATTR feed_hw_wdt_isr() {
+    HW_WDT_FEED_REG = 0x73;
+    system_soft_wdt_feed();  // soft WDT too: with only the hardware feed, "Soft WDT reset" still hit at 71.8 s (grover n=9)
+}
+
 static const char* circuit_name() {
     switch (CIRCUIT_ID) {
         case 0: return "h_all";
@@ -63,6 +76,11 @@ void setup() {
     pinMode(GPIO_TIMING_PIN, OUTPUT);
     digitalWrite(GPIO_TIMING_PIN, LOW);
 
+    timer1_isr_init();
+    timer1_attachInterrupt(feed_hw_wdt_isr);
+    timer1_enable(TIM_DIV256, TIM_EDGE, TIM_LOOP);  // 80 MHz / 256 = 312500 ticks per second
+    timer1_write(312500);
+
     qsize_t n_states = (qsize_t)1 << N_QUBITS;
     g_state = (Cplx*)malloc((size_t)n_states * sizeof(Cplx));
 
@@ -81,11 +99,11 @@ void setup() {
         uint32_t heap_before = ESP.getFreeHeap();
 
         digitalWrite(GPIO_TIMING_PIN, HIGH);
-        ESP.wdtDisable();  // วงจรมี upper bound แน่นอน (for-loop ธรรมดา) จึงปิดชั่วคราวได้ปลอดภัย
+        // 2026-10-06: the soft WDT is no longer stopped around the circuit (ESP.wdtDisable() +
+        // ESP.wdtEnable(0) removed); timer1 feeds both watchdogs every second instead, see above.
         unsigned long t0 = micros();
         run_circuit(n_states);
         unsigned long t1 = micros();
-        ESP.wdtEnable(0);
         digitalWrite(GPIO_TIMING_PIN, LOW);
 
         uint32_t heap_after = ESP.getFreeHeap();
