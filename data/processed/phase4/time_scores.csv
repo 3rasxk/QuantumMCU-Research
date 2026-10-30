@@ -1,0 +1,145 @@
+model,scope,test_set,board,n_points,mape_pct,max_abs_pct
+M1,all,primary (non-weak),uno,12,44.78039864125923,146.68708689197106
+M1,all,primary (non-weak),esp8266,11,69.07879888738113,100.50836720189133
+M1,all,primary (non-weak),esp32,9,26.43493064430125,50.747466815402845
+M1,all,primary (non-weak),all,32,47.973310851719205,146.68708689197106
+M1,all,secondary (weak included),uno,12,44.78039864125923,146.68708689197106
+M1,all,secondary (weak included),esp8266,12,68.38129392566547,100.50836720189133
+M1,all,secondary (weak included),esp32,12,20.98267129888261,50.747466815402845
+M1,all,secondary (weak included),all,36,44.7147879552691,146.68708689197106
+M1,all,"clean (non-weak, hash class A)",uno,12,44.78039864125923,146.68708689197106
+M1,all,"clean (non-weak, hash class A)",esp8266,9,70.68763594124438,100.50836720189133
+M1,all,"clean (non-weak, hash class A)",esp32,9,26.43493064430125,50.747466815402845
+M1,all,"clean (non-weak, hash class A)",all,30,47.048929432167384,146.68708689197106
+M1,identifiable,primary (non-weak),uno,12,44.78039864125923,146.68708689197106
+M1,identifiable,primary (non-weak),esp8266,11,69.07879888738113,100.50836720189133
+M1,identifiable,primary (non-weak),esp32,9,26.43493064430125,50.747466815402845
+M1,identifiable,primary (non-weak),all,32,47.973310851719205,146.68708689197106
+M1,identifiable,secondary (weak included),uno,12,44.78039864125923,146.68708689197106
+M1,identifiable,secondary (weak included),esp8266,12,68.38129392566547,100.50836720189133
+M1,identifiable,secondary (weak included),esp32,12,20.98267129888261,50.747466815402845
+M1,identifiable,secondary (weak included),all,36,44.7147879552691,146.68708689197106
+M1,identifiable,"clean (non-weak, hash class A)",uno,12,44.78039864125923,146.68708689197106
+M1,identifiable,"clean (non-weak, hash class A)",esp8266,9,70.68763594124438,100.50836720189133
+M1,identifiable,"clean (non-weak, hash class A)",esp32,9,26.43493064430125,50.747466815402845
+M1,identifiable,"clean (non-weak, hash class A)",all,30,47.048929432167384,146.68708689197106
+M1,no_grover,primary (non-weak),uno,9,55.2188134124148,146.68708689197106
+M1,no_grover,primary (non-weak),esp8266,9,70.68763594124438,100.50836720189133
+M1,no_grover,primary (non-weak),esp32,9,26.43493064430125,50.747466815402845
+M1,no_grover,primary (non-weak),all,27,50.780459999320136,146.68708689197106
+M1,no_grover,secondary (weak included),uno,9,55.2188134124148,146.68708689197106
+M1,no_grover,secondary (weak included),esp8266,9,70.68763594124438,100.50836720189133
+M1,no_grover,secondary (weak included),esp32,9,26.43493064430125,50.747466815402845
+M1,no_grover,secondary (weak included),all,27,50.780459999320136,146.68708689197106
+M1,no_grover,"clean (non-weak, hash class A)",uno,9,55.2188134124148,146.68708689197106
+M1,no_grover,"clean (non-weak, hash class A)",esp8266,9,70.68763594124438,100.50836720189133
+M1,no_grover,"clean (non-weak, hash class A)",esp32,9,26.43493064430125,50.747466815402845
+M1,no_grover,"clean (non-weak, hash class A)",all,27,50.780459999320136,146.68708689197106
+M1c,all,primary (non-weak),uno,12,44.044641649961136,82.27087242354466
+M1c,all,primary (non-weak),esp8266,11,27.371386843613536,47.98633103562152
+M1c,all,primary (non-weak),esp32,9,9.924616853704082,21.38374705108585
+M1c,all,primary (non-weak),all,32,28.716953336331855,82.27087242354466
+M1c,all,secondary (weak included),uno,12,44.044641649961136,82.27087242354466
+M1c,all,secondary (weak included),esp8266,12,29.249781677238058,49.91212484710785
+M1c,all,secondary (weak included),esp32,12,13.41414735810249,24.47505490882683
+M1c,all,secondary (weak included),all,36,28.90285689510057,82.27087242354466
+M1c,all,"clean (non-weak, hash class A)",uno,12,44.044641649961136,82.27087242354466
+M1c,all,"clean (non-weak, hash class A)",esp8266,9,23.320673132579266,41.76282175526887
+M1c,all,"clean (non-weak, hash class A)",esp32,9,9.924616853704082,21.38374705108585
+M1c,all,"clean (non-weak, hash class A)",all,30,27.59144365586946,82.27087242354466
+M1c,identifiable,primary (non-weak),uno,12,44.044641649961136,82.27087242354466
+M1c,identifiable,primary (non-weak),esp8266,11,27.371386843613536,47.98633103562152
+M1c,identifiable,primary (non-weak),esp32,9,9.924616853704082,21.38374705108585
+M1c,identifiable,primary (non-weak),all,32,28.716953336331855,82.27087242354466
+M1c,identifiable,secondary (weak included),uno,12,44.044641649961136,82.27087242354466
+M1c,identifiable,secondary (weak included),esp8266,12,29.249781677238058,49.91212484710785
+M1c,identifiable,secondary (weak included),esp32,12,13.41414735810249,24.47505490882683
+M1c,identifiable,secondary (weak included),all,36,28.90285689510057,82.27087242354466
+M1c,identifiable,"clean (non-weak, hash class A)",uno,12,44.044641649961136,82.27087242354466
+M1c,identifiable,"clean (non-weak, hash class A)",esp8266,9,23.320673132579266,41.76282175526887
+M1c,identifiable,"clean (non-weak, hash class A)",esp32,9,9.924616853704082,21.38374705108585
+M1c,identifiable,"clean (non-weak, hash class A)",all,30,27.59144365586946,82.27087242354466
+M1c,no_grover,primary (non-weak),uno,9,37.3996665934126,68.317206843091
+M1c,no_grover,primary (non-weak),esp8266,9,23.320673132579266,41.76282175526887
+M1c,no_grover,primary (non-weak),esp32,9,9.924616853704082,21.38374705108585
+M1c,no_grover,primary (non-weak),all,27,23.548318859898647,68.317206843091
+M1c,no_grover,secondary (weak included),uno,9,37.3996665934126,68.317206843091
+M1c,no_grover,secondary (weak included),esp8266,9,23.320673132579266,41.76282175526887
+M1c,no_grover,secondary (weak included),esp32,9,9.924616853704082,21.38374705108585
+M1c,no_grover,secondary (weak included),all,27,23.548318859898647,68.317206843091
+M1c,no_grover,"clean (non-weak, hash class A)",uno,9,37.3996665934126,68.317206843091
+M1c,no_grover,"clean (non-weak, hash class A)",esp8266,9,23.320673132579266,41.76282175526887
+M1c,no_grover,"clean (non-weak, hash class A)",esp32,9,9.924616853704082,21.38374705108585
+M1c,no_grover,"clean (non-weak, hash class A)",all,27,23.548318859898647,68.317206843091
+M2,all,primary (non-weak),uno,12,24.867733537977273,94.60310330113224
+M2,all,primary (non-weak),esp8266,11,23.133333439209796,40.24365422253317
+M2,all,primary (non-weak),esp32,9,6.485612450698391,12.165945205212084
+M2,all,primary (non-weak),all,32,19.10156194822877,94.60310330113224
+M2,all,secondary (weak included),uno,12,24.867733537977273,94.60310330113224
+M2,all,secondary (weak included),esp8266,12,23.039031789807087,40.24365422253317
+M2,all,secondary (weak included),esp32,12,6.037156088577512,12.165945205212084
+M2,all,secondary (weak included),all,36,17.98130713878729,94.60310330113224
+M2,all,"clean (non-weak, hash class A)",uno,12,24.867733537977273,94.60310330113224
+M2,all,"clean (non-weak, hash class A)",esp8266,9,23.30927637797836,40.24365422253317
+M2,all,"clean (non-weak, hash class A)",esp32,9,6.485612450698391,12.165945205212084
+M2,all,"clean (non-weak, hash class A)",all,30,18.885560063793932,94.60310330113224
+M2,identifiable,primary (non-weak),uno,0,,
+M2,identifiable,primary (non-weak),esp8266,11,23.133333439209796,40.24365422253317
+M2,identifiable,primary (non-weak),esp32,9,6.485612450698391,12.165945205212084
+M2,identifiable,primary (non-weak),all,20,15.641858994379664,40.24365422253317
+M2,identifiable,secondary (weak included),uno,0,,
+M2,identifiable,secondary (weak included),esp8266,12,23.039031789807087,40.24365422253317
+M2,identifiable,secondary (weak included),esp32,12,6.037156088577512,12.165945205212084
+M2,identifiable,secondary (weak included),all,24,14.5380939391923,40.24365422253317
+M2,identifiable,"clean (non-weak, hash class A)",uno,0,,
+M2,identifiable,"clean (non-weak, hash class A)",esp8266,9,23.30927637797836,40.24365422253317
+M2,identifiable,"clean (non-weak, hash class A)",esp32,9,6.485612450698391,12.165945205212084
+M2,identifiable,"clean (non-weak, hash class A)",all,18,14.897444414338375,40.24365422253317
+M2,no_grover,primary (non-weak),uno,9,29.046308548323516,94.60310330113224
+M2,no_grover,primary (non-weak),esp8266,9,23.30927637797836,40.24365422253317
+M2,no_grover,primary (non-weak),esp32,9,6.485612450698391,12.165945205212084
+M2,no_grover,primary (non-weak),all,27,19.61373245900009,94.60310330113224
+M2,no_grover,secondary (weak included),uno,9,29.046308548323516,94.60310330113224
+M2,no_grover,secondary (weak included),esp8266,9,23.30927637797836,40.24365422253317
+M2,no_grover,secondary (weak included),esp32,9,6.485612450698391,12.165945205212084
+M2,no_grover,secondary (weak included),all,27,19.61373245900009,94.60310330113224
+M2,no_grover,"clean (non-weak, hash class A)",uno,9,29.046308548323516,94.60310330113224
+M2,no_grover,"clean (non-weak, hash class A)",esp8266,9,23.30927637797836,40.24365422253317
+M2,no_grover,"clean (non-weak, hash class A)",esp32,9,6.485612450698391,12.165945205212084
+M2,no_grover,"clean (non-weak, hash class A)",all,27,19.61373245900009,94.60310330113224
+M2g,all,primary (non-weak),uno,12,16.247671299235567,64.49853182388557
+M2g,all,primary (non-weak),esp8266,11,17.161598277194546,26.04120515333916
+M2g,all,primary (non-weak),esp32,9,6.290093023670993,14.590588917774038
+M2g,all,primary (non-weak),all,32,13.761264807906432,64.49853182388557
+M2g,all,secondary (weak included),uno,12,16.247671299235567,64.49853182388557
+M2g,all,secondary (weak included),esp8266,12,17.75394769349449,26.04120515333916
+M2g,all,secondary (weak included),esp32,12,6.651156776251841,14.590588917774038
+M2g,all,secondary (weak included),all,36,13.550925256327298,64.49853182388557
+M2g,all,"clean (non-weak, hash class A)",uno,12,16.247671299235567,64.49853182388557
+M2g,all,"clean (non-weak, hash class A)",esp8266,9,15.375320771832905,26.04120515333916
+M2g,all,"clean (non-weak, hash class A)",esp32,9,6.290093023670993,14.590588917774038
+M2g,all,"clean (non-weak, hash class A)",all,30,12.9986926583454,64.49853182388557
+M2g,identifiable,primary (non-weak),uno,0,,
+M2g,identifiable,primary (non-weak),esp8266,11,17.161598277194546,26.04120515333916
+M2g,identifiable,primary (non-weak),esp32,9,6.290093023670993,14.590588917774038
+M2g,identifiable,primary (non-weak),all,20,12.269420913108949,26.04120515333916
+M2g,identifiable,secondary (weak included),uno,0,,
+M2g,identifiable,secondary (weak included),esp8266,12,17.75394769349449,26.04120515333916
+M2g,identifiable,secondary (weak included),esp32,12,6.651156776251841,14.590588917774038
+M2g,identifiable,secondary (weak included),all,24,12.202552234873165,26.04120515333916
+M2g,identifiable,"clean (non-weak, hash class A)",uno,0,,
+M2g,identifiable,"clean (non-weak, hash class A)",esp8266,9,15.375320771832905,26.04120515333916
+M2g,identifiable,"clean (non-weak, hash class A)",esp32,9,6.290093023670993,14.590588917774038
+M2g,identifiable,"clean (non-weak, hash class A)",all,18,10.832706897751951,26.04120515333916
+M2g,no_grover,primary (non-weak),uno,9,19.599360378495586,64.49853182388557
+M2g,no_grover,primary (non-weak),esp8266,9,15.375320771832905,26.04120515333916
+M2g,no_grover,primary (non-weak),esp32,9,6.290093023670993,14.590588917774038
+M2g,no_grover,primary (non-weak),all,27,13.754924724666497,64.49853182388557
+M2g,no_grover,secondary (weak included),uno,9,19.599360378495586,64.49853182388557
+M2g,no_grover,secondary (weak included),esp8266,9,15.375320771832905,26.04120515333916
+M2g,no_grover,secondary (weak included),esp32,9,6.290093023670993,14.590588917774038
+M2g,no_grover,secondary (weak included),all,27,13.754924724666497,64.49853182388557
+M2g,no_grover,"clean (non-weak, hash class A)",uno,9,19.599360378495586,64.49853182388557
+M2g,no_grover,"clean (non-weak, hash class A)",esp8266,9,15.375320771832905,26.04120515333916
+M2g,no_grover,"clean (non-weak, hash class A)",esp32,9,6.290093023670993,14.590588917774038
+M2g,no_grover,"clean (non-weak, hash class A)",all,27,13.754924724666497,64.49853182388557

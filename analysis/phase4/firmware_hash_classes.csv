@@ -1,0 +1,12 @@
+board,phase,hash,timing_class,evidence,interpretation
+uno,2,7feb4a04e1208c6b,A,hash of the committed HEAD tree (firmware/common + firmware/uno/src); the only Phase 2 Uno hash,reference version
+esp8266,2,6a19c55beaadc693,A,hash of the committed HEAD tree; used for h_all/bell_ghz/qft and grover n=2-7,reference version
+esp8266,2,6cb0e9ea301922b4,X,not the hash of any commit; an intermediate uncommitted working tree (grover n=8 only); its content cannot be recovered,UNVERIFIED: treated as possibly timing-relevant
+esp8266,2,5413c474786bad15,B,equals the hash of the uncommitted working tree of the main checkout (watchdog edit in firmware/esp8266/src/main.cpp); grover n=9 and n=10,timing-relevant: timer1 interrupt (1 s period) fires INSIDE the timed region (t0..t1) and the soft watchdog is no longer stopped around the circuit
+esp32,2,5f10cc9afc3fffe5,A,hash of the committed HEAD tree; h_all/bell_ghz/qft and grover n=2-11,reference version
+esp32,2,4478147465f99625,A,equals the hash of the uncommitted working tree (esp_timer_get_time() 64-bit replaces micros() in firmware/esp32/src/main.cpp); grover n=12 only,not timing-relevant: Arduino-ESP32 micros() is the low 32 bits of the same esp_timer_get_time(); the timed region and kernels are unchanged; it only removes a wrap at 71.6 min
+uno,3,8ce7531666759bcc,A,hash of the committed HEAD offload tree,reference version
+esp32,3,1e404bfed41a49f2,A,hash of the committed HEAD offload tree,reference version
+esp8266,3,e33508351a496315,A,hash of the committed HEAD offload tree (tree of commit 579fe78 onward); grover n=12 and n=13,reference version
+esp8266,3,54bef9c2f8726c37,B,tree of commits 5d08452..27b6094 (git diff 5076c76 579fe78); differs from HEAD by 579fe78: a micros() poll inside the wait loop between t0 and t1 and a 64-bit latency counter,timing-relevant but expected small (one micros() call per spin of a loop that waits milliseconds): UNVERIFIED
+esp8266,3,1b7b5ca0cb3143d8,B,tree of commits 3dd3a9e..5076c76; git diff 27b6094 5076c76 changes only #ifndef wrappers around REPS and RESPONSE_TIMEOUT_MS (outside t0..t1) so it equals 54bef9 for timing; differs from HEAD by 579fe78,same class as 54bef9

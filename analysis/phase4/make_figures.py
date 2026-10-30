@@ -20,8 +20,9 @@ import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 
-import common as C
+import p4common as C
 import model as M
+import timemodel as TM
 
 plt.rcParams.update({
     "font.family": "serif", "font.serif": ["STIXGeneral", "DejaVu Serif"], "mathtext.fontset": "cm",
@@ -43,6 +44,13 @@ def save(fig, name):
     fig.savefig(os.path.join(C.FIG, name + ".pdf"), metadata=META_PDF)
     fig.savefig(os.path.join(C.FIG, name + ".png"), dpi=300, metadata=META_PNG)
     plt.close(fig)
+
+
+WEAK_NOTE = f"Hollow markers: weak evidence (fewer than {C.SMALL_REPS} repetitions or requests); not fitted, not in the primary error."
+
+
+def footnote(fig, text=WEAK_NOTE):
+    fig.text(0.01, 0.004, text, fontsize=5.6, ha="left", va="bottom", color="0.25")
 
 
 def log_ticks(ax):
@@ -86,38 +94,43 @@ def f1_timing(loc, mem):
         ax.set_xlabel("Qubits $n$")
     for ax in axs[:, 0]:
         ax.set_ylabel(r"Execution time per run ($\mu$s)")
-    hs = board_handles() + [Line2D([], [], color="gray", marker="o", ls="", mfc="white", label=f"$<{C.SMALL_REPS}$ reps"),
+    hs = board_handles() + [Line2D([], [], color="gray", marker="o", ls="", mfc="white", label=f"weak: $<{C.SMALL_REPS}$ reps"),
                             Line2D([], [], color="gray", ls=":", label="memory wall")]
     fig.legend(handles=hs, loc="upper center", ncol=5, frameon=False, bbox_to_anchor=(0.5, 1.0))
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.tight_layout(rect=(0, 0.02, 1, 0.95))
+    footnote(fig)
     save(fig, "F1_timing_vs_n")
 
 
 # ------------------------------------------------------------------------------------------------ F2
-def f2_parity(P, V):
-    fig, axs = plt.subplots(1, 2, figsize=(W2, 3.4))
+def f2_parity(P):
+    fig, axs = plt.subplots(1, 2, figsize=(W2, 3.5))
     lim = (30, 5e7)
     for ax, (mod, title) in zip(axs, [("M1", "(a) $t=c_{\\rm board}\\,W(n)$"), ("M2", "(b) per-gate-kind costs")]):
         col = "pred_" + mod
         for b in C.BOARDS:
             for c in C.CIRCUITS:
-                g = P[(P.board == b) & (P.circuit == c) & (P.role.isin(["fit", "test"]))]
-                for role, mfc in [("fit", COL[b]), ("test", "white")]:
-                    gg = g[g.role == role]
-                    ax.plot(gg[col], gg.median_us, ls="", marker=MRK[c], color=COL[b], mfc=mfc, mew=0.9,
-                            ms=3.6 if role == "fit" else 4.4)
+                g = P[(P.board == b) & (P.circuit == c)]
+                fit = g[g.role == "fit"]
+                tst = g[g.role == "test"]
+                ax.plot(fit[col], fit.median_us, ls="", marker=MRK[c], color=COL[b], mfc=COL[b], mew=0.9, ms=3.6)
+                ok = tst[~tst.weak]
+                ax.plot(ok[col], ok.median_us, ls="", marker=MRK[c], color=COL[b], mfc="white", mew=0.9, ms=4.6)
+                wk = tst[tst.weak]
+                ax.plot(wk[col], wk.median_us, ls="", marker=MRK[c], color="0.55", mfc="white", mew=0.7, ms=4.6)
         ax.plot(lim, lim, color="0.4", lw=0.7)
         ax.set_xscale("log"); ax.set_yscale("log"); ax.set_xlim(*lim); ax.set_ylim(*lim)
         ax.set_aspect("equal")
         ax.set_xlabel(r"Predicted time ($\mu$s)"); ax.set_ylabel(r"Measured median time ($\mu$s)")
-        t = V[(V.model == mod) & (V.part == "test")]
-        mape = float((t.mape_pct * t.n_points).sum() / t.n_points.sum())
-        ax.text(0.97, 0.04, f"{title}\ntest MAPE $={mape:.0f}\\,\\%$\n({int(t.n_points.sum())} held-out points)",
+        r = TM.score(P, mod)
+        ax.text(0.97, 0.04, f"{title}\ntest MAPE $={r['mape']:.0f}\\,\\%$\n({r['n']} held-out points, weak excluded)",
                 transform=ax.transAxes, ha="right", va="bottom", fontsize=6.8)
     hs = board_handles() + circ_handles() + [Line2D([], [], color="k", marker="o", ls="", mfc="k", label="fit"),
-                                             Line2D([], [], color="k", marker="o", ls="", mfc="white", label="held-out test")]
-    fig.legend(handles=hs, loc="lower center", ncol=9, frameon=False, columnspacing=1.0, handletextpad=0.4)
-    fig.tight_layout(rect=(0, 0.07, 1, 1))
+                                             Line2D([], [], color="k", marker="o", ls="", mfc="white", label="held-out test"),
+                                             Line2D([], [], color="0.55", marker="o", ls="", mfc="white", label="held-out, weak (not scored)")]
+    fig.legend(handles=hs, loc="lower center", ncol=10, frameon=False, columnspacing=0.9, handletextpad=0.3, fontsize=6, bbox_to_anchor=(0.5, 0.035))
+    fig.tight_layout(rect=(0, 0.11, 1, 1))
+    footnote(fig, "Hollow grey markers: weak (fewer than %d repetitions); excluded from the fit and from the primary MAPE." % C.SMALL_REPS)
     save(fig, "F2_parity")
 
 
@@ -179,19 +192,27 @@ def memory_table(mem, R):
 
 
 # ------------------------------------------------------------------------------------------------ F4
+def f4_series():
+    """what F4 plots, per (board, circuit): the full Phase 2 (local) and Phase 3 (offload) point sets. Used by the coverage test."""
+    loc, off = C.load_local(), C.load_offload()
+    return {(b, c): (loc[(loc.board == b) & (loc.circuit == c)], off[(off.board == b) & (off.circuit == c)])
+            for b in C.BOARDS for c in C.CIRCUITS}
+
+
 def f4_offload(m, X):
     fig, axs = plt.subplots(2, 2, figsize=(W2, 4.6), sharex=True)
+    series = f4_series()
     for ax, c in zip(axs.flat, C.CIRCUITS):
         for b in C.BOARDS:
-            loc = C.load_local()
-            off = C.load_offload()
-            lg = loc[(loc.board == b) & (loc.circuit == c)]
-            og = off[(off.board == b) & (off.circuit == c)]
-            ax.plot(lg.n, lg.median_us, color=COL[b], lw=1.0, marker=MRK[c], mfc=COL[b])
-            ax.plot(og.n, og.median_us, color=COL[b], lw=1.0, ls="--", marker=MRK[c], mfc="white", mew=0.9)
-            small = og[og.reps < C.SMALL_REPS]
+            lg, og = series[(b, c)]
+            ax.plot(lg.n, lg.median_us, color=COL[b], lw=1.0, marker=MRK[c], mfc=COL[b], ms=3.0)
+            wl = lg[lg.reps < C.SMALL_REPS]                       # weak local points: hollow
+            if len(wl):
+                ax.plot(wl.n, wl.median_us, ls="", marker=MRK[c], mfc="white", mec=COL[b], mew=0.9, ms=4.6)
+            ax.plot(og.n, og.median_us, color=COL[b], lw=1.0, ls="--", marker=MRK[c], mfc=COL[b], mew=0.9, ms=2.6)
+            small = og[og.reps < C.SMALL_REPS]                    # weak offload points: hollow
             if len(small):
-                ax.plot(small.n, small.median_us, ls="", marker="o", ms=7.5, mfc="none", mec="0.35", mew=0.6)
+                ax.plot(small.n, small.median_us, ls="", marker=MRK[c], mfc="white", mec=COL[b], mew=0.9, ms=4.6)
             row = X[(X.board == b) & (X.circuit == c)].iloc[0]
             if pd.notna(row.n_star_interpolated):
                 ns = row.n_star_interpolated
@@ -213,49 +234,55 @@ def f4_offload(m, X):
     for ax in axs[:, 0]:
         ax.set_ylabel(r"Time per run ($\mu$s)")
     hs = board_handles() + [Line2D([], [], color="gray", lw=1, label="local (Phase 2, board)"),
-                            Line2D([], [], color="gray", lw=1, ls="--", marker="o", mfc="white", label="offload round trip (Phase 3)"),
+                            Line2D([], [], color="gray", lw=1, ls="--", marker="o", ms=3, label="offload round trip (Phase 3)"),
                             Line2D([], [], color="gray", marker="*", ls="", ms=8, mec="k", label="crossover (interpolated)"),
-                            Line2D([], [], color="0.35", marker="o", mfc="none", ls="", ms=7, label=f"$<{C.SMALL_REPS}$ requests")]
+                            Line2D([], [], color="gray", marker="o", mfc="white", ls="", ms=5, label=f"weak: $<{C.SMALL_REPS}$ reps / requests")]
     fig.legend(handles=hs, loc="upper center", ncol=7, frameon=False, bbox_to_anchor=(0.5, 1.0), columnspacing=1.0, handletextpad=0.4)
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.tight_layout(rect=(0, 0.02, 1, 0.94))
+    footnote(fig, "Hollow markers: weak evidence (fewer than %d reps or requests). Stars: crossover interpolated between measured n, never extrapolated." % C.SMALL_REPS)
     save(fig, "F4_offload_crossover")
 
 
 # ------------------------------------------------------------------------------------------------ F5
-def f5_accuracy(p1):
+def f5_accuracy(p1, gd=None):
     fig, ax = plt.subplots(figsize=(W1, 2.5))
     sty = {"h_all": "0.15", "bell_ghz": "0.45", "qft": "0.15", "grover": "#B00020"}
     for c in C.CIRCUITS:
         g = p1[p1.circuit == c]
         ax.plot(g.n, g.infidelity, marker=MRK[c], color=sty[c], lw=0.8, mfc="white" if c in ("qft",) else sty[c],
                 label=c)
+    if gd is not None:
+        gg = gd[gd.f32_infid_vs_ideal_normalised.notna()]
+        ax.plot(gg.n, gg.f32_infid_vs_ideal_normalised.clip(lower=1e-9), marker="D", color="#B00020", mfc="white", ls=":", lw=0.8,
+                label="grover, normalised")
     ax.axhline(1e-3, color="k", ls="--", lw=0.8)
-    ax.text(1.6, 1.4e-3, r"$10^{-3}$ threshold", fontsize=6.3, va="bottom")
+    ax.text(1.0, 1.4e-3, r"$10^{-3}$ threshold", fontsize=6.3, va="bottom")
     log_ticks(ax)
-    ax.set_xlabel("Qubits $n$"); ax.set_ylabel(r"Infidelity (float32 vs Aer float64)")
+    ax.set_xlabel("Qubits $n$"); ax.set_ylabel(r"Infidelity of the float32 state")
     ax.set_xlim(0.5, 14.5); ax.set_ylim(1e-8, 1)
     ax.set_xticks(range(2, 15, 2))
-    ax.legend(loc="lower right", frameon=False, ncol=2, fontsize=6.3, bbox_to_anchor=(1.0, 0.18))
+    ax.legend(loc="upper left", frameon=False, ncol=2, fontsize=6.3, bbox_to_anchor=(0.0, 1.0))
     fig.tight_layout()
     save(fig, "F5_phase1_accuracy")
 
 
 def main():
     mem = M.memory_model()
-    P, V = M.time_model()
-    M.time_sensitivity()
+    P, ident, S, V, sens = TM.run_all()
     D = M.counter_agreement()
     M.counter_summary(D)
     m, X = M.offload_crossover()
     loc = C.load_local()
     import audit
     p1 = audit.phase1()
+    gdp = os.path.join(C.ROOT, "data", "derived", "grover_diagnosis.csv")
+    gd = pd.read_csv(gdp) if os.path.exists(gdp) else None
     f1_timing(loc, mem)
-    f2_parity(P, V)
+    f2_parity(P)
     R = f3_memory(mem)
     memory_table(mem, R)
     f4_offload(m, X)
-    f5_accuracy(p1)
+    f5_accuracy(p1, gd)
     print("wrote", sorted(os.listdir(C.FIG)))
 
 

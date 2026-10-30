@@ -19,6 +19,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
+import shared.test_ledger  # noqa: E402,F401  (ledger redirected to a temp file before anything imports run_history)
 
 import run as run_mod  # noqa: E402
 

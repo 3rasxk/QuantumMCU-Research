@@ -32,12 +32,14 @@ from matplotlib.ticker import FixedLocator, FuncFormatter, MaxNLocator  # noqa: 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
 from shared import plot_style as ps  # noqa: E402
+sys.path.insert(0, str(REPO_ROOT / "analysis"))
+from common import counter_validity as cv  # noqa: E402
 
 DEFAULT_RAW = REPO_ROOT / "data" / "raw"
 DEFAULT_OUT = REPO_ROOT / "paper" / "figures"
 SINGLE_COL_IN, DOUBLE_COL_IN = 3.5, 7.16
 FULL_REPS = 100
-MIN_PAIRS = 10                                           # fewer paired reps: no median/IQR drawn, point listed instead
+MIN_PAIRS = 30                                           # fewer paired reps (= analysis/common/weak.WEAK_MIN): no median/IQR drawn, point listed instead
 WALL_STATUSES = ("malloc_failed", "build_overflow")      # positive evidence of a memory wall
 TIME_LIMITED_STATUSES = ("skipped_compute_infeasible", "skipped_sim_cost_infeasible")   # not run: predicted over the cap / PC memory
 JOINED_STATUSES = ("ok", "anomaly", "count_mismatch")    # ref_compare_points statuses that still carry paired reps
@@ -297,10 +299,14 @@ def load_counter_diff(raw_root, boards=ps.BOARD_ORDER, circuits=ps.CIRCUIT_ORDER
             if bad > 1e-3:
                 raise DataError(f"{what}: diff_us != micros_us - counter_us (max deviation {bad:.4g})")
             status = dict(zip(pts.n, pts.ref_status))
+            usable_n = cv.usable_n_in_dir(d, 2, board, circuit)
             rows = []
             for n, g in cmp_.groupby("n"):
                 st = status.get(n)
                 if st not in JOINED_STATUSES:
+                    continue
+                if usable_n is not None and int(n) not in usable_n:   # counter validity (analysis/common/counter_validity.py)
+                    skipped.append((board, circuit, f"n={int(n)}: counter point not usable (counter_validity)"))
                     continue
                 if len(g) < MIN_PAIRS:
                     skipped.append((board, circuit, f"n={n}: only {len(g)} paired rep(s)"))

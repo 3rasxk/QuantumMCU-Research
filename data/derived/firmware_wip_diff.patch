@@ -1,0 +1,93 @@
+diff --git a/firmware/esp32/src/main.cpp b/firmware/esp32/src/main.cpp
+index ee485e1..9eb89a5 100644
+--- a/firmware/esp32/src/main.cpp
++++ b/firmware/esp32/src/main.cpp
+@@ -15,6 +15,7 @@
+ #include <Arduino.h>
+ #include <WiFi.h>
+ #include <esp_heap_caps.h>
++#include <esp_timer.h>
+ #include "../../common/circuits.hpp"
+ 
+ #ifndef N_QUBITS
+@@ -79,14 +80,18 @@ void setup() {
+         uint32_t heap_before = esp_get_free_heap_size();
+ 
+         digitalWrite(GPIO_TIMING_PIN, HIGH);
+-        unsigned long t0 = micros();
++        // 64-bit timer: micros() is 32-bit and wraps every 71.6 min, so a rep longer than that
++        // (grover n=12, about 74 min) was reported modulo 71.6 min and the host's 2 h cap never fired.
++        int64_t t0 = esp_timer_get_time();
+         run_circuit(n_states);
+-        unsigned long t1 = micros();
++        int64_t t1 = esp_timer_get_time();
+         digitalWrite(GPIO_TIMING_PIN, LOW);
+ 
+         uint32_t heap_after = esp_get_free_heap_size();
+         uint32_t largest_block = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+-        unsigned long exec_us = t1 - t0;
++        uint64_t exec_us = (uint64_t)(t1 - t0);
++        char exec_buf[24];
++        snprintf(exec_buf, sizeof exec_buf, "%llu", (unsigned long long)exec_us);
+ 
+         Serial.print("esp32,");
+         Serial.print(circuit_name());
+@@ -95,7 +100,7 @@ void setup() {
+         Serial.print(',');
+         Serial.print(rep);
+         Serial.print(',');
+-        Serial.print(exec_us);
++        Serial.print(exec_buf);
+         Serial.print(',');
+         Serial.print(heap_before);
+         Serial.print(',');
+diff --git a/firmware/esp8266/src/main.cpp b/firmware/esp8266/src/main.cpp
+index 2bb377d..e8ddb50 100644
+--- a/firmware/esp8266/src/main.cpp
++++ b/firmware/esp8266/src/main.cpp
+@@ -28,6 +28,19 @@
+ 
+ static Cplx* g_state = nullptr;
+ 
++// Hardware watchdog feed (2026-10-06). ESP.wdtDisable() only stops the SOFTWARE watchdog; the
++// hardware watchdog resets the chip after about 8.4 s without a feed, so any single rep longer than
++// that (grover n>=8: measured 8.389 s pulses on D1, board rebooting forever) never finishes.
++// timer1 is a real hardware interrupt: it fires inside the busy loop of run_circuit() (an
++// os_timer/Ticker callback would not, it needs the cooperative scheduler). 1 s period, one register
++// write per interrupt, so the timing overhead is a few microseconds per second.
++// UNVERIFIED on hardware: the feed address 0x60000914 / value 0x73 is from general ESP8266 knowledge.
++#define HW_WDT_FEED_REG (*((volatile uint32_t*)0x60000914))
++static void IRAM_ATTR feed_hw_wdt_isr() {
++    HW_WDT_FEED_REG = 0x73;
++    system_soft_wdt_feed();  // soft WDT too: with only the hardware feed, "Soft WDT reset" still hit at 71.8 s (grover n=9)
++}
++
+ static const char* circuit_name() {
+     switch (CIRCUIT_ID) {
+         case 0: return "h_all";
+@@ -63,6 +76,11 @@ void setup() {
+     pinMode(GPIO_TIMING_PIN, OUTPUT);
+     digitalWrite(GPIO_TIMING_PIN, LOW);
+ 
++    timer1_isr_init();
++    timer1_attachInterrupt(feed_hw_wdt_isr);
++    timer1_enable(TIM_DIV256, TIM_EDGE, TIM_LOOP);  // 80 MHz / 256 = 312500 ticks per second
++    timer1_write(312500);
++
+     qsize_t n_states = (qsize_t)1 << N_QUBITS;
+     g_state = (Cplx*)malloc((size_t)n_states * sizeof(Cplx));
+ 
+@@ -81,11 +99,11 @@ void setup() {
+         uint32_t heap_before = ESP.getFreeHeap();
+ 
+         digitalWrite(GPIO_TIMING_PIN, HIGH);
+-        ESP.wdtDisable();  // วงจรมี upper bound แน่นอน (for-loop ธรรมดา) จึงปิดชั่วคราวได้ปลอดภัย
++        // 2026-10-06: the soft WDT is no longer stopped around the circuit (ESP.wdtDisable() +
++        // ESP.wdtEnable(0) removed); timer1 feeds both watchdogs every second instead, see above.
+         unsigned long t0 = micros();
+         run_circuit(n_states);
+         unsigned long t1 = micros();
+-        ESP.wdtEnable(0);
+         digitalWrite(GPIO_TIMING_PIN, LOW);
+ 
+         uint32_t heap_after = ESP.getFreeHeap();

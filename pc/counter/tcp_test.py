@@ -12,6 +12,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "pc"))
+import shared.test_ledger  # noqa: E402,F401  (ledger redirected to a temp file before anything imports run_history)
 from counter import proto as cp  # noqa: E402
 from counter.client import CounterClient, TcpServerTransport, make_transport  # noqa: E402
 from counter.session import CounterSession  # noqa: E402

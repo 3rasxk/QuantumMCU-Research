@@ -52,13 +52,15 @@ import json
 import platform
 import subprocess
 import sys
+import os
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-LEDGER_PATH = REPO_ROOT / "data" / "run_history.jsonl"
+# QLAB_RUN_HISTORY redirects the ledger (tests set it, pc/shared/test_ledger.py): the real data/run_history.jsonl must never be written by a test.
+LEDGER_PATH = Path(os.environ["QLAB_RUN_HISTORY"]) if os.environ.get("QLAB_RUN_HISTORY") else REPO_ROOT / "data" / "run_history.jsonl"
 
 SCHEMA_VERSION = 1
 
