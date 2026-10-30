@@ -118,16 +118,22 @@ def report_text(a, bad_frames=0, dropped_records=0, extra=""):
 
 
 def run(port, baud=115200, timeout_s=300):
-    import serial
     d = cp.Decoder()
     frames = []
     dropped_outside = 0
     scen_idx = 1
     trackers = SeqTracker(0)
     dropped_done = False
-    with serial.Serial(port, baud, timeout=0.2) as s:
-        time.sleep(0.3)
-        s.reset_input_buffer()
+    from counter.client import make_transport   # 'tcp:5055' = the counter's WiFi link, anything else = USB serial path
+    s = make_transport(port, baud)
+    try:
+        if str(port).startswith("tcp:"):   # wait for the counter to connect
+            t_w = time.time()
+            while getattr(s, "conn", None) is None and time.time() - t_w < 60:
+                time.sleep(0.2)
+        else:
+            time.sleep(0.3)
+        s.read(100000)   # discard what is already buffered
         s.write(cp.encode(cp.T_SELFTEST, 0))
         t0 = time.time()
         last_rx = time.time()
@@ -151,6 +157,8 @@ def run(port, baud=115200, timeout_s=300):
                     trackers = SeqTracker(0)
             if scen_idx > 5 and time.time() - last_rx > 3.0:
                 break
+    finally:
+        s.close()
     return frames, d.bad_frames, dropped_outside
 
 
