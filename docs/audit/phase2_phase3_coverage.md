@@ -185,3 +185,14 @@ Before running, decide (I did not touch any of this):
 - The Phase 3 grover limit at n >= 14 is a model estimate; n=14 was never attempted.
 - Timing of sliced (n >= 12) versus one-piece (n <= 11) Aer runs.
 - Behaviour at any baud rate other than 115 200.
+
+## 7. Update 2026-10-30: re-collection as repeat sessions
+
+What changed since section 5 (decisions of the owner, 2026-10-30):
+
+- **Phase 3 stops at the Phase 2 wall** (`config/sweep_ranges.toml`: `offload_beyond_wall` 3 -> 0). The beyond-wall rows of sections 1-2 (G2, n=16 for ESP8266, n=15..17 for ESP32) are no longer planned; `pc/plan_collection.py` now lists only n=1 of `h_all` and `qft` as missing (12 points, all boards), which stay uncollected.
+- **No point was overwritten.** Repeats use `pc/run.py --rerun TAG`: a separate bucket `with_ref_<TAG>/` next to `with_ref/`; resume never crosses buckets, so each repeat is a whole new sample. `analysis/audit_rerun.py` summarises them (`docs/audit/rerun_sessions.md`, `data/derived/rerun_sessions.csv`); the other audit and Phase 4 scripts read `with_ref/` only and are unchanged.
+- **Collected (r2 / r2b):** ESP8266 Phase 2 grover n=2-8 (r2) and n=7-8 (r2b); ESP8266 Phase 3 `h_all`, `bell_ghz`, `qft` n=2-13 and grover n=2-10 (r2); ESP32 Phase 2 grover n=9-10 (r2) and n=9 (r2b). Every point has 100 reps of the board's own timer, no CRC error, no timeout, no exact duplicate row, one firmware hash per series (ESP8266 Phase 2 and ESP32: see the table in `rerun_sessions.md`).
+- **Counter pairs missing (limitation, not an error of the timer data):** ESP8266 Phase 2 grover n=7 (r2 only; r2b has 100 pairs) and n=8 (r2 and r2b); ESP8266 Phase 3 grover n=9 (98 of 100, `count_mismatch`) and n=10 (`counter_lost`); ESP32 Phase 2 grover n=9 (r2 and r2b). ESP32 n=10 has 100 pairs (first time). The long points are the ones that fail: spurious 1-3 us pulses on the counter input, "several target runs", WiFi sequence gaps. The idle input is quiet and the short points pair 100/100, so the cause is intermittent and not established (UNVERIFIED: WiFi activity of the counter, power or wiring). The counter capture path was not changed. One firmware weakness found by reading: `unwrap_ticks` in `firmware/counter_esp32/src/main.cpp` turns a negative width of a few ticks into 2^32 - 1 ticks (53.687 s), so such a spike is not removed by the glitch filter.
+- **Repeated rows of ESP32 grover n=9-10:** not a logging fault (see `docs/phase4_report.md`, "Data quality"); the counter widths of n=9 follow the periodic pattern. The new session shows the same: 12 and 18 distinct values in 100 reps.
+- **Phase 3 end-to-end latency differs a lot between the original and the repeat** (ratio 0.47-1.54 per point, `rerun_sessions.md`); it includes the PC simulation time. Phase 2 board timer medians agree to 6e-5 or better. UNVERIFIED cause of the Phase 3 difference (PC load or simulator threading at the time).
