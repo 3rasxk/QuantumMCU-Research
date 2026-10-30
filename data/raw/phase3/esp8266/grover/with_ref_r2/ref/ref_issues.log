@@ -1,0 +1,13 @@
+2026-10-30T11:35:49.379437+00:00  esp8266/grover/n=3  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-30T11:36:55.640377+00:00  esp8266/grover/n=4  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-30T11:38:23.751313+00:00  esp8266/grover/n=5  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-30T11:39:37.083337+00:00  esp8266/grover/n=6  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-30T11:40:48.232709+00:00  esp8266/grover/n=7  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-30T11:42:24.122246+00:00  esp8266/grover/n=8  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-30T11:46:00.526367+00:00  esp8266/grover/n=9  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-30T11:54:23.736638+00:00  esp8266/grover/n=9  sequence gap: missing [123, 124]; requesting REPLAY from 123
+2026-10-30T11:54:26.766097+00:00  esp8266/grover/n=9  sequence gap: missing [123, 124]; requesting REPLAY from 123
+2026-10-30T11:54:29.778846+00:00  esp8266/grover/n=9  anomaly code 2 (extra pulse)
+2026-10-30T11:54:29.779071+00:00  esp8266/grover/n=9  anomaly code 5 (count mismatch)
+2026-10-30T11:54:29.779342+00:00  esp8266/grover/n=9  anomaly code 6 (sequence gap)
+2026-10-30T12:27:32.600838+00:00  esp8266/grover/n=10  no REPORT after END (counter lost or silent)

@@ -1,0 +1,8 @@
+schema_version,session_id,phase,board,circuit,n,baud,attempt_index,start_utc,end_utc,wall_s,build_compile_s,upload_s,boot_wait_s,device_exec_s,pc_sim_s_total,pc_sim_s_median,serial_transfer_s_total,avg_round_trip_latency_s,crc_error_count,bytes_transferred,retry_count,timeout_hit,failure_type,failure_message,status
+2,20261030T084354-fda69dbc,2,esp8266,grover,2,,0,2026-10-30T08:43:55.794236+00:00,2026-10-30T08:45:04.086407+00:00,68.263,41.865,23.72,1.5,1.179,,,,,,,0,False,none,,ok
+2,20261030T084354-fda69dbc,2,esp8266,grover,3,,0,2026-10-30T08:45:07.135329+00:00,2026-10-30T08:46:05.560436+00:00,58.316,31.985,23.646,1.5,1.185,,,,,,,0,False,none,,ok
+2,20261030T084354-fda69dbc,2,esp8266,grover,4,,0,2026-10-30T08:46:08.685749+00:00,2026-10-30T08:47:07.635497+00:00,58.91,31.441,23.712,1.5,2.257,,,,,,,0,False,none,,ok
+2,20261030T084354-fda69dbc,2,esp8266,grover,5,,0,2026-10-30T08:47:10.655729+00:00,2026-10-30T08:48:54.795261+00:00,104.096,69.524,25.579,1.5,7.494,,,,,,,0,False,none,,ok
+2,20261030T084354-fda69dbc,2,esp8266,grover,6,,0,2026-10-30T08:48:57.856606+00:00,2026-10-30T08:50:42.707783+00:00,104.81,35.287,24.122,1.5,43.901,,,,,,,0,False,none,,ok
+2,20261030T084354-fda69dbc,2,esp8266,grover,7,,0,2026-10-30T08:50:45.752137+00:00,2026-10-30T08:56:44.695389+00:00,352.889,38.681,23.992,1.5,288.716,,,,,,,0,False,none,,ok
+2,20261030T084354-fda69dbc,2,esp8266,grover,8,,0,2026-10-30T08:56:44.709456+00:00,2026-10-30T09:37:11.948358+00:00,2421.13,15.848,23.189,1.5,2380.593,,,,,,,0,False,none,,ok

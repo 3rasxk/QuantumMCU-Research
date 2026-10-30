@@ -1,0 +1,13 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,esp8266,h_all,2,100,-2.407,-2.334,0.471,0.694,4.463,-0.0683,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,h_all,3,100,-2.269,-2.287,0.383,0.522,3.3,-0.0617,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,h_all,4,100,-2.232,-2.291,0.442,0.582,3.888,-0.0621,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,h_all,5,100,-2.394,-2.355,0.423,0.647,3.288,-0.0566,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,h_all,6,100,-2.469,-2.456,0.448,0.581,3.925,-0.0585,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,h_all,7,100,-2.387,-2.398,0.411,0.544,3.95,-0.0615,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,h_all,8,100,-2.413,-2.395,0.424,0.547,3.638,-0.0631,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,h_all,9,100,-2.419,-2.372,0.394,0.525,3.688,-0.0642,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,h_all,10,100,-2.344,-2.347,0.477,0.669,4.638,-0.0545,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,h_all,11,100,-2.331,-2.312,0.446,0.631,3.55,-0.0474,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,h_all,12,100,-2.332,-2.315,0.428,0.634,3.475,-0.0791,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,h_all,13,100,-2.4,-2.404,0.426,0.553,3.613,-0.0427,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"

@@ -1,0 +1,8 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,esp8266,grover,2,100,-1.788,-2.205,0.634,1.0,6.413,-0.2666,ok,False,1.0,
+1,,esp8266,grover,3,100,-2.088,-2.275,0.346,0.463,3.088,-0.0695,ok,False,1.0,
+1,,esp8266,grover,4,100,-2.6,-2.607,0.402,0.947,3.6,-0.0187,ok,False,1.0,
+1,,esp8266,grover,5,100,-4.5,-4.476,0.357,0.372,5.325,-0.0068,ok,False,1.0,
+1,,esp8266,grover,6,100,-17.1,-17.216,0.577,0.275,21.875,-0.004,ok,False,1.0,
+1,,esp8266,grover,7,0,,,,,,,refused_count_mismatch,True,1.0,103 usable pulses (0 glitch) for 100 reps; refusing rep-order join
+1,,esp8266,grover,8,0,,,,,,,refused_count_mismatch,True,1.0,171 usable pulses (0 glitch) for 100 reps; refusing rep-order join

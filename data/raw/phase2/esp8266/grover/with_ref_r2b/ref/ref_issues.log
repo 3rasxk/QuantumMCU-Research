@@ -1,0 +1,9 @@
+2026-10-30T10:10:41.019446+00:00  esp8266/grover/n=7  2 target runs seen by the counter ([2, 100] pulses); pairing the LAST run (the one whose rows the sweep read)
+2026-10-30T10:10:44.080103+00:00  esp8266/grover/n=8  counter was still ARMED from an earlier interrupted run: sent END to clear it before ARM
+2026-10-30T10:51:26.567136+00:00  esp8266/grover/n=8  sequence gap: missing [110, 111]; requesting REPLAY from 110
+2026-10-30T10:51:29.600665+00:00  esp8266/grover/n=8  sequence gap: missing [110, 111]; requesting REPLAY from 110
+2026-10-30T10:51:32.612781+00:00  esp8266/grover/n=8  3 target runs seen by the counter ([51, 57, 2] pulses); pairing the LAST run (the one whose rows the sweep read)
+2026-10-30T10:51:32.613126+00:00  esp8266/grover/n=8  anomaly code 2 (extra pulse)
+2026-10-30T10:51:32.613315+00:00  esp8266/grover/n=8  anomaly code 5 (count mismatch)
+2026-10-30T10:51:32.613498+00:00  esp8266/grover/n=8  anomaly code 6 (sequence gap)
+2026-10-30T10:51:32.631292+00:00  esp8266/grover/n=8  comparison refused: refused_count_mismatch 2 usable pulses (0 glitch) for 100 reps; refusing rep-order join

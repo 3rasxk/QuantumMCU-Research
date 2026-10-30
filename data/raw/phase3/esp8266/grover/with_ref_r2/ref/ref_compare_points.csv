@@ -1,0 +1,10 @@
+schema_version,session_id,board,circuit,n,n_pairs,median_diff_us,mean_diff_us,std_diff_us,iqr_diff_us,max_abs_diff_us,median_diff_pct,ref_status,flagged,micros_quantization_us,notes
+1,,esp8266,grover,2,100,-2.388,-2.392,0.417,0.513,4.038,-0.0561,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,grover,3,100,-2.313,-2.352,0.415,0.659,3.325,-0.0375,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,grover,4,100,-2.469,-2.466,0.44,0.651,3.625,-0.0234,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,grover,5,100,-2.994,-2.957,0.392,0.569,4.063,-0.0137,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,grover,6,100,-5.219,-5.267,0.433,0.585,7.063,-0.006,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,grover,7,100,-13.969,-14.07,0.63,0.772,16.575,-0.0041,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,grover,8,100,-56.706,-57.074,2.504,1.76,72.925,-0.0037,ok,False,1.0,"aligned by width, all 100 reps matched, 1 extra counter pulse(s) ignored"
+1,,esp8266,grover,9,98,-145.806,-156.66,31.419,5.341,256.4,-0.0036,count_mismatch,False,1.0,"partial: aligned by width, 98/100 reps matched, 25 extra/unmatched counter pulses ignored"
+1,,esp8266,grover,10,0,,,,,,,refused_counter_lost,True,1.0,counter_lost
