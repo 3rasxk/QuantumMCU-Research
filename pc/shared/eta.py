@@ -49,12 +49,13 @@ def load_measured(board, phase):
     """Medians from the NEW run for one (board, phase): scans every circuit's points.csv
     (both reference buckets), status == ok rows only. Empty dict when nothing is collected."""
     rows = []
-    for circuit in plan.EXPERIMENT_CIRCUITS:
-        for bucket in (False, True):
-            p = sp.points_csv_path(board, circuit, phase, bucket)
-            if p.exists():
-                with open(p, newline="", encoding="utf-8") as f:
-                    rows += [r for r in csv.DictReader(f) if r.get("status") == "ok"]
+    with sp.original_buckets():   # a --rerun bucket starts empty; the estimate is built from the first measurement
+        for circuit in plan.EXPERIMENT_CIRCUITS:
+            for bucket in (False, True):
+                p = sp.points_csv_path(board, circuit, phase, bucket)
+                if p.exists():
+                    with open(p, newline="", encoding="utf-8") as f:
+                        rows += [r for r in csv.DictReader(f) if r.get("status") == "ok"]
     if not rows:
         return {}
     dev = {}

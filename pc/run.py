@@ -33,6 +33,7 @@ import glob
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -721,6 +722,11 @@ def main(argv=None):
                           "MANIFEST.json, THEN start collection at the circuit's minimum "
                           "meaningful n by default. Does not pass --fresh through to the "
                           "delegated script -- see build_command's docstring.")
+    ap.add_argument("--rerun", default=None, metavar="TAG",
+                     help="repeat measurement of points that already exist (decision 2026-10-30): data goes to its own bucket "
+                          "with_ref_<TAG>/ beside with_ref/ (letters/digits, e.g. r2). Resume never crosses buckets, so every point is "
+                          "measured again as a whole new sample and nothing in with_ref/ is touched or mixed. Needs --ref counter; "
+                          "not combinable with --fresh.")
     ap.add_argument("--dry-run", action="store_true",
                      help="validate and print the exact command (and, for --fresh, the "
                           "planned archive destination and n-range clamp); never touch "
@@ -729,6 +735,12 @@ def main(argv=None):
                      help="skip the interactive y/n confirmation before touching hardware")
     args = ap.parse_args(argv)
     args.ref_mode = args.ref
+    if args.rerun:
+        if args.ref != "counter" or args.fresh:
+            ap.error("--rerun needs --ref counter and cannot be combined with --fresh")
+        if not re.fullmatch(r"[A-Za-z0-9]{1,16}", args.rerun):
+            ap.error("--rerun TAG: letters and digits only, at most 16")
+        os.environ["QLAB_RERUN_TAG"] = args.rerun   # read by shared.paths; inherited by the delegated sweep process
     args.ref = args.ref == "counter"   # bool from here on: selects the with_ref/no_ref bucket
     argv_for_history = ["pc/run.py"] + (list(argv) if argv is not None else sys.argv[1:])
     command_str = " ".join(argv_for_history)
@@ -764,7 +776,8 @@ def main(argv=None):
             print("*** WARNING: --ref none: no timing reference. Data goes to the no_ref/ bucket and is NOT valid for "
                   "official runs (official runs REQUIRE --ref counter --counter-port PORT, see docs/design/readiness.md). ***")
         else:
-            print(f"timing reference: ESP32 counter on {args.counter_port} (bucket with_ref/); the counter port is never "
+            bucket_name = "with_ref" + ("_" + args.rerun if args.rerun else "")
+            print(f"timing reference: ESP32 counter on {args.counter_port} (bucket {bucket_name}/); the counter port is never "
                   f"shared with the target port {args.port}")
 
         n_max_effective = args.n_max if args.n_max is not None else default_n_max(args.phase, args.board, args.algorithm)

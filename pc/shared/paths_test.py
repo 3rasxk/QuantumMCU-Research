@@ -151,6 +151,37 @@ def test_pre_timer_results_are_gone_and_recorded():
     check("purge comes after restart", events.index("purge") > events.index("restart"))
 
 
+def test_rerun_bucket():
+    """--rerun TAG (QLAB_RERUN_TAG): a repeat sample lives in with_ref_<TAG>/, never in with_ref/, and the normal bucket is unchanged."""
+    import os
+    saved = os.environ.pop("QLAB_RERUN_TAG", None)
+    try:
+        base = sp.raw_dir("esp8266", "grover", 2, ref=True)
+        os.environ["QLAB_RERUN_TAG"] = "r2"
+        rer = sp.raw_dir("esp8266", "grover", 2, ref=True)
+        check("rerun bucket is a sibling named with_ref_r2", rer == base.parent / "with_ref_r2" and rer != base)
+        check("rerun paths (points, memory_wall, session_log, env, ref) all sit under the rerun bucket",
+              all(str(p).startswith(str(rer)) for p in (sp.points_csv_path("esp8266", "grover", 2, True), sp.memory_wall_csv_path("esp8266", "grover", 2, True),
+                  sp.session_log_csv_path("esp8266", "grover", 2, True), sp.env_dir("esp8266", "grover", 2, True),
+                  sp.ref_dir("esp8266", "grover", 2))))
+        check("no_ref is unaffected by the tag", sp.raw_dir("esp8266", "grover", 2, ref=False).name == "no_ref")
+        with sp.original_buckets():
+            check("original_buckets() resolves to with_ref", sp.raw_dir("esp8266", "grover", 2, ref=True) == base)
+        check("the tag is back after original_buckets()", sp.raw_dir("esp8266", "grover", 2, ref=True) == rer)
+        os.environ["QLAB_RERUN_TAG"] = "../x"
+        try:
+            sp.raw_dir("esp8266", "grover", 2, ref=True)
+            check("a path-like tag is refused", False)
+        except ValueError:
+            check("a path-like tag is refused", True)
+        del os.environ["QLAB_RERUN_TAG"]
+        check("without the tag the normal with_ref bucket is back", sp.raw_dir("esp8266", "grover", 2, ref=True) == base)
+    finally:
+        os.environ.pop("QLAB_RERUN_TAG", None)
+        if saved is not None:
+            os.environ["QLAB_RERUN_TAG"] = saved
+
+
 def main():
     saved_root = sp.REPO_ROOT
     try:
@@ -158,6 +189,7 @@ def main():
         test_ref_dir_always_with_ref()
         test_figures_dir_matrix()
         test_no_ref_and_with_ref_never_collide()
+        test_rerun_bucket()
     finally:
         sp.REPO_ROOT = saved_root  # real-data test below needs the real REPO_ROOT
     test_pre_timer_results_are_gone_and_recorded()

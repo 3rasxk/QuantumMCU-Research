@@ -14,6 +14,7 @@ import io
 import json
 import shutil
 import subprocess
+import os
 import sys
 from pathlib import Path
 
@@ -195,6 +196,33 @@ def test_missing_port_is_rejected_by_argparse():
             exited_with = e.code
     check("missing --port causes argparse to exit non-zero (required=True, never auto-guessed)",
           exited_with is not None and exited_with != 0, f"exit code: {exited_with}")
+
+
+def test_rerun_flag():
+    """--rerun TAG needs --ref counter, excludes --fresh, and (on a dry run) sets QLAB_RERUN_TAG so every path resolves to with_ref_<TAG>/."""
+    bad = []
+    for extra in (["--ref", "none"], ["--ref", "counter", "--counter-port", "tcp:5055", "--fresh"]):
+        code = None
+        with captured_stdout():
+            try:
+                run_mod.main(["--board", "esp8266", "--algorithm", "grover", "--phase", "2", "--port", "/dev/cu.FAKE", "--rerun", "r2", "--dry-run"] + extra)
+            except SystemExit as e:
+                code = e.code
+        bad.append(code not in (None, 0))
+    check("--rerun with --ref none or with --fresh is rejected", all(bad), str(bad))
+    saved = os.environ.pop("QLAB_RERUN_TAG", None)
+    try:
+        with captured_stdout():
+            try:
+                run_mod.main(["--board", "esp8266", "--algorithm", "grover", "--phase", "2", "--port", "/dev/cu.FAKE", "--n-start", "2", "--n-max", "3",
+                              "--ref", "counter", "--counter-port", "tcp:5055", "--rerun", "r2", "--dry-run"])
+            except SystemExit:
+                pass
+        check("--rerun r2 --dry-run sets QLAB_RERUN_TAG=r2 for the delegated sweep", os.environ.get("QLAB_RERUN_TAG") == "r2")
+    finally:
+        os.environ.pop("QLAB_RERUN_TAG", None)
+        if saved is not None:
+            os.environ["QLAB_RERUN_TAG"] = saved
 
 
 def test_dirty_tree_warns_but_does_not_block_a_real_run():
@@ -608,6 +636,7 @@ def main():
     test_dry_run_cli_all_combinations_no_hardware_subprocess()
     test_unsupported_combinations_rejected()
     test_missing_port_is_rejected_by_argparse()
+    test_rerun_flag()
     test_dirty_tree_warns_but_does_not_block_a_real_run()
     test_busy_port_is_refused()
     test_reps_flag_validates_against_the_real_compile_time_constant()

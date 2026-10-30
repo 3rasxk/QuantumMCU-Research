@@ -25,6 +25,9 @@
 # existed under either old name when the rename happened (all earlier data was deleted
 # 2026-10-04), so the rename is path-only.
 
+import contextlib
+import os
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -41,8 +44,30 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 RAW_ROOT = REPO_ROOT / "data" / "raw"
 
 
+def rerun_tag() -> str:
+    """QLAB_RERUN_TAG (set by `pc/run.py --rerun TAG`): a repeat measurement of points that already exist goes to its own bucket
+    with_ref_<TAG>/ beside with_ref/. Resume never crosses buckets, so the repeat is a whole new sample per point (never mixed with
+    the first one) and nothing in with_ref/ is touched. Empty = the normal bucket."""
+    tag = os.environ.get("QLAB_RERUN_TAG", "")
+    if tag and not re.fullmatch(r"[A-Za-z0-9]{1,16}", tag):
+        raise ValueError(f"QLAB_RERUN_TAG {tag!r}: letters and digits only, at most 16")
+    return tag
+
+
 def _ref_bucket(ref: bool) -> str:
-    return "with_ref" if ref else "no_ref"
+    tag = rerun_tag()
+    return ("with_ref" + (f"_{tag}" if tag else "")) if ref else "no_ref"
+
+
+@contextlib.contextmanager
+def original_buckets():
+    """Resolve paths to the ORIGINAL buckets (ignore QLAB_RERUN_TAG) -- for readers of the first measurement, e.g. the ETA's measured wall times."""
+    saved = os.environ.pop("QLAB_RERUN_TAG", None)
+    try:
+        yield
+    finally:
+        if saved is not None:
+            os.environ["QLAB_RERUN_TAG"] = saved
 
 
 def raw_dir(board: str, circuit: str, phase: int = 2, ref: bool = False) -> Path:

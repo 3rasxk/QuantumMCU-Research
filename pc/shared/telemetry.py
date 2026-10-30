@@ -459,7 +459,7 @@ def _ref_bucket_from_path(path: Path):
     cross-check below, never to derive `ref` itself -- the caller's actual
     `--ref` flag is still the source of truth for what was collected."""
     for part in path.parts:
-        if part in ("no_ref", "with_ref"):
+        if part == "no_ref" or part == "with_ref" or re.fullmatch(r"with_ref_[A-Za-z0-9]{1,16}", part):
             return part
     return None
 
@@ -479,7 +479,7 @@ def write_environment_metadata(session_id, board, port, baud, f_cpu, fw_src_dir,
     env_dir.mkdir(parents=True, exist_ok=True)
     commit, dirty = _git_commit_and_dirty()
     dir_bucket = _ref_bucket_from_path(env_dir)
-    expected_bucket = "with_ref" if ref else "no_ref"
+    expected_bucket = ("with_ref" + (f"_{os.environ['QLAB_RERUN_TAG']}" if os.environ.get("QLAB_RERUN_TAG") else "")) if ref else "no_ref"
     meta = {
         "schema_version": SCHEMA_VERSION,
         "session_id": session_id,

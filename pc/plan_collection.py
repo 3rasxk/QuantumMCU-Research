@@ -12,6 +12,7 @@ Collection is additive: the commands resume (skip done points) and append to the
 """
 import argparse
 import csv
+import os
 import sys
 from pathlib import Path
 
@@ -64,7 +65,12 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--board", choices=BOARDS, default=None)
     ap.add_argument("--list", action="store_true", help="print every planned point, not only the missing ones")
+    ap.add_argument("--rerun", default=None, metavar="TAG", help="plan a repeat measurement into the with_ref_<TAG>/ bucket (pc/run.py --rerun)")
     args = ap.parse_args(argv)
+    global COUNTER_FLAGS
+    if args.rerun:
+        os.environ["QLAB_RERUN_TAG"] = args.rerun
+        COUNTER_FLAGS += f" --rerun {args.rerun}"
     boards = [args.board] if args.board else list(BOARDS)
     problems = sweep_ranges.validate()
     if problems:
