@@ -9,6 +9,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT / "pc"))
+import shared.test_ledger  # noqa: E402,F401  (ledger redirected to a temp file before anything imports run_history)
 from shared import sweep_ranges as sr  # noqa: E402
 from shared import timing_model as tm  # noqa: E402
 from shared import experiment_plan as plan  # noqa: E402
@@ -65,9 +66,9 @@ def test_phase3_covers_phase2_data():
                 check(f"{b}/{c}: Phase 3 plan reaches wall + {sr.meta('offload_beyond_wall')} or its documented circuit limit",
                       sr.n_range(b, c, 3)[1] >= min(sr.wall_n(b) + sr.meta("offload_beyond_wall"), sr.phase3_circuit_limit(c) or 10 ** 6))
     # the checker itself must be able to fail
-    check("negative control: a Phase 3 plan that stops early is reported as a gap",
-          sr.phase3_gaps("uno", "h_all", list(range(1, 14))) == [12, 13] or sr.phase3_gaps("uno", "h_all", list(range(1, 14))) == list(range(12, 14)),
-          str(sr.phase3_gaps("uno", "h_all", list(range(1, 14)))))
+    hi3 = sr.n_range("uno", "h_all", 3)[1]   # fake Phase 2 data two n beyond the plan must show exactly those two n as gaps
+    gaps = sr.phase3_gaps("uno", "h_all", list(range(1, hi3 + 3)))
+    check("negative control: a Phase 3 plan that stops early is reported as a gap", gaps == [hi3 + 1, hi3 + 2], str(gaps))
 
 
 def test_real_limit_is_evidenced():
