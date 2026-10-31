@@ -192,54 +192,58 @@ def memory_table(mem, R):
 
 
 # ------------------------------------------------------------------------------------------------ F4
-def f4_series():
-    """what F4 plots, per (board, circuit): the full Phase 2 (local) and Phase 3 (offload) point sets. Used by the coverage test."""
-    loc, off = C.load_local(), C.load_offload()
-    return {(b, c): (loc[(loc.board == b) & (loc.circuit == c)], off[(off.board == b) & (off.circuit == c)])
-            for b in C.BOARDS for c in C.CIRCUITS}
+def f4_series(m=None):
+    """what F4 plots, per (board, circuit): the rows of the band table (selected Phase 2 local statistics + selected Phase 3 offload band). Used by the coverage test."""
+    if m is None:
+        m, _ = M.offload_crossover()
+    return {(b, c): m[(m.board == b) & (m.circuit == c)].sort_values("n") for b in C.BOARDS for c in C.CIRCUITS}
 
 
 def f4_offload(m, X):
-    fig, axs = plt.subplots(2, 2, figsize=(W2, 4.6), sharex=True)
-    series = f4_series()
+    """local median with IQR (solid, Phase 2); offload band between the fastest and the slowest observed PC simulation (shaded) with the measured offload
+    median (dashed); crossover brackets as bars from n_lo to n_hi at the local time of n_hi (solid = fast bound, dotted = slow bound)"""
+    fig, axs = plt.subplots(2, 2, figsize=(W2, 4.8), sharex=True)
+    series = f4_series(m)
     for ax, c in zip(axs.flat, C.CIRCUITS):
         for b in C.BOARDS:
-            lg, og = series[(b, c)]
-            ax.plot(lg.n, lg.median_us, color=COL[b], lw=1.0, marker=MRK[c], mfc=COL[b], ms=3.0)
-            wl = lg[lg.reps < C.SMALL_REPS]                       # weak local points: hollow
-            if len(wl):
-                ax.plot(wl.n, wl.median_us, ls="", marker=MRK[c], mfc="white", mec=COL[b], mew=0.9, ms=4.6)
-            ax.plot(og.n, og.median_us, color=COL[b], lw=1.0, ls="--", marker=MRK[c], mfc=COL[b], mew=0.9, ms=2.6)
-            small = og[og.reps < C.SMALL_REPS]                    # weak offload points: hollow
-            if len(small):
-                ax.plot(small.n, small.median_us, ls="", marker=MRK[c], mfc="white", mec=COL[b], mew=0.9, ms=4.6)
+            g = series[(b, c)]
+            if not len(g):
+                continue
+            ax.fill_between(g.n, g.q1_us, g.q3_us, color=COL[b], alpha=0.30, lw=0)
+            ax.plot(g.n, g.median_us, color=COL[b], lw=1.0, marker=MRK[c], mfc=COL[b], ms=3.0)
+            ax.fill_between(g.n, g.fast_us, g.slow_us, color=COL[b], alpha=0.18, lw=0, hatch="////", edgecolor=COL[b])
+            ax.plot(g.n, g.e2e_us, color=COL[b], lw=0.9, ls="--")
+            wk = g[g.weak_point]                                   # weak: hollow marker on the local median
+            if len(wk):
+                ax.plot(wk.n, wk.median_us, ls="", marker=MRK[c], mfc="white", mec=COL[b], mew=0.9, ms=4.6)
             row = X[(X.board == b) & (X.circuit == c)].iloc[0]
-            if pd.notna(row.n_star_interpolated):
-                ns = row.n_star_interpolated
-                y = np.exp(np.interp(ns, lg.n, np.log(lg.median_us)))
-                ax.plot([ns], [y], marker="*", ms=9, color=COL[b], mec="k", mew=0.6, ls="", zorder=5)
-            elif row.first_n_offload_faster is not None and pd.notna(row.first_n_offload_faster):
-                n0 = int(row.first_n_offload_faster)  # offload already faster at the smallest measured n: crossover is below it
-                ax.annotate("", xy=(n0, lg.median_us.iloc[0]), xytext=(n0 + 0.0, lg.median_us.iloc[0]))
-            elif not pd.notna(row.first_n_offload_faster):
-                ax.annotate(f"{C.BOARD_LABEL[b]}: no crossover, $n\\leq{int(row.n_local_max)}$",
-                            (lg.n.iloc[-1], lg.median_us.iloc[-1]), xytext=(-4, 14), textcoords="offset points",
-                            ha="right", fontsize=6, color=COL[b])
+            for bound, ls_ in (("fast", "-"), ("slow", ":")):
+                lo, hi, kind = row[f"n_{bound}_lo"], row[f"n_{bound}_hi"], row[f"{bound}_kind"]
+                if kind == "bracket":
+                    y = float(g[g.n == int(hi)].median_us.iloc[0])
+                    ax.plot([lo, hi], [y, y], color=COL[b], lw=2.4, ls=ls_, solid_capstyle="butt", zorder=5)
+                elif kind == "below":
+                    y = float(g[g.n == int(hi)].median_us.iloc[0])
+                    ax.annotate("", xy=(hi, y), xytext=(hi - 0.9, y), arrowprops=dict(arrowstyle="->", color=COL[b], lw=1.2, ls=ls_))
         log_ticks(ax)
-        ax.set_xlim(1.5, 22.5)
-        ax.set_xticks(range(2, 23, 4))
+        ax.set_xlim(1.5, 14.5)
+        ax.set_xticks(range(2, 15, 2))
         ax.text(0.03, 0.95, c, transform=ax.transAxes, ha="left", va="top", fontsize=8)
     for ax in axs[1]:
         ax.set_xlabel("Qubits $n$")
     for ax in axs[:, 0]:
         ax.set_ylabel(r"Time per run ($\mu$s)")
-    hs = board_handles() + [Line2D([], [], color="gray", lw=1, label="local (Phase 2, board)"),
-                            Line2D([], [], color="gray", lw=1, ls="--", marker="o", ms=3, label="offload round trip (Phase 3)"),
-                            Line2D([], [], color="gray", marker="*", ls="", ms=8, mec="k", label="crossover (interpolated)"),
+    from matplotlib.patches import Patch
+    hs = board_handles() + [Line2D([], [], color="gray", lw=1, label="local median, IQR shaded (Phase 2)"),
+                            Patch(facecolor="gray", alpha=0.25, hatch="////", edgecolor="gray", label="offload band: fastest to slowest PC simulation"),
+                            Line2D([], [], color="gray", lw=1, ls="--", label="offload, measured session"),
+                            Line2D([], [], color="gray", lw=2.4, label="crossover bracket, fast bound"),
+                            Line2D([], [], color="gray", lw=2.4, ls=":", label="crossover bracket, slow bound"),
                             Line2D([], [], color="gray", marker="o", mfc="white", ls="", ms=5, label=f"weak: $<{C.SMALL_REPS}$ reps / requests")]
-    fig.legend(handles=hs, loc="upper center", ncol=7, frameon=False, bbox_to_anchor=(0.5, 1.0), columnspacing=1.0, handletextpad=0.4)
-    fig.tight_layout(rect=(0, 0.02, 1, 0.94))
-    footnote(fig, "Hollow markers: weak evidence (fewer than %d reps or requests). Stars: crossover interpolated between measured n, never extrapolated." % C.SMALL_REPS)
+    fig.legend(handles=hs, loc="upper center", ncol=5, frameon=False, bbox_to_anchor=(0.5, 1.0), columnspacing=0.9, handletextpad=0.4)
+    fig.tight_layout(rect=(0, 0.07, 1, 0.90))
+    footnote(fig, "The offload band reflects the speed of the host PC (the Aer simulation time varies about 2x between sessions).\n"
+                  "Bars: bracket between two measured n; arrow: offload already faster at the smallest measured n; no bar: no crossover up to the largest measured n.")
     save(fig, "F4_offload_crossover")
 
 
