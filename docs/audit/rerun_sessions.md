@@ -8,6 +8,7 @@ never merged into `with_ref/`. Timer = `exec_time_us` (Phase 2) or `e2e_latency_
 | 2 | esp32 | grover | with_ref_r2 | 9 | ok | 100 | 7334245.0 | 7334250.5 | 0.999999 | 0 refused_count_mismatch | False |
 | 2 | esp32 | grover | with_ref_r2 | 10 | ok | 100 | 63566287.0 | 63566278.0 | 1.0 | 100 ok | False |
 | 2 | esp32 | grover | with_ref_r2b | 9 | ok | 100 | 7334249.0 | 7334250.5 | 1.0 | 0 refused_count_mismatch | False |
+| 2 | esp32 | grover | with_ref_r2c | 9 | ok | 100 | 7334246.0 | 7334250.5 | 0.999999 | 100 ok | False |
 | 2 | esp8266 | grover | with_ref_r2 | 2 | ok | 100 | 669.0 | 669.0 | 1.0 | 100 ok | False |
 | 2 | esp8266 | grover | with_ref_r2 | 3 | ok | 100 | 3003.0 | 3003.0 | 1.0 | 100 ok | False |
 | 2 | esp8266 | grover | with_ref_r2 | 4 | ok | 100 | 13930.0 | 13930.0 | 1.0 | 100 ok | False |
