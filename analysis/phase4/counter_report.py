@@ -54,7 +54,7 @@ def agreement(vt):
         rows.append(dict(board=r.board, circuit=r.circuit, n=int(r.n), n_pairs=len(g), ref_status=r.ref_status,
                          median_micros_us=float(g.micros_us.median()), median_counter_us=float(g.counter_us.median()),
                          median_ratio=float(ratio.median()), ratio_q1=float(np.percentile(ratio, 25)), ratio_q3=float(np.percentile(ratio, 75)),
-                         weak=weak.is_weak(len(g))))
+                         weak=weak.is_weak(len(g)) or weak.is_weak_values(g.sort_values("rep").micros_us.to_numpy())))   # paired reps AND independent micros() values (periodic copies are not independent)
     return pd.DataFrame(rows)
 
 

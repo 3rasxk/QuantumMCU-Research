@@ -2,8 +2,10 @@
 
 Every script that reads data/raw/**/ref/ref_compare*.csv for statistics or plots must go through `usable_pairs()` /
 `validity_table()` here. Inputs are read-only. Decisions use only information the counter and the join code recorded about the
-pulses themselves (status, anomaly codes, pulse flags, counts); they never look at whether counter and micros() AGREE, so the
-agreement statistics computed afterwards are not circular.
+pulses themselves (status, anomaly codes, pulse flags, counts). EXCEPTION (rule R5, added 2026-10-31 after the data had been seen): R5 compares the
+counter value with micros() of the same rep (ratio in [0.5, 2.0], and not a wrap multiple), so the agreement statistics of the points that pass are
+conditioned on that coarse agreement filter and are not independent of it; the filter only removes gross artefacts (it never touches a pair whose ratio is
+within a factor of 2), and the rules R1-R4 do not look at agreement.
 
 Rules (a point is usable only if every one holds; the FIRST failing rule is the reason):
   R1 status      the join produced pairs: ref_compare_points.ref_status in {ok, anomaly, count_mismatch}. Refused joins

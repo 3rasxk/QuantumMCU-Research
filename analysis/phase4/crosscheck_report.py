@@ -111,7 +111,7 @@ def c_band():
 
 def c_repro():
     d = lambda bucket: _med([float(x["exec_time_us"]) for x in csv.DictReader(open(os.path.join(SES.bucket_dir(2, "esp8266", "grover", bucket), "raw.csv"))) if x["n"] == "5"])
-    a, b = d("with_ref"), d("with_ref_r2")
+    a, b = d(SES.ORIGINAL), d(SES.ORIGINAL + "_r2")
     return "ESP8266 grover n=5 Phase 2 medians, original;r2 (reproducibility table)", f"{a:.3f};{b:.3f}", f"{a:.3f};{b:.3f}"
 
 

@@ -12,6 +12,9 @@ import pandas as pd
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 RAW = os.path.join(ROOT, "data", "raw")
+import sys  # noqa: E402
+sys.path.insert(0, os.path.join(ROOT, "analysis"))
+from common import sessions as SES  # noqa: E402
 OUT = os.path.join(ROOT, "data", "processed", "phase4")
 BOARDS = ["uno", "esp8266", "esp32"]
 CIRCUITS = ["h_all", "bell_ghz", "qft", "grover"]
@@ -28,7 +31,8 @@ def env_of(base, sid):
     return json.load(open(p))
 
 
-def audit_series(phase, board, circuit, session="with_ref"):
+def audit_series(phase, board, circuit, session=None):
+    session = session or SES.ORIGINAL
     base = os.path.join(RAW, f"phase{phase}", board, circuit, session)
     pts, raw = rd(f"{base}/points.csv"), rd(f"{base}/raw.csv")
     term = rd(f"{base}/memory_wall.csv" if phase == 2 else f"{base}/session_log.csv")
@@ -70,9 +74,6 @@ def audit_series(phase, board, circuit, session="with_ref"):
 
 def audit_selected(phase, board, circuit):
     """audit_series over every session of the series, keeping per n only the rows of the SELECTED session (analysis/common/sessions.py); `session` column added"""
-    import sys
-    sys.path.insert(0, os.path.join(ROOT, "analysis"))
-    from common import sessions as SES
     frames = []
     for b in SES.buckets(phase, board, circuit):
         df = audit_series(phase, board, circuit, b)
@@ -111,7 +112,7 @@ def phase3_inventory(df):
     rows = []
     for b in BOARDS:
         for c in CIRCUITS:
-            raw = rd(os.path.join(RAW, "phase3", b, c, "with_ref", "raw.csv"))
+            raw = SES.read_selected(3, b, c, "raw.csv")
             rows.append(dict(board=b, circuit=c, n_min=int(raw.n.min()), n_max=int(raw.n.max()),
                              n_points=raw.n.nunique(), bauds=",".join(map(str, sorted(raw.baud_rate.unique()))),
                              min_requests_per_point=int(raw.groupby("n").size().min())))
@@ -124,7 +125,7 @@ def main():
     for ph in (2, 3):
         for b in BOARDS:
             for c in CIRCUITS:
-                d = audit_series(ph, b, c)
+                d = audit_selected(ph, b, c)          # the selected session of each point (analysis/common/sessions.py)
                 if d is None:
                     print(f"MISSING phase{ph} {b} {c}")
                     continue

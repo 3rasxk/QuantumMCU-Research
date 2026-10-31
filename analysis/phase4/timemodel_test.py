@@ -129,7 +129,28 @@ def main():
     j = rng.merge(sel_only, on=["circuit", "n"])
     check("the pooled range contains the selected sessions' range and is strictly wider somewhere (the replaced sessions contribute)",
           bool(((j.pc_sim_min_us <= j["min"] + 1e-9) & (j.pc_sim_max_us >= j["max"] - 1e-9)).all()) and bool(((j.pc_sim_min_us < j["min"] - 1) | (j.pc_sim_max_us > j["max"] + 1)).any()))
-    check("decomposition: wire + residual + pc_sim equals the measured median round trip for every point", bool(np.allclose(allp.wire_us + allp.residual_us + allp.pc_sim_us, allp.e2e_us)))
+    # the decomposition and the pool recomputed independently with the csv module from the raw files (not from the loader's own algebra)
+    import csv as _csv
+    import statistics as _st
+    d_ = SES.bucket_dir(3, "esp8266", "qft", "with_ref_r2")
+    e2e_ = _st.median(float(x["e2e_latency_us"]) for x in _csv.DictReader(open(os.path.join(d_, "raw.csv"))) if x["n"] == "5" and x["timed_out"] == "0" and x["crc_error"] == "0")
+    nreq_ = sum(1 for x in _csv.DictReader(open(os.path.join(d_, "raw.csv"))) if x["n"] == "5" and x["timed_out"] == "0" and x["crc_error"] == "0")
+    pt_ = [x for x in _csv.DictReader(open(os.path.join(d_, "points.csv"))) if x["n"] == "5" and x["status"] == "ok"][-1]
+    wire_ = float(pt_["bytes_transferred"]) / nreq_ * 10 / float(pt_["baud"]) * 1e6
+    sim_ = float(pt_["pc_sim_s_median"]) * 1e6
+    row_ = allp[(allp.board == "esp8266") & (allp.circuit == "qft") & (allp.n == 5) & (allp.session == "with_ref_r2")].iloc[0]
+    check("decomposition of ESP8266 qft n=5 (r2) equals the csv-module recomputation: e2e median, wire = bytes/requests x 10 / baud, pc_sim, residual",
+          abs(row_.e2e_us - e2e_) < 1e-6 and abs(row_.wire_us - wire_) < 1e-6 and abs(row_.pc_sim_us - sim_) < 1e-6 and abs(row_.residual_us - (e2e_ - sim_ - wire_)) < 1e-6)
+    wall_ = {"uno": 8, "esp8266": 13, "esp32": 14}
+    pool_ = []
+    for b_ in ("uno", "esp8266", "esp32"):
+        for bk_ in SES.buckets(3, b_, "grover"):
+            for x in _csv.DictReader(open(os.path.join(SES.bucket_dir(3, b_, "grover", bk_), "points.csv"))):
+                if x["status"] == "ok" and x["n"] == "9" and 9 <= wall_[b_]:
+                    pool_.append(float(x["pc_sim_s_median"]) * 1e6)
+    r9_ = rng[(rng.circuit == "grover") & (rng.n == 9)].iloc[0]
+    check("pooled pc_sim range of grover n=9 equals the min and max over every Phase 3 session of every in-scope board (csv-module recomputation)",
+          len(pool_) >= 3 and abs(r9_.pc_sim_min_us - min(pool_)) < 1e-6 and abs(r9_.pc_sim_max_us - max(pool_)) < 1e-6 and int(r9_.pc_sim_sessions) == len(pool_), str((pool_, dict(r9_))))
 
     def synth(local, fast, slow, n0=2):
         n = list(range(n0, n0 + len(local)))
@@ -147,11 +168,30 @@ def main():
     g4 = synth([10, 20, 40, 80, 160], [50, 50, 50, 50, 50], [5000, 5000, 5000, 5000, 5000])
     check("synthetic band straddling the local curve: the fast bound crosses, the slow bound never does", OB.bracket(g4, "fast")[2] == "bracket" and OB.bracket(g4, "slow")[2] == "none")
     g5 = synth([10, 80, 20, 160], [50, 50, 50, 50], [50, 50, 50, 50])
-    check("a crossover must hold at every larger measured n (offload faster at n=3 but not at n=4 -> no early crossover)", OB.bracket(g5, "fast")[:2] == (4, 5) or OB.bracket(g5, "fast")[2] == "none", str(OB.bracket(g5, "fast")))
+    check("a crossover must hold at every larger measured n: offload faster at n=3 but not at n=4 -> the bracket is (4, 5), not (2, 3)", OB.bracket(g5, "fast") == (4, 5, "bracket"), str(OB.bracket(g5, "fast")))
+    gn = synth([100, 100, 100], [105, 105, 105], [110, 110, 110])      # offload slower everywhere but the IQRs overlap: kind none, within noise at the largest measured n
+    gn["board"], gn["circuit"], gn["reps"], gn["requests"] = "x", "y", 100, 100
+    xn = OB.crossover_table(gn)
+    check("no crossover with overlapping IQRs is labelled 'within noise at the largest measured n'", xn.fast_kind.iloc[0] == "none" and "within noise at the largest measured n" in xn.fast_labels.iloc[0], str(xn.fast_labels.iloc[0]))
+    gw = synth([10, 20, 40, 80, 160], [50] * 5, [100] * 5)
+    gw["board"], gw["circuit"], gw["reps"], gw["requests"] = "x", "y", 100, 100
+    gw.loc[4, "weak_point"] = True                                      # a weak point beyond the bracket (n=6) of the fast bound (4, 5)
+    check("a weak point beyond the bracket is labelled", "weak point beyond the bracket" in OB.crossover_table(gw).fast_labels.iloc[0], str(OB.crossover_table(gw).fast_labels.iloc[0]))
     xt = OB.crossover_table(pd.concat([g.assign(board="x", circuit="y", reps=100, requests=100)]))
     check("crossover table rows carry two brackets, labels and no interpolated value", {"n_fast_lo", "n_fast_hi", "n_slow_lo", "n_slow_hi", "fast_labels", "slow_labels"} <= set(xt.columns) and not any("star" in c or "interp" in c for c in xt.columns))
-    check("every bracket is between two measured n of its series (no extrapolation)",
-          all((pd.isna(r.n_fast_lo) or r.n_fast_hi - r.n_fast_lo >= 1) and r.n_first <= (r.n_fast_hi if pd.notna(r.n_fast_hi) else r.n_first) <= r.n_last for r in X.itertuples()))
+    ok_ = True
+    for r in X.itertuples():
+        ns_ = set(m[(m.board == r.board) & (m.circuit == r.circuit)].n)
+        for bd in ("fast", "slow"):
+            lo, hi = getattr(r, f"n_{bd}_lo"), getattr(r, f"n_{bd}_hi")
+            kind = getattr(r, f"{bd}_kind")
+            if kind == "bracket":
+                ok_ &= (int(lo) in ns_) and (int(hi) in ns_) and int(lo) < int(hi)
+            elif kind == "below":
+                ok_ &= pd.isna(lo) and int(hi) == min(ns_)
+            else:
+                ok_ &= pd.isna(lo) and pd.isna(hi)
+    check("every bracket of both bounds is between two measured n of its series, 'below' sits at the smallest measured n, 'none' has no n (no extrapolation)", bool(ok_))
     print(f"\n{len(FAILS)} failed")
     sys.exit(1 if FAILS else 0)
 

@@ -65,16 +65,16 @@ def build():
     reps4 = {n: 100 for n in range(2, 11)}
     reps4[11], reps4[12] = 30, 1
     s = sum(p2_point_s(loc, "esp32", "grover", n, r) for n, r in reps4.items())
-    add("R4", "nice-to-have", "ESP32 grover n=11 has 13 reps and n=12 one (weak); no usable counter value at n=10 and n=12", "esp32", 2,
+    add("R4", "nice-to-have", "ESP32 grover n=11 has 13 reps and n=12 one (weak); no usable counter value at n=12 (n=10 has 100 pairs in session r2, n=9 in r2c)", "esp32", 2,
         "grover n=2..12 (whole series)", ";".join(f"n={n}:{r}" for n, r in reps4.items()), s,
         f".venv/bin/python pc/run.py --board esp32 --algorithm grover --phase 2 --port {PORT['esp32']} --fresh {COUNTER}",
         f"POINT_TIME_CAP_S raised for this run; check the counter WiFi link first; n=12 at 30 reps would need {hours(p2_point_s(loc, 'esp32', 'grover', 12, 30))} (not proposed)")
     # R5: Phase 3 grover series on the ESP boards with 30 requests at n=12
-    for b in ("esp8266", "esp32"):
+    for b in ("esp32",):                                     # selected ESP8266 Phase 3 grover stops at n=10 (session r2): no weak n=12 point there
         ns = sorted(off[(off.board == b) & (off.circuit == "grover")].n)
         rq = {n: (30 if n == 12 else int(off[(off.board == b) & (off.circuit == "grover") & (off.n == n)].reps.iloc[0])) for n in ns}
         s = sum(p3_point_s(off, b, "grover", n, r) for n, r in rq.items())
-        add("R5", "nice-to-have", "Phase 3 grover n=12 has 9 requests (weak) on the ESP boards", b, 3, f"grover n={ns[0]}..{ns[-1]} (whole series)",
+        add("R5", "nice-to-have", "Phase 3 grover n=12 has 9 requests (weak) on the ESP32", b, 3, f"grover n={ns[0]}..{ns[-1]} (whole series)",
             f"n=12:30, other n as now", s,
             f".venv/bin/python pc/run.py --board {b} --algorithm grover --phase 3 --port {PORT[b]} --fresh {COUNTER}",
             "POINT_TIME_CAP_S raised for this run; the PC simulation dominates and is identical for every board")

@@ -118,11 +118,15 @@ def crossover_table(m=None):
                 lab.append("no crossover up to the largest measured n")
             elif kind == "below":
                 lab.append("offload faster at the smallest measured n")
-            ov = ((pts.q1_us <= pts[f"{bound}_q3_us"]) & (pts[f"{bound}_q1_us"] <= pts.q3_us)).any()
-            if kind == "bracket" and ov:
-                lab.append("within noise")
-            if bool(pts.weak_point.any()) or bool(pts.pc_sim_extreme_weak.any()):
+            ov = ((pts.q1_us <= pts[f"{bound}_q3_us"]) & (pts[f"{bound}_q1_us"] <= pts.q3_us)).any()   # local IQR vs shifted offload IQR at the bracket ends
+            if ov:
+                lab.append("within noise" if kind == "bracket" else "within noise at the largest measured n" if kind == "none" else "within noise at the smallest measured n")
+            weak_end = bool(pts.weak_point.any()) or bool(pts.pc_sim_extreme_weak.any())
+            beyond = g[g.n > (hi if hi is not None else g.n.max())] if kind != "none" else g.iloc[0:0]
+            if weak_end:
                 lab.append("weak")
+            elif bool(beyond.weak_point.any()):
+                lab.append("weak point beyond the bracket")
             r[f"{bound}_labels"] = "; ".join(lab)
         rows.append(r)
     return pd.DataFrame(rows)

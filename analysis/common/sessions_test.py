@@ -57,8 +57,8 @@ def main():
     sys.exit(1 if FAILS else 0)
 
 
-# scripts that audit EVERY session on purpose (provenance, data audit, hash scan, repeat-session summaries): they read all buckets, never pick one as evidence
-AUDIT_ALL_SESSIONS = {"audit.py", "provenance.py", "firmware_hash_scan.py", "firmware_hash_audit.py"}
+# scripts that read EVERY session on purpose (provenance and the commit scan of the firmware hashes): they never pick one session as evidence
+AUDIT_ALL_SESSIONS = {"provenance.py", "firmware_hash_scan.py"}
 
 if __name__ == "__main__":
     main()
