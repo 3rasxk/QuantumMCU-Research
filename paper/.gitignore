@@ -7,3 +7,4 @@ main.pdf
 *.fls
 *.fdb_latexmk
 figures/F?_*.pdf
+figures/F1_timing_vs_n_house.png
