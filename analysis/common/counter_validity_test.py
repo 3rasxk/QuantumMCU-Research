@@ -37,7 +37,7 @@ def main():
     t_from_firmware = ((1 << wrap_bits) - 1) * (1 << fine_bits) / apb
     check("T_max in the module equals the value derived from the firmware source text", abs(cv.T_MAX_S - t_from_firmware) < 1e-6 and 3.5e6 < cv.T_MAX_S < 3.6e6, str(cv.T_MAX_S))
     check("firmware flags a pulse longer than the armed max_width_s as stuck-high (the extra, host-set limit named in the docstring)", "(esp_timer_get_time() - rise_us) > (int64_t)max_width_s" in fw and "A_STUCK_HIGH" in fw)
-    t = cv.validity_table((2,))
+    t = cv.validity_table((2,), selected_only=True)
     ticks = pd.read_csv(os.path.join(ROOT, "data/raw/phase2/esp32/h_all/with_ref/ref/ref_pulses.csv")).head(200)
     check("80 MHz APB assumption: width_us == width_ticks x 0.0125 in the data (all of 200 pulses)",
           np.allclose(ticks.width_ticks * 0.0125, ticks.width_us, atol=2e-3))
@@ -72,6 +72,36 @@ def main():
     check("R4 interval just below T_max -> usable", u1)
     check("R4 interval just above T_max -> unusable", (not u2) and why2.startswith("R4"), why2)
 
+    # ---- R5 plausibility (2026-10-31)
+    W = cv.WRAP_US
+    check("R5 constant: 2^32 ticks at 80 MHz = 53 687 091.2 us", abs(W - 53687091.2) < 1e-6)
+    pm = [100.0] * 5
+    cu = [100.0, 100.0, 100.0, 100.0, 100.0]
+    u, why = cv.evaluate_point("ok", 5, 5, cu, pulses(cu), 100.0, pm)
+    check("R5 clean pairs -> usable", u, why)
+    cw = [100.0, 100.0, 100.0, 100.0, W]
+    u, why = cv.evaluate_point("ok", 5, 5, cw, pulses(cw), 100.0, pm)
+    check("R5 a counter value of exactly 53.687091 s with micros() of 100 us is rejected (wrap artefact)", (not u) and why.startswith("R5"), why)
+    u, why = cv.evaluate_point("ok", 5, 5, [100.0] * 4 + [W + 999.0], pulses([100.0] * 5), 100.0, [W] * 5)
+    check("R5 wrap test applies to the counter value only: within +-1 ms of k x wrap is rejected even when micros() is large",
+          not np.all(~cv.implausible_pairs([5e7], [W + 999.0])))
+    check("R5 k = 2 wrap value rejected, 1.5 ms away accepted by the wrap test (ratio test decides)",
+          bool(cv.implausible_pairs([100.0], [2 * W + 500.0])[0]) and not bool(cv.implausible_pairs([2 * W], [2 * W + 1500.0])[0]))
+    check("R5 ratio 0.49 and 2.01 rejected", bool(cv.implausible_pairs([100.0], [49.0])[0]) and bool(cv.implausible_pairs([100.0], [201.0])[0]))
+    check("R5 ratio 0.51 and 1.99 kept; the borders 0.5 and 2.0 are kept (inclusive)", not cv.implausible_pairs([100.0, 100.0, 100.0, 100.0], [51.0, 199.0, 50.0, 200.0]).any())
+    check("R5 micros() = 0 (ratio undefined) is rejected", bool(cv.implausible_pairs([0.0], [3.0])[0]))
+    check("R5 does not relax the count rule: one bad pair of 5 -> unusable although 4 pairs remain", not cv.evaluate_point("ok", 5, 5, [100.0] * 4 + [300.0], pulses([100.0] * 5), 100.0, [100.0] * 5)[0])
+    tt = cv.validity_table()
+    r = tt[(tt.board == "uno") & (tt.circuit == "qft") & (tt.n == 3) & (tt.phase == 2) & (tt.session == "with_ref")].iloc[0]
+    cmp3 = pd.read_csv(os.path.join(ROOT, "data/raw/phase2/uno/qft/with_ref/ref/ref_compare.csv"))
+    c3 = cmp3[cmp3.n == 3]
+    row67 = c3[c3.rep == 67].iloc[0]
+    check("Uno P2 qft n=3 rep 67 (counter 53 687 091 us vs micros() 1932 us) is an implausible pair", bool(cv.implausible_pairs([row67.micros_us], [row67.counter_us])[0]))
+    check("Uno P2 qft n=3 and n=4 are unusable by R5", (not r.usable) and r.reason.startswith("R5") and not tt[(tt.board == "uno") & (tt.circuit == "qft") & (tt.n == 4) & (tt.phase == 2) & (tt.session == "with_ref")].iloc[0].usable)
+    check("the validity table has a session column and covers with_ref, r2, r2b and r2c", {"with_ref", "with_ref_r2", "with_ref_r2b", "with_ref_r2c"} <= set(tt.session))
+    sel = cv.validity_table(selected_only=True)
+    check("selected_only: one row per (phase, board, circuit, n)", not sel.duplicated(["phase", "board", "circuit", "n"]).any())
+
     # ---- the two cases that motivated the module, on the real data
     def row(circuit, n, board="esp32", phase=2):
         r = t[(t.board == board) & (t.circuit == circuit) & (t.n == n) & (t.phase == phase)]
@@ -80,7 +110,9 @@ def main():
     check("ESP32 grover n=12 (1.71 s counter vs 4520 s micros) is unusable by R3", (not r12.usable) and r12.reason.startswith("R3"), r12.reason)
     check("... and not because of T_max (micros 4.5e9 us is far below T_max)", r12.micros_median_us < cv.T_MAX_US)
     check("ESP32 grover n=11 (529 s, 13 pairs) is usable", bool(r11.usable) and r11.micros_median_us > 5e8)
-    check("ESP32 grover n=10 is unusable by R1 (counter count mismatch, no pairs)", (not r10.usable) and r10.reason.startswith("R1"), r10.reason)
+    r10o = cv.validity_table((2,)).query("board == 'esp32' and circuit == 'grover' and n == 10 and session == 'with_ref'").iloc[0]
+    check("ESP32 grover n=10, ORIGINAL session, is unusable by R1 (counter count mismatch, no pairs)", (not r10o.usable) and r10o.reason.startswith("R1"), r10o.reason)
+    check("ESP32 grover n=10, SELECTED session (r2), has 100 usable pairs", bool(r10.usable) and int(r10.n_pairs) == 100 and r10.session == "with_ref_r2", str(dict(r10)))
     # the counter's own second pulse at n=12 is a clean 4519 s width: evidence about the counter, kept OUT of the statistics
     pl = pd.read_csv(os.path.join(ROOT, "data/raw/phase2/esp32/grover/with_ref/ref/ref_pulses.csv"))
     p12 = pl[pl.n == 12]
@@ -89,7 +121,8 @@ def main():
 
     # ---- no unusable counter point reaches any plot or statistic
     full = cv.validity_table()
-    check("one row per (phase, board, circuit, n) in the validity table", not full.duplicated(["phase", "board", "circuit", "n"]).any())
+    check("one row per (phase, board, circuit, session, n) in the validity table", not full.duplicated(["phase", "board", "circuit", "session", "n"]).any())
+    full = cv.validity_table(selected_only=True)
     usable = {(r.phase, r.board, r.circuit, r.n) for r in full.itertuples() if r.usable}
     for ph in (2, 3):
         d = pd.read_csv(os.path.join(ROOT, "data", "derived", f"phase{ph}_timer_vs_counter.csv"))
