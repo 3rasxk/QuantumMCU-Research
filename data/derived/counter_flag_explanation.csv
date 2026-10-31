@@ -11,15 +11,15 @@ phase,board,circuit,n,ref_status,counter_codes,counter_side_rules,host_side_rule
 2,esp8266,bell_ghz,11,anomaly,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,200,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
 2,esp8266,bell_ghz,12,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,200,0,100,False,R1 no pairs: count_mismatch,
 2,esp8266,bell_ghz,13,refused_no_target_run,never_started,"never_started: firmware/counter_esp32/src/main.cpp:235,:477 (no pulse seen)",crosscheck.py:140 flagged,0,0,0,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),
-2,esp8266,grover,2,anomaly,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,200,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-2,esp8266,grover,3,anomaly,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,200,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-2,esp8266,grover,4,anomaly,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,200,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-2,esp8266,grover,5,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,129,0,100,False,R1 no pairs: count_mismatch,
-2,esp8266,grover,6,refused_count_mismatch,extra+glitch+count_mismatch,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | glitch: firmware/counter_esp32/src/main.cpp:221 (pulse < min_width_ns) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count)",crosscheck.py:140 flagged,136,0,100,False,R1 no pairs: count_mismatch,
-2,esp8266,grover,7,refused_count_mismatch,extra+glitch+count_mismatch,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | glitch: firmware/counter_esp32/src/main.cpp:221 (pulse < min_width_ns) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count)",crosscheck.py:140 flagged,158,0,100,False,R1 no pairs: count_mismatch,
-2,esp8266,grover,8,refused_no_target_run,missing+glitch+stuck_high+count_mismatch+seq_gap,"missing: firmware/counter_esp32/src/main.cpp:236 (falls < reps armed) | glitch: firmware/counter_esp32/src/main.cpp:221 (pulse < min_width_ns) | stuck_high: firmware/counter_esp32/src/main.cpp:234,:471-473 (still high at END / above max_width_s) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",crosscheck.py:140 flagged,4,0,100,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),
 2,esp8266,grover,9,refused_no_target_run,missing+stuck_high,"missing: firmware/counter_esp32/src/main.cpp:236 (falls < reps armed) | stuck_high: firmware/counter_esp32/src/main.cpp:234,:471-473 (still high at END / above max_width_s)",crosscheck.py:140 flagged,7,0,37,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),
 2,esp8266,grover,10,refused_short_raw,missing+stuck_high+count_mismatch+seq_gap,"missing: firmware/counter_esp32/src/main.cpp:236 (falls < reps armed) | stuck_high: firmware/counter_esp32/src/main.cpp:234,:471-473 (still high at END / above max_width_s) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",crosscheck.py:140 flagged,5,0,4,False,R1 no pairs: short_raw,
+2,esp8266,grover,2,ok,,,,200,100,100,True,ok,
+2,esp8266,grover,3,ok,,,,200,100,100,True,ok,
+2,esp8266,grover,4,ok,,,,200,100,100,True,ok,
+2,esp8266,grover,5,ok,,,,129,100,100,True,ok,
+2,esp8266,grover,6,ok,,,,105,100,100,True,ok,
+2,esp8266,grover,8,refused_count_mismatch,extra+count_mismatch+seq_gap,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",crosscheck.py:140 flagged,249,0,100,False,R1 no pairs: count_mismatch,
+2,esp8266,grover,7,ok,,,,102,100,100,True,ok,
 2,esp8266,h_all,2,anomaly,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,200,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
 2,esp8266,h_all,3,refused_counter_lost,,,crosscheck.py:140 flagged,66,0,100,False,R1 no pairs: counter_lost (counter link lost during the point),
 2,esp8266,h_all,4,anomaly,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,200,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
@@ -66,8 +66,8 @@ phase,board,circuit,n,ref_status,counter_codes,counter_side_rules,host_side_rule
 2,uno,h_all,7,anomaly,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,133,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
 2,uno,h_all,8,refused_no_target_run,never_started,"never_started: firmware/counter_esp32/src/main.cpp:235,:477 (no pulse seen)",crosscheck.py:140 flagged,0,0,0,False,R1 no pairs: no_target_run (no pulse train from the target run was captured (counter saw no run)),
 2,uno,qft,2,anomaly,extra+count_mismatch+seq_gap,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",,203,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-2,uno,qft,3,anomaly,extra+count_mismatch+seq_gap,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",,200,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-2,uno,qft,4,anomaly,extra+count_mismatch+seq_gap,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",,200,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
+2,uno,qft,3,anomaly,extra+count_mismatch+seq_gap,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",,200,100,100,False,R5 1 implausible pair(s) (e.g. counter 53687091.2 us vs micros() 1932.0 us); R2 then fails: 99 pairs for 100 reps,
+2,uno,qft,4,anomaly,extra+count_mismatch+seq_gap,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",,200,100,100,False,R5 1 implausible pair(s) (e.g. counter 53687091.2 us vs micros() 4696.0 us); R2 then fails: 99 pairs for 100 reps,
 2,uno,qft,5,anomaly,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,172,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
 2,uno,qft,6,anomaly,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,132,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
 2,uno,qft,7,anomaly,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,114,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
@@ -81,11 +81,9 @@ phase,board,circuit,n,ref_status,counter_codes,counter_side_rules,host_side_rule
 3,esp8266,bell_ghz,8,ok,,,,101,100,100,True,ok,
 3,esp8266,bell_ghz,9,ok,,,,101,100,100,True,ok,
 3,esp8266,bell_ghz,10,ok,,,,101,100,100,True,ok,
-3,esp8266,bell_ghz,11,refused_count_mismatch,extra+glitch+count_mismatch+seq_gap,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | glitch: firmware/counter_esp32/src/main.cpp:221 (pulse < min_width_ns) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",crosscheck.py:140 flagged,102,0,100,False,R1 no pairs: count_mismatch,
+3,esp8266,bell_ghz,11,ok,,,,101,100,100,True,ok,
 3,esp8266,bell_ghz,12,ok,,,,101,100,100,True,ok,
 3,esp8266,bell_ghz,13,ok,,,,101,100,100,True,ok,
-3,esp8266,bell_ghz,14,ok,,,,101,100,100,True,ok,
-3,esp8266,bell_ghz,15,ok,,,,101,100,100,True,ok,
 3,esp8266,grover,2,ok,,,,101,100,100,True,ok,
 3,esp8266,grover,3,ok,,,,101,100,100,True,ok,
 3,esp8266,grover,4,ok,,,,101,100,100,True,ok,
@@ -93,25 +91,20 @@ phase,board,circuit,n,ref_status,counter_codes,counter_side_rules,host_side_rule
 3,esp8266,grover,6,ok,,,,101,100,100,True,ok,
 3,esp8266,grover,7,ok,,,,101,100,100,True,ok,
 3,esp8266,grover,8,ok,,,,101,100,100,True,ok,
-3,esp8266,grover,9,ok,,,,101,100,100,True,ok,
-3,esp8266,grover,10,anomaly,extra+count_mismatch+seq_gap,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
-3,esp8266,grover,11,ok,,,,43,42,42,True,ok,
-3,esp8266,grover,12,anomaly,extra+glitch+count_mismatch+seq_gap,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | glitch: firmware/counter_esp32/src/main.cpp:221 (pulse < min_width_ns) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",,154,6,9,False,R2 partial join: 6 pairs for 9 reps,
-3,esp8266,grover,13,anomaly,extra+glitch+count_mismatch+seq_gap,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | glitch: firmware/counter_esp32/src/main.cpp:221 (pulse < min_width_ns) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",,371,1,2,False,R2 partial join: 1 pairs for 2 reps,
-3,esp8266,h_all,2,ok,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-3,esp8266,h_all,3,ok,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-3,esp8266,h_all,4,ok,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-3,esp8266,h_all,5,ok,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-3,esp8266,h_all,6,ok,extra+glitch+count_mismatch+seq_gap,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | glitch: firmware/counter_esp32/src/main.cpp:221 (pulse < min_width_ns) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",,130,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-3,esp8266,h_all,7,ok,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-3,esp8266,h_all,8,ok,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-3,esp8266,h_all,9,ok,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-3,esp8266,h_all,10,ok,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-3,esp8266,h_all,11,ok,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-3,esp8266,h_all,12,ok,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-3,esp8266,h_all,13,ok,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-3,esp8266,h_all,14,ok,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
-3,esp8266,h_all,15,ok,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,100,100,True,ok,"extra pulses are the cut-short run before the restart after upload/DTR reset; the join takes the LAST run only (pc/counter/crosscheck.py:split_runs), and all reps were paired"
+3,esp8266,grover,9,count_mismatch,extra+count_mismatch+seq_gap,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",,123,98,100,False,R2 partial join: 98 pairs for 100 reps,
+3,esp8266,grover,10,refused_counter_lost,,,crosscheck.py:140 flagged,85,0,100,False,R1 no pairs: counter_lost (counter link lost during the point),
+3,esp8266,h_all,2,ok,,,,101,100,100,True,ok,
+3,esp8266,h_all,3,ok,,,,101,100,100,True,ok,
+3,esp8266,h_all,4,ok,,,,101,100,100,True,ok,
+3,esp8266,h_all,5,ok,,,,101,100,100,True,ok,
+3,esp8266,h_all,6,ok,,,,101,100,100,True,ok,
+3,esp8266,h_all,7,ok,,,,101,100,100,True,ok,
+3,esp8266,h_all,8,ok,,,,101,100,100,True,ok,
+3,esp8266,h_all,9,ok,,,,101,100,100,True,ok,
+3,esp8266,h_all,10,ok,,,,101,100,100,True,ok,
+3,esp8266,h_all,11,ok,,,,101,100,100,True,ok,
+3,esp8266,h_all,12,ok,,,,101,100,100,True,ok,
+3,esp8266,h_all,13,ok,,,,101,100,100,True,ok,
 3,esp8266,qft,2,ok,,,,101,100,100,True,ok,
 3,esp8266,qft,3,ok,,,,101,100,100,True,ok,
 3,esp8266,qft,4,ok,,,,101,100,100,True,ok,
@@ -124,8 +117,6 @@ phase,board,circuit,n,ref_status,counter_codes,counter_side_rules,host_side_rule
 3,esp8266,qft,11,ok,,,,101,100,100,True,ok,
 3,esp8266,qft,12,ok,,,,101,100,100,True,ok,
 3,esp8266,qft,13,ok,,,,101,100,100,True,ok,
-3,esp8266,qft,14,ok,,,,101,100,100,True,ok,
-3,esp8266,qft,15,ok,,,,101,100,100,True,ok,
 3,uno,bell_ghz,2,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
 3,uno,bell_ghz,3,ok,,,,101,100,100,True,ok,
 3,uno,bell_ghz,4,ok,,,,101,100,100,True,ok,
@@ -133,20 +124,6 @@ phase,board,circuit,n,ref_status,counter_codes,counter_side_rules,host_side_rule
 3,uno,bell_ghz,6,refused_arm_failed,,,crosscheck.py:140 flagged,0,0,100,False,R1 no pairs: arm_failed (counter could not be armed for this point),
 3,uno,bell_ghz,7,ok,,,,101,100,100,True,ok,
 3,uno,bell_ghz,8,ok,,,,101,100,100,True,ok,
-3,uno,bell_ghz,9,ok,,,,101,100,100,True,ok,
-3,uno,bell_ghz,10,ok,,,,101,100,100,True,ok,
-3,uno,bell_ghz,11,ok,,,,101,100,100,True,ok,
-3,uno,bell_ghz,12,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
-3,uno,bell_ghz,13,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
-3,uno,bell_ghz,14,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
-3,uno,bell_ghz,15,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,98,100,False,R2 partial join: 98 pairs for 100 reps,
-3,uno,bell_ghz,16,ok,,,,101,100,100,True,ok,
-3,uno,bell_ghz,17,ok,,,,101,100,100,True,ok,
-3,uno,bell_ghz,18,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
-3,uno,bell_ghz,19,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,98,100,False,R2 partial join: 98 pairs for 100 reps,
-3,uno,bell_ghz,20,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
-3,uno,bell_ghz,21,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
-3,uno,bell_ghz,22,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
 3,uno,grover,2,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,97,100,False,R2 partial join: 97 pairs for 100 reps,
 3,uno,grover,3,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
 3,uno,grover,4,ok,,,,101,100,100,True,ok,
@@ -154,8 +131,6 @@ phase,board,circuit,n,ref_status,counter_codes,counter_side_rules,host_side_rule
 3,uno,grover,6,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
 3,uno,grover,7,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
 3,uno,grover,8,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
-3,uno,grover,9,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
-3,uno,grover,10,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
 3,uno,h_all,2,count_mismatch,extra+count_mismatch+seq_gap,"extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed) | count_mismatch: firmware/counter_esp32/src/main.cpp:210,:214,:239 (two rises without a fall / a fall without a rise / PCNT count differs from the edge count) | seq_gap: firmware/counter_esp32/src/main.cpp:402 (frame sequence gap, REPLAY requested)",,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
 3,uno,h_all,3,refused_arm_failed,,,crosscheck.py:140 flagged,0,0,100,False,R1 no pairs: arm_failed (counter could not be armed for this point),
 3,uno,h_all,4,ok,,,,101,100,100,True,ok,
@@ -163,20 +138,6 @@ phase,board,circuit,n,ref_status,counter_codes,counter_side_rules,host_side_rule
 3,uno,h_all,6,ok,,,,101,100,100,True,ok,
 3,uno,h_all,7,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
 3,uno,h_all,8,ok,,,,101,100,100,True,ok,
-3,uno,h_all,9,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
-3,uno,h_all,10,ok,,,,101,100,100,True,ok,
-3,uno,h_all,11,ok,,,,101,100,100,True,ok,
-3,uno,h_all,12,ok,,,,101,100,100,True,ok,
-3,uno,h_all,13,ok,,,,101,100,100,True,ok,
-3,uno,h_all,14,ok,,,,101,100,100,True,ok,
-3,uno,h_all,15,ok,,,,101,100,100,True,ok,
-3,uno,h_all,16,ok,,,,101,100,100,True,ok,
-3,uno,h_all,17,ok,,,,101,100,100,True,ok,
-3,uno,h_all,18,ok,,,,101,100,100,True,ok,
-3,uno,h_all,19,ok,,,,101,100,100,True,ok,
-3,uno,h_all,20,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
-3,uno,h_all,21,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
-3,uno,h_all,22,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
 3,uno,qft,2,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
 3,uno,qft,3,ok,,,,101,100,100,True,ok,
 3,uno,qft,4,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
@@ -184,17 +145,3 @@ phase,board,circuit,n,ref_status,counter_codes,counter_side_rules,host_side_rule
 3,uno,qft,6,ok,,,,101,100,100,True,ok,
 3,uno,qft,7,ok,,,,101,100,100,True,ok,
 3,uno,qft,8,ok,,,,101,100,100,True,ok,
-3,uno,qft,9,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,97,100,False,R2 partial join: 97 pairs for 100 reps,
-3,uno,qft,10,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,94,100,False,R2 partial join: 94 pairs for 100 reps,
-3,uno,qft,11,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,98,100,False,R2 partial join: 98 pairs for 100 reps,
-3,uno,qft,12,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
-3,uno,qft,13,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,99,100,False,R2 partial join: 99 pairs for 100 reps,
-3,uno,qft,14,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,97,100,False,R2 partial join: 97 pairs for 100 reps,
-3,uno,qft,15,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,97,100,False,R2 partial join: 97 pairs for 100 reps,
-3,uno,qft,16,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,92,100,False,R2 partial join: 92 pairs for 100 reps,
-3,uno,qft,17,count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),,101,88,100,False,R2 partial join: 88 pairs for 100 reps,
-3,uno,qft,18,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
-3,uno,qft,19,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
-3,uno,qft,20,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
-3,uno,qft,21,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,
-3,uno,qft,22,refused_count_mismatch,extra,extra: firmware/counter_esp32/src/main.cpp:237 (falls > reps armed),crosscheck.py:140 flagged,101,0,100,False,R1 no pairs: count_mismatch,

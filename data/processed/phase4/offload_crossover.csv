@@ -1,13 +1,13 @@
-board,circuit,n_range,n_local_max,first_n_offload_faster,stable_to_n_local_max,n_star_interpolated,ratio_at_n_largest_overlap,n_largest_overlap,largest_overlap_is_weak,n_largest_overlap_nonweak,ratio_at_nonweak,min_offload_req,min_local_reps,crossover_weak,label
-esp32,bell_ghz,2-13,13,13.0,True,12.632423725971247,0.7762063227953411,13,False,13,0.7762063227953411,100,100,False,interpolated between measured n; never extrapolated
-esp32,grover,2-12,12,9.0,True,8.895303046258672,0.0807948986801837,12,True,9,0.9387550011889413,9,1,False,interpolated between measured n; never extrapolated
-esp32,h_all,2-13,13,,False,,1.1059230952949606,13,False,13,1.1059230952949606,100,100,False,no crossover in the measured range
-esp32,qft,2-13,13,13.0,True,12.19438346501466,0.4697787016814462,13,False,13,0.4697787016814462,100,100,False,interpolated between measured n; never extrapolated
-esp8266,bell_ghz,2-12,12,10.0,True,9.938039425689915,0.21424615043757617,12,False,12,0.21424615043757617,100,100,False,interpolated between measured n; never extrapolated
-esp8266,grover,2-10,10,4.0,True,3.6511833402386626,0.018699684550740364,10,True,9,0.04513907033154483,100,4,False,interpolated between measured n; never extrapolated
-esp8266,h_all,2-12,12,8.0,True,7.325717626379953,0.030778571588208563,12,False,12,0.030778571588208563,100,100,False,interpolated between measured n; never extrapolated
-esp8266,qft,2-12,12,8.0,True,7.0707160322771525,0.019634491932219073,12,False,12,0.019634491932219073,100,100,False,interpolated between measured n; never extrapolated
-uno,bell_ghz,2-7,7,6.0,True,5.957379306414293,0.36156696664902066,7,False,7,0.36156696664902066,100,100,False,interpolated between measured n; never extrapolated
-uno,grover,2-7,7,2.0,True,,0.006944444444444444,7,False,7,0.006944444444444444,100,100,False,measured: offload already faster at the smallest n
-uno,h_all,2-7,7,5.0,True,4.464076563900653,0.12688155694085448,7,False,7,0.12688155694085448,100,100,False,interpolated between measured n; never extrapolated
-uno,qft,2-7,7,4.0,True,3.6691564328306137,0.09042068246939307,7,False,7,0.09042068246939307,100,100,False,interpolated between measured n; never extrapolated
+board,circuit,n_first,n_last,n_points,n_fast_lo,n_fast_hi,fast_kind,fast_labels,n_slow_lo,n_slow_hi,slow_kind,slow_labels
+esp32,bell_ghz,2,13,12,12.0,13,bracket,,12.0,13.0,bracket,
+esp32,grover,2,12,11,8.0,9,bracket,weak,9.0,10.0,bracket,weak
+esp32,h_all,2,13,12,12.0,13,bracket,within noise,,,none,no crossover up to the largest measured n
+esp32,qft,2,13,12,11.0,12,bracket,,12.0,13.0,bracket,
+esp8266,bell_ghz,2,12,11,9.0,10,bracket,within noise,10.0,11.0,bracket,within noise
+esp8266,grover,2,10,9,3.0,4,bracket,,4.0,5.0,bracket,
+esp8266,h_all,2,12,11,7.0,8,bracket,within noise,7.0,8.0,bracket,
+esp8266,qft,2,12,11,6.0,7,bracket,within noise,7.0,8.0,bracket,
+uno,bell_ghz,2,7,6,5.0,6,bracket,,6.0,7.0,bracket,within noise
+uno,grover,2,7,6,,2,below,offload faster at the smallest measured n,2.0,3.0,bracket,within noise
+uno,h_all,2,7,6,4.0,5,bracket,,4.0,5.0,bracket,
+uno,qft,2,7,6,3.0,4,bracket,,3.0,4.0,bracket,within noise
