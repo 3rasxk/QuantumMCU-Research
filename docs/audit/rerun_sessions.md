@@ -18,6 +18,7 @@ never merged into `with_ref/`. Timer = `exec_time_us` (Phase 2) or `e2e_latency_
 | 2 | esp8266 | grover | with_ref_r2 | 8 | ok | 100 | 23789072.0 | 23788944.0 | 1.000005 | 0 refused_count_mismatch | False |
 | 2 | esp8266 | grover | with_ref_r2b | 7 | ok | 100 | 2877385.0 | 2877381.0 | 1.000001 | 100 ok | False |
 | 2 | esp8266 | grover | with_ref_r2b | 8 | ok | 100 | 23789072.0 | 23788944.0 | 1.000005 | 0 refused_count_mismatch | False |
+| 2 | esp8266 | grover | with_ref_r2c | 8 | ok | 100 | 23789072.0 | 23788944.0 | 1.000005 | 0 refused_count_mismatch | False |
 | 3 | esp8266 | bell_ghz | with_ref_r2 | 2 | ok | 100 | 3104.5 | 3098.0 | 1.002098 | 100 ok | False |
 | 3 | esp8266 | bell_ghz | with_ref_r2 | 3 | ok | 100 | 3522.0 | 2889.0 | 1.219107 | 100 ok | False |
 | 3 | esp8266 | bell_ghz | with_ref_r2 | 4 | ok | 100 | 2429.0 | 3274.5 | 0.741793 | 100 ok | False |
