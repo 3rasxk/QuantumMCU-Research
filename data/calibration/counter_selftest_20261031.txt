@@ -1,0 +1,20 @@
+SELF-LOOPBACK TEST ONLY: one crystal generates and measures; clock accuracy is NOT tested and the
+GPIO34 target pad is NOT exercised (the loopback uses GPIO25 -> GPIO35).
+
+     width   n     mean err    err ppm     spread     stdev wraps  note
+     100us  20       2263ns    22629.0     2412ns     596ns     0  
+    1000us  20       2000ns     2000.4      375ns      97ns     0  
+  100000us  10       2946ns       29.5     1850ns     667ns     0  
+ 1000000us   3       2575ns        2.6     1538ns     650ns     0  
+10000000us   2       2419ns        0.2     1262ns     631ns     0  
+60000000us   1       4262ns        0.1        0ns       0ns     1  > 32-bit wrap period (overflow path)
+observed tick resolution (smallest width step seen): 12.5 ns (capture tick 12.5 ns at 80 MHz)
+
+scenario 1 [PASS] clean widths: codes raised [], expected []
+scenario 2 [PASS] induced glitch (20 us pulse, limit 50 us): codes raised ['3 glitch'], expected [3]
+scenario 3 [PASS] missing pulse (9 of 10): codes raised ['1 missing pulse'], expected [1]
+scenario 4 [PASS] still high at end (line held high): codes raised ['1 missing pulse', '4 still high at end'], expected [4]
+scenario 5 [PASS] sequence gap (PC drops one frame, REPLAY): codes raised ['6 sequence gap'], expected [6]
+heartbeats: 300 over 299.0 s of counter clock (sub-second ticks)
+frame errors: bad CRC / unparsable frames = 0; dropped records detected (sequence gaps outside scenario 5) = 0
+frames received: 411
