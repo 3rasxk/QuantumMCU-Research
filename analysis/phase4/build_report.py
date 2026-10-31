@@ -165,7 +165,9 @@ mape_b = lambda b, m: float(((per_b_id[b]["pred_" + m] - per_b_id[b].median_us) 
 
 # ---------------- reviewer-driven helpers
 import glob as _glob, json as _json
-_env = _json.load(open(_glob.glob(os.path.join(ROOT, "data/raw/phase2/esp8266/h_all/with_ref/env/*[0-9a-f].json"))[0]))
+from common import sessions as SES
+_sdir = lambda ph, b, c, n: SES.bucket_dir(ph, b, c, SES.select_session(ph, b, c, n))   # directory of the selected session of a point
+_env = _json.load(open(_glob.glob(os.path.join(_sdir(2, "esp8266", "h_all", 2), "env/*[0-9a-f].json"))[0]))
 F_CPU_ESP8266 = float(_env["f_cpu"])
 cnot_cycles = float(f2p.loc["esp8266"].c_CNOT) * F_CPU_ESP8266 / 1e6          # cycles per loop iteration implied by the fitted c_CNOT
 sens_m2id = sens[(sens.model == "M2") & (sens.scope == "identifiable")]
@@ -175,7 +177,19 @@ cleanP = pred[(pred.role == "test") & (~pred.weak) & (~pred.hash_flagged)]
 def clean_mape(model, board=None):
     g = cleanP if board is None else cleanP[cleanP.board == board]
     return float(((g["pred_" + model] - g.median_us) / g.median_us * 100).abs().mean()), len(g)
-n_xo_inside = int(xo.n_star_interpolated.notna().sum())
+for _c in ("fast_labels", "slow_labels"):
+    xo[_c] = xo[_c].fillna("")
+def brk(r, bound):
+    lo, hi, kind = r[f"n_{bound}_lo"], r[f"n_{bound}_hi"], r[f"{bound}_kind"]
+    if kind == "bracket":
+        return f"{int(lo)}-{int(hi)}"
+    if kind == "below":
+        return f"<= {int(hi)} (offload faster at the smallest measured n)"
+    return f"none up to n={int(r.n_last)}"
+n_xo_inside = int(((xo.fast_kind == 'bracket') & (xo.slow_kind == 'bracket')).sum())
+n_xo_none = int(((xo.fast_kind == 'none') | (xo.slow_kind == 'none')).sum())
+n_xo_noise = int(xo.fast_labels.str.contains('within noise').sum() + xo.slow_labels.str.contains('within noise').sum())
+n_xo_weak = int(xo.fast_labels.str.contains('weak').sum() + xo.slow_labels.str.contains('weak').sum())
 wk = loc[loc.reps < C.SMALL_REPS]
 weak_txt = "; ".join(f"{BL[r.board]} {r.circuit} n={int(r.n)} ({int(r.reps)} independent of {int(r.reps_recorded)} recorded rows)" if r.reps != r.reps_recorded else f"{BL[r.board]} {r.circuit} n={int(r.n)} ({int(r.reps)} reps)" for r in wk.itertuples())
 dup = loc[loc.reps != loc.reps_recorded]
@@ -188,7 +202,7 @@ C32_REL = (C32 - 0.70710678118654752) / 0.70710678118654752
 TWO_C2_M1 = 2 * C32 * C32 - 1
 PYV = _env["python_version"]
 HOSTOS = _env["host_os"].split("-")[0]
-ESP32_CYC = {k: float(f2p.loc["esp32"][c]) * float(_json.load(open(_glob.glob(os.path.join(ROOT, "data/raw/phase2/esp32/h_all/with_ref/env/*[0-9a-f].json"))[0]))["f_cpu"]) / 1e6 for k, c in (("H", "c_H"), ("CNOT", "c_CNOT"), ("CPHASE", "c_CPHASE"))}
+ESP32_CYC = {k: float(f2p.loc["esp32"][c]) * float(_json.load(open(_glob.glob(os.path.join(_sdir(2, "esp32", "h_all", 2), "env/*[0-9a-f].json"))[0]))["f_cpu"]) / 1e6 for k, c in (("H", "c_H"), ("CNOT", "c_CNOT"), ("CPHASE", "c_CPHASE"))}
 n_r2 = int((rec.id == "R2").sum())
 # ---------------- counter
 cvt2 = cvt[cvt.phase == 2]
@@ -203,7 +217,7 @@ cs_tbl = md(pd.DataFrame([{"board": BL[r.board], "subset": r.subset, "points": i
                            "longest micros() median (s)": f"{r.longest_micros_us / 1e6:.3g}"} for _, r in cs.iterrows()]))
 r12 = cvt2[(cvt2.board == "esp32") & (cvt2.circuit == "grover") & (cvt2.n == 12)].iloc[0]
 r10 = cvt2[(cvt2.board == "esp32") & (cvt2.circuit == "grover") & (cvt2.n == 10)].iloc[0]
-pl = pd.read_csv(os.path.join(ROOT, "data/raw/phase2/esp32/grover/with_ref/ref/ref_pulses.csv"))
+pl = pd.read_csv(os.path.join(_sdir(2, "esp32", "grover", 12), "ref/ref_pulses.csv"))
 p12 = pl[pl.n == 12]
 good12 = p12[p12.anomaly_code == 0].iloc[0]
 bad12 = p12[p12.anomaly_code != 0].iloc[0]
@@ -217,12 +231,11 @@ def xs(b, c):
     return xo[(xo.board == b) & (xo.circuit == c)].iloc[0]
 xrows = []
 for _, r in xo.iterrows():
-    xrows.append({"board": BL[r.board], "circuit": r.circuit, "local n range": r.n_range,
-                  "first measured n offload faster": "none" if pd.isna(r.first_n_offload_faster) else int(r.first_n_offload_faster),
-                  "n* (interpolated between measured n)": "-" if pd.isna(r.n_star_interpolated) else f"{r.n_star_interpolated:.2f}" + (" WEAK" if r.crossover_weak else ""),
-                  "n largest overlap": int(r.n_largest_overlap), "offload/local there": f"{r.ratio_at_n_largest_overlap:.2f}" + (" (weak point)" if r.largest_overlap_is_weak else ""),
-                  "n largest non-weak overlap": int(r.n_largest_overlap_nonweak), "offload/local there ": f"{r.ratio_at_nonweak:.2f}"})
+    xrows.append({"board": BL[r.board], "circuit": r.circuit, "measured n (local and offload)": f"{int(r.n_first)}-{int(r.n_last)}",
+                  "crossover, fast PC (bracket of measured n)": brk(r, "fast"), "labels (fast)": r.fast_labels or "-",
+                  "crossover, slow PC (bracket of measured n)": brk(r, "slow"), "labels (slow)": r.slow_labels or "-"})
 x_tbl = md(pd.DataFrame(xrows))
+claim3 = "; ".join(f"{BL[r.board]} {r.circuit}: {brk(r, 'fast')} / {brk(r, 'slow')}" for _, r in xo.iterrows())
 floor = ov[ov.n <= 4].groupby("board").median_us_offload.median()
 offd = C.load_offload()
 g11 = offd[(offd.circuit == "grover") & (offd.board != "uno") & (offd.n >= 11)]
@@ -255,8 +268,9 @@ f64_max = max(float(gf[gf.n <= n_max_g].f64_infid_vs_ideal_raw.abs().max()), 1e-
 aer = gf[gf.aer_infid_vs_ideal_raw.notna()]
 aer_max = max(float(aer.aer_infid_vs_ideal_raw.abs().max()), 1e-12)
 nrm_ratio = (float(gf.f32_norm2_over_predicted.min()), float(gf.f32_norm2_over_predicted.max()))
-ls_ = gf[gf.n >= 8].f32_predicted_over_measured_log_loss
-loss_share = (float(ls_.min()), float(ls_.max()))
+ls_ = gf[(gf.n >= 8) & (gf.n <= 13)].f32_predicted_over_measured_log_loss
+loss_share = (float(ls_.min()), float(ls_.max()))        # n = 8..13 only: at n = 14 the constant alone no longer fits (ratio below)
+ratio14 = float(G.loc[14].f32_predicted_over_measured_log_loss) if 14 in G.index else float("nan")
 gt = gf[["n", "k_firmware_float32", "k_qiskit_float64", "p_theory_firmware_k", "n_H", "f32_norm2", "predicted_norm2_from_H_constant", "f32_p_marked_raw",
          "f32_p_marked_normalised", "f32_infid_vs_ideal_raw", "f32_direction_infidelity", "f64_infid_vs_ideal_raw", "aer_infid_vs_ideal_raw"]].copy()
 gt.columns = ["n", "k firmware (float32 formula)", "k Qiskit (float64)", "P(marked) theory", "N_H", "float32 norm^2", "norm^2 predicted (2c^2)^N_H",
@@ -290,13 +304,14 @@ for b in C.BOARDS:
 old_x = old_csv("offload_crossover.csv")
 for r in xo.itertuples():
     o = old_x[(old_x.board == r.board) & (old_x.circuit == r.circuit)]
-    if len(o) and r.largest_overlap_is_weak:
-        chg.append({"number": f"offload/local at the largest overlap, {BL[r.board]} {r.circuit}", "previous report": f"{o.ratio_at_n_local_max.iloc[0]:.3f}",
-                    "now, primary": f"{r.ratio_at_nonweak:.3f} at n={int(r.n_largest_overlap_nonweak)}", "now, weak points included": f"{r.ratio_at_n_largest_overlap:.3f} at n={int(r.n_largest_overlap)}",
-                    "why": "the largest overlapping n is a weak point; the primary number is taken at the largest non-weak overlap"})
-    if len(o) and (pd.isna(o.n_star_interpolated.iloc[0]) != pd.isna(r.n_star_interpolated) or (not pd.isna(r.n_star_interpolated) and abs(o.n_star_interpolated.iloc[0] - r.n_star_interpolated) > 1e-9)):
-        chg.append({"number": f"n*, {BL[r.board]} {r.circuit}", "previous report": str(o.n_star_interpolated.iloc[0]), "now, primary": str(r.n_star_interpolated),
-                    "now, weak points included": "-", "why": "changed"})
+    if len(o):
+        o = o.iloc[0]
+        prev = "none in the measured range" if pd.isna(o.n_star_interpolated) and pd.isna(o.first_n_offload_faster) else (
+            "below the measured range (offload faster at the smallest n)" if pd.isna(o.n_star_interpolated) else f"n* = {o.n_star_interpolated:.2f} (interpolated, one session)")
+        chg.append({"number": f"offload crossover, {BL[r.board]} {r.circuit}", "previous report": prev,
+                    "now, primary": f"fast PC {brk(xo[(xo.board == r.board) & (xo.circuit == r.circuit)].iloc[0], 'fast')}, slow PC {brk(xo[(xo.board == r.board) & (xo.circuit == r.circuit)].iloc[0], 'slow')}",
+                    "now, weak points included": "-",
+                    "why": "selected sessions (ESP8266 Phase 3 from the r2 session, ESP8266 grover and ESP32 grover n=9-10 from repeat sessions), counter pairs checked by the plausibility rule, and the offload latency is a band over the observed PC simulation time instead of one interpolated value"})
 old_f = old_csv("time_fit.csv")
 o2 = old_f[old_f.model == "M2_pooled"].set_index("board")
 for b in C.BOARDS:
@@ -317,13 +332,70 @@ for (rid, board, ph), g in rec.groupby(["id", "board", "phase"], sort=False):
     cmd_lines.append(f"- **{rid}** {BL[board]} Phase {ph}: " + " ; ".join(f"`{c}`" for c in g.commands) + f"  ({g.note.iloc[0]})")
 cmd_block = "\n".join(cmd_lines)
 
+
+# ---------------- facts used by the data-quality / limitation / reproducibility text (all computed here)
+import re as _re
+import reproducibility as REPRO
+from common import sessions as SES2
+_rep = REPRO.build()                                                   # data/derived/reproducibility.csv (also written here so the report and the CSV agree)
+_p2 = _rep[_rep.phase == 2]
+_p3 = _rep[_rep.phase == 3]
+rep2_max, rep2_med, rep2_n = float(_p2.max_rel_diff.max()), float(_p2.max_rel_diff.median()), len(_p2)
+rep3 = {q: (float(g.max_rel_diff.median()), float(g.max_rel_diff.max()), len(g)) for q, g in _p3.groupby("quantity")}
+rep3_abs_resid = float(_p3[_p3.quantity == "residual_us"].max_abs_diff_us.median())
+_rng = pd.read_csv(os.path.join(ROOT, "data", "derived", "phase3_pc_sim_range.csv"))
+_rng["spread"] = _rng.pc_sim_max_us / _rng.pc_sim_min_us
+_rn = _rng[_rng.n >= 6]
+sim_spread_med, sim_spread_max = float(_rn.spread.median()), float(_rn.spread.max())
+_g9 = _rng[(_rng.circuit == "grover") & (_rng.n == 9)].iloc[0]
+_alls = pd.read_csv(os.path.join(ROOT, "data", "derived", "phase3_decomposition.csv"))
+resid_sel = _alls[_alls.selected]
+resid_lo, resid_med, resid_hi = (float(resid_sel.residual_us.quantile(q)) for q in (0.25, 0.5, 0.75))
+# points of the selected data without a usable counter pair
+cvsel = cvt[cvt.selected.astype(bool)] if "selected" in cvt.columns else cvt
+nopair = cvsel[~cvsel.usable.astype(bool)]
+_np = nopair[nopair.n >= 7].sort_values(["phase", "board", "circuit", "n"])
+nopair_txt = "; ".join(f"{BL[b]} P{int(ph)} {c} n={','.join(str(int(x)) for x in g.n)}" for (ph, b, c), g in _np.groupby(["phase", "board", "circuit"], sort=False))
+r5 = cvt[cvt.reason.astype(str).str.startswith("R5")]
+r5_txt = "; ".join(f"{BL[r.board]} {r.circuit} P{int(r.phase)} n={int(r.n)} ({r.session})" for r in r5.itertuples())
+# self-test report (data/calibration/counter_selftest_20261031.txt): parse widths and mean errors
+_st = open(os.path.join(ROOT, "data", "calibration", "counter_selftest_20261031.txt")).read()
+st_rows = [(int(m.group(1)), int(m.group(2)), int(m.group(3))) for m in _re.finditer(r"^\s*(\d+)us\s+(\d+)\s+(-?\d+)ns", _st, _re.M)]
+st_pass = len(_re.findall(r"\[PASS\]", _st))
+st_err_lo, st_err_hi = min(e for _, _, e in st_rows), max(e for w, _, e in st_rows if w < 60_000_000)
+# repeated-row check on the original ESP32 grover n=9 (counter pairs exist there only in the repeat r2c and, 1 session, in the original)
+_o9 = pd.read_csv(os.path.join(SES2.bucket_dir(2, "esp32", "grover", SES2.ORIGINAL), "ref", "ref_compare.csv"))
+_o9 = _o9[_o9.n == 9]
+_gg = _o9.groupby("micros_us").counter_us.agg(["count", "min", "max"])
+_gg = _gg[_gg["count"] >= 5]
+dup_counter_spread = float((_gg["max"] - _gg["min"]).median()) if len(_gg) else float("nan")
+_f30 = _o9.sort_values("rep").head(30).micros_us
+dup_first30_iqr = float(_f30.quantile(0.75) - _f30.quantile(0.25))
+dup_n_distinct_counter = int(_o9.counter_us.nunique())
+_sel_g = SES2.read_selected(2, "esp32", "grover", "raw.csv")
+dist_sel = {n: int(_sel_g[_sel_g.n == n].exec_time_us.nunique()) for n in (9, 10)}
+dup_med_shift = 0.0
+for _, r in dup.iterrows() if len(dup) else []:
+    x = _sel_g[(_sel_g.n == r.n)].exec_time_us.to_numpy(float) if (r.board == "esp32" and r.circuit == "grover") else None
+    if x is not None and len(x):
+        dup_med_shift = max(dup_med_shift, abs(float(np.median(x[:int(r.reps)])) - float(np.median(x))) / float(np.median(x)))
+p2rows = [{"board": BL[r.board], "circuit": r.circuit, "n": int(r.n), "sessions": r.sessions, "median per session (us)": r.medians_us,
+           "max rel. difference": f"{r.max_rel_diff * 100:.4f} %"} for r in _p2.itertuples()]
+rep2_tbl = md(pd.DataFrame(p2rows))
+p3rows = []
+for (_b, _c, _n), _g in _p3.groupby(["board", "circuit", "n"]):
+    _q = {r.quantity: r for r in _g.itertuples()}
+    p3rows.append({"board": BL[_b], "circuit": _c, "n": int(_n), "sessions": _q["e2e_us"].sessions, "e2e per session (us)": _q["e2e_us"].medians_us,
+                   "max rel. diff e2e": f"{_q['e2e_us'].max_rel_diff * 100:.1f} %", "pc_sim per session (us)": _q["pc_sim_us"].medians_us,
+                   "max rel. diff pc_sim": f"{_q['pc_sim_us'].max_rel_diff * 100:.1f} %", "residual per session (us)": _q["residual_us"].medians_us,
+                   "max abs. diff residual (us)": f"{_q['residual_us'].max_abs_diff_us:.0f}"})
+rep3_tbl = md(pd.DataFrame(p3rows))
 # paragraph for the paper (<= 120 words)
-repro = ("All numbers and figures are regenerated from the committed raw CSVs by one command (`python analysis/reproduce.py`) on {HOSTOS}, Python {PYV}, "
-         "with the exact package list, PlatformIO toolchain versions and counter wiring in README_REPRODUCE.md. Every result is a script output; "
-         "tests assert the model split, the counter-validity rules, the grover theory check and that the run-history ledger is untouched. "
-         f"Provenance is recorded per session: {n_prov_dirty} of {n_prov} sessions carry a dirty-tree flag, {n_prov_in_git} have a firmware source hash that equals a committed tree and "
-         f"{n_prov - n_prov_in_git} ran uncommitted firmware; no hash of the flashed binary was recorded.")
-assert len(repro.split()) <= 120, len(repro.split())
+repro = (f"All numbers and figures are regenerated from the committed raw CSVs by one command (`python analysis/reproduce.py`) on {HOSTOS}, Python {PYV}, "
+         f"with the package list and counter wiring in README_REPRODUCE.md; which collection session feeds each point is fixed in one place (`analysis/common/sessions.py`). "
+         f"Repeat sessions agree with the original ones: Phase 2 board timer medians of {rep2_n} repeated points differ by at most {rep2_max * 100:.4f} % (median {rep2_med * 100:.5f} %); "
+         f"Phase 3 round trips of {rep3['e2e_us'][2]} points differ by a median {rep3['e2e_us'][0] * 100:.0f} %, almost all of it the PC simulation time (median {rep3['pc_sim_us'][0] * 100:.0f} %), "
+         f"while the board-and-link residual differs by a median {rep3_abs_resid:.0f} us. Tests assert the model split, the counter-validity rules, the session selection and the untouched run-history ledger.")
 
 R = f"""# Phase 4 report: what limits statevector simulation on microcontrollers, and how well can it be predicted
 
@@ -338,8 +410,8 @@ primary error and drawn hollow (rule: `analysis/common/weak.py`).
 - **Limiting factor depends on board and circuit.** h_all, bell_ghz, qft stop at a memory wall: Uno n={int(mem[mem.board == 'uno'].wall_n.dropna().iloc[0])} (SRAM, `build_overflow`), ESP8266 n={int(mem[mem.board == 'esp8266'].wall_n.dropna().iloc[0])} and ESP32 n={int(mem[mem.board == 'esp32'].wall_n.dropna().iloc[0])} (`malloc_failed`); grover stops earlier on the ESP boards by **time** (ESP8266 last run n={int(g8.n)}, {g8.median_us / 6e7:.0f} min per run, {int(g8.reps)} reps; ESP32 n={int(g32.n)}, {g32.median_us / 6e7:.0f} min per run, {int(g32.reps)} rep).
 - **Memory:** floor(log2(B/8)) with B read at n=2 reproduces the observed wall on all three boards. The test resolves B only to a factor of 2, the Uno B is derived from the same compiler RAM figure that triggers `build_overflow` (close to circular), and on the ESP32 the largest free block is right while the total free heap is one qubit too high; both are reported.
 - **Time model:** a per-gate-kind model (M2) predicts held-out largest-n times with MAPE {unc['M2'].mape_pct:.0f} % over all {int(unc['M2'].n_points)} non-weak held-out points ({clean_mape('M2')[0]:.0f} % over the {clean_mape('M2')[1]} that also ran one firmware version; ESP32 {clean_mape('M2', 'esp32')[0]:.0f} %, ESP8266 {clean_mape('M2', 'esp8266')[0]:.0f} %, Uno {clean_mape('M2', 'uno')[0]:.0f} %); one constant per board (M1) gives {unc['M1'].mape_pct:.0f} %. M2's 'identifiable' label is **unstable**: by the rule it holds on {sens_boards} (a coefficient of 0.0013 passes, 0.0000 fails). The fitted constants are a fit, not measured gate costs (the ESP8266 c_CNOT implies {cnot_cycles:.2f} CPU cycles per loop iteration, which is physically impossible).
-- **Offload crossover** lies inside the measured range for {n_xo_inside} of {len(xo)} board x circuit pairs (interpolated between measured n, never extrapolated); Uno grover is already faster offloaded at the smallest n (crossover below the range) and ESP32 h_all has none up to n={int(xs('esp32', 'h_all').n_local_max)}. It rests on one Phase 3 session per point at 115 200 baud with noisy round trips: a repeat is proposed as deadline-critical (section 9).
-- **The grover 'infidelity {p1[(p1.circuit == 'grover') & (p1.n == 12)].infidelity.iloc[0]:.3f} at n=12' is not a wrong state:** the float32 state keeps its direction (normalised infidelity {dir_max_to12:.1e} for n <= 12{beyond_txt}; double matches theory) and loses norm mainly because the float32 constant 1/sqrt(2) is biased (the constant alone over-predicts the loss by about {(loss_share[0] - 1) * 100:.0f} %, section 6). The counter's {bad12.width_us / 1e6:.2f} s vs {r12.micros_median_us / 1e6:.0f} s case was a **pairing artefact, not a range limit** (section 7).
+- **Offload crossover** is reported as two brackets of measured n (fast and slow PC simulation, section 5): {n_xo_inside} of {len(xo)} board x circuit pairs have a bracket under both bounds, {n_xo_none} have no crossover up to the largest measured n under at least one bound, {n_xo_noise} bracket labels are *within noise* and {n_xo_weak} rest on a weak point. The bands reflect host PC speed (about 2x spread of the simulation time between sessions); one PC, one baud rate (115 200).
+- **The grover 'infidelity {p1[(p1.circuit == 'grover') & (p1.n == 12)].infidelity.iloc[0]:.3f} at n=12' is not a wrong state:** the float32 state keeps its direction (normalised infidelity {dir_max_to12:.1e} for n <= 12{beyond_txt}; double matches theory) and loses norm mainly because the float32 constant 1/sqrt(2) is biased (the constant alone over-predicts the loss by about {(loss_share[0] - 1) * 100:.0f} % for n = 8..13 only; at n = 14 the predicted-over-measured log loss is {ratio14:.2f}x, so the statement does not extend beyond n = 13, section 6). The counter's {bad12.width_us / 1e6:.2f} s vs {r12.micros_median_us / 1e6:.0f} s case was a **pairing artefact, not a range limit** (section 7).
 
 ## 2. Data used (audit)
 
@@ -354,11 +426,11 @@ Series that span more than one hash (OBSERVED): {hash_layout}. Timing classes of
 
 {hash_tbl}
 
-Timing-relevant changes (INTERPRETATION from `data/derived/firmware_wip_diff.patch` and `git diff 5076c76 579fe78`): ESP8266 Phase 2 grover n=9, 10 ran with the uncommitted watchdog edit (class B): a timer1 interrupt (1 s period) fires **inside** `t0..t1` and the soft watchdog is no longer stopped around the circuit; n=8 ran a third, unrecoverable version (class X). ESP32 grover n=12 ran the uncommitted 64-bit timer edit (class A: Arduino `micros()` is the low 32 bits of the same `esp_timer_get_time()`; the edit only removes a wrap at 71.6 min). ESP8266 Phase 3 h_all/bell_ghz/qft and grover n <= 11 ran offload firmware without the `micros()` poll that commit 579fe78 added inside the wait loop (class B, expected small, UNVERIFIED). Uno and ESP32 Phase 3 are class A throughout.
+Timing-relevant changes (INTERPRETATION from `data/derived/firmware_wip_diff.patch` and `git diff 5076c76 579fe78`): ESP8266 Phase 2 grover (selected: n=2-8 from the repeat session r2, n=9-10 from the original) is one source hash in every point (class B): a timer1 interrupt (1 s period) fires **inside** `t0..t1` and the soft watchdog is no longer stopped around the circuit; the original n=2-7 (class A) and n=8 (class X, unrecoverable) are replaced by r2 and appear only in the reproducibility table. ESP32 grover n=12 ran the uncommitted 64-bit timer edit (class A: Arduino `micros()` is the low 32 bits of the same `esp_timer_get_time()`; the edit only removes a wrap at 71.6 min); the repeat session r2 of n=9-10 ran the same hash. ESP8266 Phase 3 (selected: the repeat session r2) is one offload hash in every point (class A); the original sessions ran offload firmware without that hash (class B: a `micros()` poll inside the wait loop that commit 579fe78 added, expected small, UNVERIFIED) and are replaced. Uno and ESP32 Phase 3 are class A throughout.
 
 **Counter.** A separate ESP32 device timed all three target boards. Calibration status confirmed: all {n_prov} session sidecars have `"calibration": {{}}` and `"selftest": "self-loopback only"` (the {_cal.PPM:.1f} ppm PC-clock comparison of {_cal.DATE} in `data/calibration/counter_20261004.json` is not linked to any session): **uncalibrated**. Which counter points are usable is decided in one place, `analysis/common/counter_validity.py` (section 7).
 
-**Data quality: repeated rows.** In `raw.csv`, {dup_txt}: rows after the first period are exact microsecond-level copies of earlier rows (ESP32 grover n=10: rows 20-99 repeat rows 10-19, period 10), which looks like duplicated lines. INTERPRETATION after a check on 2026-10-30: for ESP32 grover n=9 the counter measured 100 distinct pulse widths, and at the reps where `micros()` repeats (period 7 after warm-up) those widths drift smoothly by 0.2-0.4 us per cycle instead of scattering like the first reps (+-20 us); this is what a deterministic, periodic duration looks like, not duplicated serial lines, so the repeat is a property of the timing and no logging fault was found (n=10 cannot be checked this way: its first-session counter points were refused). The re-collected session r2 shows the same low number of distinct values (n=9: 12, n=10: 18 of 100). Statistics for these points use only the independent rows (`analysis/common/weak.py: effective_reps`); the medians move by less than 1e-6 relative.
+**Data quality: repeated rows.** In `raw.csv` of the selected sessions, {dup_txt}: rows after the first period are exact microsecond-level copies of earlier rows, which looks like duplicated lines. INTERPRETATION after a check on the original ESP32 grover n=9 session (where counter pairs exist): the counter measured {dup_n_distinct_counter} distinct pulse widths for 100 reps; among the reps that share one `micros()` value the counter widths spread by a median of {dup_counter_spread:.2f} us (max - min), whereas the first 30 reps of `micros()` have an IQR of {dup_first30_iqr:.1f} us. A smooth, small spread at the repeats is what a deterministic, periodic duration looks like, not duplicated serial lines, so the repeat is treated as a property of the timing and no logging fault was found (n=10 cannot be checked this way: its first-session counter points were refused). The repeat session r2 shows the same low number of distinct values (n=9: {dist_sel[9]}, n=10: {dist_sel[10]} of 100). Statistics for these points use only the independent rows (`analysis/common/weak.py: effective_reps`); the median moves by at most {dup_med_shift:.1e} relative.
 
 **Phase 1 (PC build).** `infidelity_tvd.csv` is a subset of the 20261003 run (identical values where they overlap); grover n=12 only in the 20261004 file.
 
@@ -407,16 +479,28 @@ Sensitivity to the held-out size (primary MAPE % (points); the primary choice is
 
 {sens_tbl}
 
-OBSERVED: M2 beats M1 in every scope; the 'identifiable' scope M2 MAPE is {sens[(sens.model == 'M2') & (sens.scope == 'identifiable')].mape_primary.min():.1f}-{sens[(sens.model == 'M2') & (sens.scope == 'identifiable')].mape_primary.max():.1f} % across the held-out sizes 2-4 (the set of identifiable boards and points changes with the size, see the point counts); the excluded-grover and hash-clean numbers move the headline by only a few points. M2 on the points of the identifiable scope: {m2_on_id:.1f} % against {m1_on_id:.1f} % for M1 (ESP32 {mape_b('esp32', 'M2'):.1f} % vs {mape_b('esp32', 'M1'):.1f} %, ESP8266 {mape_b('esp8266', 'M2'):.1f} % vs {mape_b('esp8266', 'M1'):.1f} %). The ESP8266 grover test points are all hash-flagged (n=8 class X, n=9 class B, n=10 class B and weak), so the clean set has **no ESP8266 grover test point**; **no ESP32 grover test point is non-weak any more** (n=10 has {int(loc[(loc.board == 'esp32') & (loc.circuit == 'grover') & (loc.n == 10)].reps.iloc[0])} independent repetitions, n=11 {int(loc[(loc.board == 'esp32') & (loc.circuit == 'grover') & (loc.n == 11)].reps.iloc[0])}, n=12 1).
+OBSERVED: M2 beats M1 in every scope; the 'identifiable' scope M2 MAPE is {sens[(sens.model == 'M2') & (sens.scope == 'identifiable')].mape_primary.min():.1f}-{sens[(sens.model == 'M2') & (sens.scope == 'identifiable')].mape_primary.max():.1f} % across the held-out sizes 2-4 (the set of identifiable boards and points changes with the size, see the point counts); the excluded-grover and hash-clean numbers move the headline by only a few points. M2 on the points of the identifiable scope: {m2_on_id:.1f} % against {m1_on_id:.1f} % for M1 (ESP32 {mape_b('esp32', 'M2'):.1f} % vs {mape_b('esp32', 'M1'):.1f} %, ESP8266 {mape_b('esp8266', 'M2'):.1f} % vs {mape_b('esp8266', 'M1'):.1f} %). Every selected ESP8266 grover point is class B (one hash, timer1 interrupt inside the timed region), so the hash rule leaves **no ESP8266 grover fit point and no clean test point** (its test points n=8, 9, 10 are scored separately and flagged); **no ESP32 grover test point is non-weak any more** (n=10 has {int(loc[(loc.board == 'esp32') & (loc.circuit == 'grover') & (loc.n == 10)].reps.iloc[0])} independent repetitions, n=11 {int(loc[(loc.board == 'esp32') & (loc.circuit == 'grover') & (loc.n == 11)].reps.iloc[0])}, n=12 1).
 Where the model fails (INTERPRETATION): Uno qft (only 3 fit points per series and no identifiable M2); grover on the ESP boards is a firmware-version and rep-count confound, not a model result; memory-system effects (cache, flash wait states) are not in the model and were not checked (UNVERIFIED).
 
 ## 5. Offload
 
-Local = Phase 2 median per run (`micros()`, on the board). Offload = Phase 3 median `e2e_latency_us` per request (request frame, PC statevector simulation with Qiskit Aer, one sampled outcome, reply), 115 200 baud, no timeouts or CRC errors. The crossover is reported two ways: the **first measured n** at which offload is faster, and **n\\*** by log-linear interpolation **between the two measured n that bracket it** (never extrapolated; WEAK if a bracketing point is weak). For every pair the offload/local ratio is given at the largest overlapping n and at the largest non-weak overlapping n. Phase 3 covers every Phase 2 ok n for all 12 board x circuit pairs (test `timemodel_test.py`); F4 plots the complete local and offload point sets.
+Local = Phase 2 median per run (`micros()`, on the board). Offload = Phase 3 median `e2e_latency_us` per request (request frame, PC statevector simulation with Qiskit Aer, one sampled outcome, reply), 115 200 baud, no timeouts or CRC errors. **Decomposition.** The round trip of a Phase 3 point is split into wire time (frame bytes x 10 bit / baud, 0.87 ms for a 10-byte frame at 115 200 baud), the PC simulation time (`pc_sim_s_median`, Aer build + run + sample, logged per point) and a residual (board compute, USB-serial latency, host scheduling); the parts are medians of one point and do not add exactly (`data/derived/phase3_decomposition.csv`). The simulation depends on circuit and n, not on the board, but on the speed of the host PC in the session: it varies about 2x between sessions on the same PC (grover n=9: 4.1-8.8 s over four sessions on three boards), while the board-and-link residual is stable at about 0.5-0.8 ms. **Band.** For each circuit and n the observed minimum and maximum `pc_sim` over every Phase 3 session on every board (replaced sessions included, in-scope n only; `data/derived/phase3_pc_sim_range.csv`) bound the offload latency: wire + residual (of the board, selected session) + `pc_sim` min / max. **Crossover** = bracket of two measured n between which the offload band drops below the Phase 2 local median and stays below at every larger measured n, once for the fast bound and once for the slow bound; no extrapolation and no interpolated single value. Labels: *within noise* = the local IQR and the offload IQR (shifted to the bound) overlap at an end of the bracket; *weak* = a point of the bracket has fewer than {C.SMALL_REPS} reps or requests (or the extreme `pc_sim` comes from such a point); *none up to n* = local stays faster at the largest measured n under that bound. Scope: n >= 2 and, in Phase 3, n up to the board's Phase 2 wall. The bands reflect host PC speed, so a different PC moves the brackets (INTERPRETATION: the 2x session spread is a PC-state effect, its cause is not recorded in the sidecars).
 
 {x_tbl}
 
-OBSERVED: the Phase 3 floor at n <= 4 is {floor.loc['uno'] / 1000:.1f} ms (Uno), {floor.loc['esp8266'] / 1000:.1f} ms (ESP8266), {floor.loc['esp32'] / 1000:.1f} ms (ESP32) (median over the points); IQR/median of the Phase 3 round trips exceeds 20 % in {float(((offd.q3_us - offd.q1_us) / offd.median_us > 0.2).mean()) * 100:.0f} % of the {len(offd)} Phase 3 points (`analysis/phase4/p4common.py: load_offload`), so each n* carries about one qubit of uncertainty (INTERPRETATION). Beyond the local wall only offload exists: Uno offload to n={int(ceil('uno', 'h_all'))} (wall 8), ESP8266 to n={int(ceil('esp8266', 'h_all'))} (wall 13), ESP32 to n={int(ceil('esp32', 'h_all'))} (wall 14). Uno grover is already faster offloaded at the smallest n. Grover offload points at n >= 11 on the ESP boards have {int(g11.reps.min())}-{int(g11.reps.max())} requests (weak at n=12, 13).
+OBSERVED: the Phase 3 floor at n <= 4 is {floor.loc['uno'] / 1000:.1f} ms (Uno), {floor.loc['esp8266'] / 1000:.1f} ms (ESP8266), {floor.loc['esp32'] / 1000:.1f} ms (ESP32) (median over the points); IQR/median of the Phase 3 round trips exceeds 20 % in {float(((offd.q3_us - offd.q1_us) / offd.median_us > 0.2).mean()) * 100:.0f} % of the {len(offd)} Phase 3 points (`analysis/phase4/p4common.py: load_offload`), the spread between sessions is mostly the PC simulation time (section 8, item 12), which the band of the crossover table covers. Beyond the local wall only offload exists: Uno offload to n={int(ceil('uno', 'h_all'))} (wall 8), ESP8266 to n={int(ceil('esp8266', 'h_all'))} (wall 13), ESP32 to n={int(ceil('esp32', 'h_all'))} (wall 14). Grover offload points at n >= 11 on the ESP boards have {int(g11.reps.min())}-{int(g11.reps.max())} requests (weak at n=12, 13).
+
+### Reproducibility: points measured in more than one session
+
+Every in-scope point that exists in more than one session (original and repeat sessions r2, r2b, r2c; `data/derived/reproducibility.csv`). Sessions: `orig` = original collection. Max rel. difference = largest pairwise |a - b| / min(|a|, |b|). Phase 2 is the board timer (`micros()`, median over the independent repetitions), {rep2_n} points, max difference {rep2_max * 100:.4f} %. Phase 3 shows the round trip, its PC simulation part and the board-and-link residual separately ({rep3['e2e_us'][2]} points, all ESP8266): the round trip differs by a median {rep3['e2e_us'][0] * 100:.0f} % (max {rep3['e2e_us'][1] * 100:.0f} %), the PC simulation by a median {rep3['pc_sim_us'][0] * 100:.0f} %, the residual by a median {rep3_abs_resid:.0f} us (a relative figure of the residual is dominated by its small size and is in the CSV).
+
+**Phase 2 (board timer)**
+
+{rep2_tbl}
+
+**Phase 3 (offload round trip, ESP8266, original and r2)**
+
+{rep3_tbl}
 
 ## 6. Grover correctness (item 1)
 
@@ -463,9 +547,13 @@ OBSERVED: ESP32 (usable points, median >= {C.FLOOR_US:.0f} us): median ratio {cs
 4. **One unit per board, one PC, one baud rate (115 200).** The crossover was not tested at other baud rates.
 5. **Provenance:** {n_prov_dirty} of {n_prov} sessions carry a dirty-tree flag, {n_prov_in_git} have a firmware source hash equal to a committed tree and {n_prov - n_prov_in_git} ran uncommitted firmware; no session recorded a hash of the flashed binary (`docs/reproducibility/session_provenance.md`).
 6. **Weak points** (fewer than {C.SMALL_REPS} independent repetitions or requests; rule in `analysis/common/weak.py`): {weak_txt}; Phase 3 grover n=12, 13 on the ESP boards ({int(g11.reps.min())}-{int(g11.reps.max())} requests at n >= 11). They are never fitted or scored in the primary numbers.
-7. **Firmware version confound for grover** (section 2): the ESP8266 grover test points ran under uncommitted or unrecoverable firmware.
+7. **Firmware class mixing that remains** (section 2): all selected ESP8266 grover points are class B (timer1 interrupt inside `t0..t1`) while the other ESP8266 circuits are class A, so ESP8266 grover is outside the fit and the clean scores; ESP32 grover n=2-8, 11 (hash 5f10cc9afc3fffe5) and n=9, 10, 12 (hash 4478147465f99625) are both class A by reading the diff (UNVERIFIED: no binary hash was recorded).
 8. The M2 constants are fitted values, not measured gate costs; M2 is not identifiable on {', '.join(non_id)}; M2 was not defined blind with respect to grover (section 4).
 9. Uno `micros()` resolution is 4 us, ESP boards 1 us; the model ignores points below {C.FLOOR_US:.0f} us.
+10. **Counter pairing fails on some long points.** Points of the selected data without a usable counter pair at n >= 7: {nopair_txt}. The ESP8266 Phase 2 grover n=8 point failed in three sessions (r2, r2b, r2c). INTERPRETATION: line noise on the counter input (the hardware PCNT, an edge counter independent of the capture interrupt, counted more edges than the capture interrupt handled in the `#D` diagnostic lines of the failed runs; short points pair 100/100); the cause is not established (UNVERIFIED: WiFi activity of the counter, power or wiring). The micros() data of these points are unaffected and used; only the micros()-vs-counter agreement lacks them.
+11. **Counter wrap artefact.** `unwrap_ticks` (`firmware/counter_esp32/src/main.cpp`) turns a spike whose fall stamp precedes the rise stamp by a few ticks into 2^32 - 1 ticks = 53.687 s, which the glitch filter does not remove. The plausibility rule R5 (`analysis/common/counter_validity.py`) rejects a pair whose counter/micros() ratio is outside [0.5, 2.0] or whose counter value is within 1 ms of k x 53.687091 s; the count rule is not relaxed, so one such pair makes the point unusable. It changed these points: {r5_txt}. The counter firmware was not changed.
+12. **PC simulation speed differs between sessions.** The Aer simulation time of one Phase 3 circuit x n (n >= 6) differs by a median {sim_spread_med:.2f}x and at most {sim_spread_max:.2f}x between the fastest and the slowest session on the same PC (grover n=9: {_g9.pc_sim_min_us / 1e6:.1f}-{_g9.pc_sim_max_us / 1e6:.1f} s), while the board-and-link residual of the selected sessions has a median of {resid_med:.0f} us (IQR {resid_lo:.0f}-{resid_hi:.0f} us; at large n it also absorbs the bookkeeping error of subtracting two medians); the crossovers are therefore reported as brackets under the fastest and the slowest observed simulation (section 5). The cause of the PC speed change is not recorded in the sidecars (UNVERIFIED).
+13. **Counter self-test.** The loopback self-test (GPIO25 to GPIO35, `data/calibration/counter_selftest_20261031.txt`) passed {st_pass} of 5 scenarios on 2026-10-31; the counter reads {st_err_lo / 1000:.1f} to {st_err_hi / 1000:.1f} us longer than the generated width at 100 us to 10 s (a constant offset of the loopback; one crystal generates and measures, so clock accuracy and the GPIO34 target pad are not tested; the offset cannot be split between generator and counter).
 
 ## 9. Re-collection proposals (no hardware was run)
 
@@ -477,7 +565,7 @@ Commands (placeholders in angle brackets are the serial ports):
 
 {cmd_block}
 
-Deadline-critical (20 Nov): R1 (one committed firmware for the ESP8266 grover series) and R2 (second Phase 3 session of the {n_r2} series that contain a crossover). Everything else is nice-to-have; Uno M2 identifiability cannot be fixed by re-collection (the Uno wall leaves n=2..7).
+R1 (one committed firmware for the ESP8266 grover series) and R2 (a second Phase 3 session of the crossover series) were carried out as repeat sessions (r2, r2b, r2c; `docs/audit/rerun_sessions.md`) and are no longer proposals. What remains is nice-to-have; Uno M2 identifiability cannot be fixed by re-collection (the Uno wall leaves n=2..7).
 
 ## 10. Paper-ready material
 
@@ -487,13 +575,13 @@ Deadline-critical (20 Nov): R1 (one committed firmware for the ESP8266 grover se
 - **F1 (`figures/phase4/F1_timing_vs_n.pdf`).** Median execution time per run (shaded: IQR) versus qubit count for the four circuits on each board; dotted lines mark measured memory walls and hollow markers weak points (fewer than {C.SMALL_REPS} repetitions).
 - **F2 (`F2_parity.pdf`).** Predicted versus measured time, (a) one cost constant per board, (b) per-gate-kind costs; filled markers were fitted, hollow markers are the largest {C.N_TEST} n of each series held out (grey: weak, not scored). Held-out MAPE {unc['M1'].mape_pct:.0f} % (a) and {unc['M2'].mape_pct:.0f} % (b) over {int(unc['M2'].n_points)} non-weak points.
 - **F3 (`F3_memory_wall.pdf`, `tables/phase4_memory_wall.tex`).** Largest qubit count that fits: measured (last n before a wall with positive evidence) versus floor(log2(B/8)); on the ESP32 the total free heap overpredicts by one qubit (red).
-- **F4 (`F4_offload_crossover.pdf`).** Local execution time (solid, Phase 2) and offload round trip (dashed, Phase 3, 115 200 baud) per circuit; stars mark the crossover interpolated between measured n, hollow markers weak points.
+- **F4 (`F4_offload_crossover.pdf`).** Local execution time (solid line, IQR shaded, Phase 2) and the offload latency band (hatched, between the fastest and the slowest observed PC simulation time; dashed = the measured session, Phase 3, 115 200 baud) per circuit; bars mark the crossover bracket of two measured n for the fast (solid) and the slow (dotted) bound, hollow markers weak points. The band reflects host PC speed, not the board.
 - **F5 (`F5_phase1_accuracy.pdf`).** Infidelity of the float32 simulator against Qiskit Aer versus n (Phase 1 definition, no renormalisation); the dotted grover line is the normalised float32 infidelity, which stays below {dir_max_to12:.0e} for n <= 12 while the raw value crosses 1e-3 at n={first_fail}.
 
 **Candidate abstract claims (number : source; from non-weak, counter-independent data; the time claim from firmware-consistent points only):**
 1. "The observed memory walls are reproduced by floor(log2(B/8)) with B read at n=2: n_max = {int(mem[(mem.board == 'uno') & (mem.circuit == 'qft')].n_max_pred.iloc[0])} (Uno), {int(mem[(mem.board == 'esp8266') & (mem.circuit == 'qft')].n_max_pred.iloc[0])} (ESP8266) and {int(mem[(mem.board == 'esp32') & (mem.circuit == 'qft') & (mem.predictor == 'largest_block')].n_max_pred.iloc[0])} (ESP32, largest free block; the total free heap overpredicts by one qubit), each equal to the first measured allocation failure minus one." Limits: the test resolves B to a factor of 2 and the Uno B comes from the same compiler RAM figure that triggers the build overflow. Source: `data/processed/phase4/memory_model.csv`; raw evidence `data/raw/phase2/*/{{h_all,bell_ghz,qft}}/with_ref/memory_wall.csv`.
 2. "A per-gate-kind timing model fitted on small n predicts held-out largest-n execution times with {clean_mape('M2')[0]:.0f} % MAPE over {clean_mape('M2')[1]} non-weak held-out points from one firmware version per series ({clean_mape('M2', 'esp32')[0]:.0f} % on the ESP32, {clean_mape('M2', 'esp8266')[0]:.0f} % on the ESP8266, {clean_mape('M2', 'uno')[0]:.0f} % on the Uno), against {clean_mape('M1')[0]:.0f} % for one constant per board." Caveats to keep in the paper: M2 was not defined blind with respect to grover, its parameters are not reliably identifiable (the verdict changes with the held-out size) and its fitted constants are not physical gate costs. Source: `data/processed/phase4/time_scores.csv` (`clean (non-weak, hash class A)`, scope all), `time_predictions.csv` (role = test, weak = False, hash_flagged = False), `time_identifiability.csv`, `time_sensitivity.csv`.
-3. "For h_all, bell_ghz and qft, offloading to a PC is faster than local execution from n = {xs('uno', 'qft').n_star_interpolated:.1f}-{xs('uno', 'bell_ghz').n_star_interpolated:.1f} on the Uno, {xs('esp8266', 'qft').n_star_interpolated:.1f}-{xs('esp8266', 'bell_ghz').n_star_interpolated:.1f} on the ESP8266 and {xs('esp32', 'qft').n_star_interpolated:.1f}-{xs('esp32', 'bell_ghz').n_star_interpolated:.1f} on the ESP32 (qft to bell_ghz; interpolated between measured n, 115 200 baud, one PC, one session per point), and not within n <= {int(xs('esp32', 'h_all').n_local_max)} for ESP32 h_all; for grover the crossover is at n = {xs('esp8266', 'grover').n_star_interpolated:.1f} on the ESP8266 and {xs('esp32', 'grover').n_star_interpolated:.1f} on the ESP32 and below the measured range on the Uno." Caveats: the ESP8266 Phase 3 h_all, bell_ghz and qft points all ran offload firmware without the later `micros()` poll (timing class B, expected small, UNVERIFIED); each n* carries about one qubit of uncertainty (noisy round trips). Source: `data/processed/phase4/offload_crossover.csv` (`n_star_interpolated`, `ratio_at_nonweak`, `crossover_weak`), raw `data/raw/phase2/*/*/with_ref/raw.csv`, `data/raw/phase3/*/*/with_ref/raw.csv`.
+3. "Offloading to a PC becomes faster than local execution within these brackets of measured n (fast / slow PC simulation): " + the brackets of the table in section 5 ({claim3}). Caveats: one PC, one baud rate (115 200), the band reflects host PC speed, \'within noise\' and \'weak\' labels as in the table, ESP8266 Phase 3 from one session (r2, firmware hash e33508351a496315). Source: `data/processed/phase4/offload_crossover.csv`, `data/processed/phase4/offload_band.csv`, `data/derived/phase3_decomposition.csv`, `data/derived/phase3_pc_sim_range.csv`; raw `data/raw/phase2/*/*/` and `data/raw/phase3/*/*/` buckets chosen by `analysis/common/sessions.py`.
 
 ## 11. What changed vs the previous report (commit {OLD})
 
@@ -501,7 +589,7 @@ Every number that moved, and why (read from the previous commit's CSVs):
 
 {changed_tbl}
 
-Unchanged: memory predictions and walls, gate counts, Phase 1 raw table, crossover n* values, the Phase 3 floor.
+Unchanged: memory predictions and walls, gate counts, Phase 1 raw table.
 
 ## 12. Reproduce
 
