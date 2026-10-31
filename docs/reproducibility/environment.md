@@ -5,9 +5,12 @@ Recorded by the sessions themselves (`data/raw/**/env/*.json`); one row per dist
 | board | pio env | PlatformIO | host OS | Python | sessions | toolchain and framework packages |
 |---|---|---|---|---|---|---|
 | esp32 | esp32dev | PlatformIO Core, version 6.1.19 | macOS-26.3.1-arm64-arm-64bit | 3.11.7 | 8 | framework-arduinoespressif32 3.20017.241212+sha.dcc1105b; framework-espidf 4.60001.0; toolchain-esp32ulp 1.23800.240113; toolchain-xtensa-esp-elf 15.2.0+20251204; toolchain-xtensa-esp32 8.4.0+2021r2-patch5 |
+| esp32 | esp32dev | PlatformIO Core, version 6.2.0 | macOS-26.3.1-arm64-arm-64bit | 3.11.7 | 3 | framework-arduinoespressif32 3.20017.241212+sha.dcc1105b; framework-espidf 4.60001.0; toolchain-esp32ulp 1.23800.240113; toolchain-xtensa-esp-elf 15.2.0+20251204; toolchain-xtensa-esp32 8.4.0+2021r2-patch5 |
 | esp32 | esp32dev_offload | PlatformIO Core, version 6.1.19 | macOS-26.3.1-arm64-arm-64bit | 3.11.7 | 8 | framework-arduinoespressif32 3.20017.241212+sha.dcc1105b; framework-espidf 4.60001.0; toolchain-esp32ulp 1.23800.240113; toolchain-xtensa-esp-elf 15.2.0+20251204; toolchain-xtensa-esp32 8.4.0+2021r2-patch5 |
 | esp8266 | nodemcuv2 | PlatformIO Core, version 6.1.19 | macOS-26.3.1-arm64-arm-64bit | 3.11.7 | 9 | framework-arduinoespressif8266 3.30102.0; toolchain-xtensa 2.100300.220621 |
+| esp8266 | nodemcuv2 | PlatformIO Core, version 6.2.0 | macOS-26.3.1-arm64-arm-64bit | 3.11.7 | 3 | framework-arduinoespressif8266 3.30102.0; toolchain-xtensa 2.100300.220621 |
 | esp8266 | nodemcuv2_offload | PlatformIO Core, version 6.1.19 | macOS-26.3.1-arm64-arm-64bit | 3.11.7 | 23 | framework-arduinoespressif8266 3.30102.0; toolchain-xtensa 2.100300.220621 |
+| esp8266 | nodemcuv2_offload | PlatformIO Core, version 6.2.0 | macOS-26.3.1-arm64-arm-64bit | 3.11.7 | 4 | framework-arduinoespressif8266 3.30102.0; toolchain-xtensa 2.100300.220621 |
 | uno | uno | PlatformIO Core, version 6.1.19 | macOS-26.3.1-arm64-arm-64bit | 3.11.7 | 8 | framework-arduino-avr 5.4.0; toolchain-atmelavr 1.70300.191015 |
 | uno | uno_offload | PlatformIO Core, version 6.1.19 | macOS-26.3.1-arm64-arm-64bit | 3.11.7 | 4 | framework-arduino-avr 5.4.0; toolchain-atmelavr 1.70300.191015 |
 

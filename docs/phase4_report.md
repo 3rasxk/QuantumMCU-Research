@@ -10,9 +10,9 @@ primary error and drawn hollow (rule: `analysis/common/weak.py`).
 
 - **Limiting factor depends on board and circuit.** h_all, bell_ghz, qft stop at a memory wall: Uno n=8 (SRAM, `build_overflow`), ESP8266 n=13 and ESP32 n=14 (`malloc_failed`); grover stops earlier on the ESP boards by **time** (ESP8266 last run n=10, 28 min per run, 4 reps; ESP32 n=12, 75 min per run, 1 rep).
 - **Memory:** floor(log2(B/8)) with B read at n=2 reproduces the observed wall on all three boards. The test resolves B only to a factor of 2, the Uno B is derived from the same compiler RAM figure that triggers `build_overflow` (close to circular), and on the ESP32 the largest free block is right while the total free heap is one qubit too high; both are reported.
-- **Time model:** a per-gate-kind model (M2) predicts held-out largest-n times with MAPE 19 % over all 32 non-weak held-out points (19 % over the 30 that also ran one firmware version; ESP32 6 %, ESP8266 23 %, Uno 25 %); one constant per board (M1) gives 48 %. M2's 'identifiable' label is **unstable**: by the rule it holds on held-out 2: esp32, esp8266, uno; held-out 3: esp32, esp8266; held-out 4: esp32 (a coefficient of 0.0013 passes, 0.0000 fails). The fitted constants are a fit, not measured gate costs (the ESP8266 c_CNOT implies 0.10 CPU cycles per loop iteration, which is physically impossible).
-- **Offload crossover** lies inside the measured range for 10 of 12 board x circuit pairs (interpolated between measured n, never extrapolated); Uno grover is already faster offloaded at the smallest n (crossover below the range) and ESP32 h_all has none up to n=13. It rests on one Phase 3 session per point at 115 200 baud with noisy round trips: a repeat is proposed as deadline-critical (section 9).
-- **The grover 'infidelity 0.109 at n=12' is not a wrong state:** the float32 state keeps its direction (normalised infidelity 5.5e-05 for n <= 12; beyond n=12 the direction error also grows: n=13: 1.1e-03, n=14: 1.7e-02 (above the 1e-3 gate from n=13); double matches theory) and loses norm mainly because the float32 constant 1/sqrt(2) is biased (the constant alone over-predicts the loss by about 16 %, section 6). The counter's 1.71 s vs 4520 s case was a **pairing artefact, not a range limit** (section 7).
+- **Time model:** a per-gate-kind model (M2) predicts held-out largest-n times with MAPE 17 % over all 32 non-weak held-out points (17 % over the 30 that also ran one firmware version; ESP32 6 %, ESP8266 15 %, Uno 25 %); one constant per board (M1) gives 47 %. M2's 'identifiable' label is **unstable**: by the rule it holds on held-out 2: esp32, esp8266, uno; held-out 3: esp32, esp8266; held-out 4: esp32, esp8266 (a coefficient of 0.0013 passes, 0.0000 fails). The fitted constants are a fit, not measured gate costs (the ESP8266 c_CNOT implies 4.18 CPU cycles per loop iteration, which is physically impossible).
+- **Offload crossover** is reported as two brackets of measured n (fast and slow PC simulation, section 5): 10 of 12 board x circuit pairs have a bracket under both bounds, 1 have no crossover up to the largest measured n under at least one bound, 8 bracket labels are *within noise* and 2 rest on a weak point. The bands reflect host PC speed (about 2x spread of the simulation time between sessions); one PC, one baud rate (115 200).
+- **The grover 'infidelity 0.109 at n=12' is not a wrong state:** the float32 state keeps its direction (normalised infidelity 5.5e-05 for n <= 12; beyond n=12 the direction error also grows: n=13: 1.1e-03, n=14: 1.7e-02 (above the 1e-3 gate from n=13); double matches theory) and loses norm mainly because the float32 constant 1/sqrt(2) is biased (the constant alone over-predicts the loss by about 16 % for n = 8..13 only; at n = 14 the predicted-over-measured log loss is 1.25x, so the statement does not extend beyond n = 13, section 6). The counter's 1.71 s vs 4520 s case was a **pairing artefact, not a range limit** (section 7).
 
 ## 2. Data used (audit)
 
@@ -24,38 +24,35 @@ skipped_compute_infeasible / skipped_sim_cost_infeasible (not run, not walls).
 |---|---|---|---|---|---|---|---|---|---|---|
 | Uno R3 | h_all | 6 | 2-7 | 100 | build_overflow n=8 | 1 / 1 | 0 | 5 / 7 | 2-22 @ 115200 | 100 |
 | Uno R3 | bell_ghz | 6 | 2-7 | 100 | build_overflow n=8 | 1 / 1 | 0 | 6 / 7 | 2-22 @ 115200 | 100 |
-| Uno R3 | qft | 6 | 2-7 | 100 | build_overflow n=8 | 1 / 1 | 0 | 6 / 7 | 2-22 @ 115200 | 100 |
+| Uno R3 | qft | 6 | 2-7 | 100 | build_overflow n=8 | 1 / 1 | 0 | 4 / 7 | 2-22 @ 115200 | 100 |
 | Uno R3 | grover | 6 | 2-7 | 100 | build_overflow n=8 | 1 / 1 | 0 | 4 / 7 | 2-10 @ 115200 | 100 |
 | ESP8266 | h_all | 11 | 2-12 | 100 | malloc_failed n=13 | 1 / 1 | 0 | 7 / 12 | 2-15 @ 115200 | 100 |
 | ESP8266 | bell_ghz | 11 | 2-12 | 100 | malloc_failed n=13 | 1 / 1 | 0 | 9 / 12 | 2-15 @ 115200 | 100 |
 | ESP8266 | qft | 11 | 2-12 | 100 | malloc_failed n=13 | 1 / 1 | 0 | 7 / 12 | 2-15 @ 115200 | 100 |
-| ESP8266 | grover | 9 | 2-10 | 4-100 | none (time-limited) | 3 / 2 | 0 | 3 / 9 | 2-13 @ 115200 | 2 |
-| ESP32 | h_all | 12 | 2-13 | 100 | malloc_failed n=14 | 1 / 1 | 0 | 12 / 13 | 2-14 @ 115200 | 100 |
-| ESP32 | bell_ghz | 12 | 2-13 | 100 | malloc_failed n=14 | 1 / 1 | 0 | 12 / 13 | 2-14 @ 115200 | 100 |
+| ESP8266 | grover | 9 | 2-10 | 4-100 | none (time-limited) | 3 / 2 | 0 | 9 / 19 | 2-13 @ 115200 | 2 |
+| ESP32 | h_all | 12 | 2-13 | 100 | malloc_failed n=14 | 1 / 1 | 0 | 11 / 13 | 2-14 @ 115200 | 100 |
+| ESP32 | bell_ghz | 12 | 2-13 | 100 | malloc_failed n=14 | 1 / 1 | 0 | 11 / 13 | 2-14 @ 115200 | 100 |
 | ESP32 | qft | 12 | 2-13 | 100 | malloc_failed n=14 | 1 / 1 | 0 | 12 / 13 | 2-14 @ 115200 | 100 |
-| ESP32 | grover | 11 | 2-12 | 1-100 | none (time-limited) | 2 / 1 | 0 | 9 / 11 | 2-13 @ 115200 | 2 |
+| ESP32 | grover | 11 | 2-12 | 1-100 | none (time-limited) | 2 / 1 | 0 | 11 / 15 | 2-13 @ 115200 | 2 |
 
 Series that span more than one hash (OBSERVED): Phase 2 ESP32 grover: n=2,3,4,5,6,7,8,9,10,11; n=12; Phase 2 ESP8266 grover: n=2,3,4,5,6,7; n=8; n=9,10; Phase 3 ESP8266 grover: n=2,3,4,5,6,7,8,9,10,11; n=12,13. Timing classes of the hashes behind every grover point (item 4, `data/derived/grover_hashes.csv`; classes in `analysis/phase4/firmware_hash_classes.csv`):
 **A** = reference (a committed tree, or an uncommitted edit that leaves the timed region unchanged), **B** = timing-relevant difference from the reference, **X** = uncommitted version whose content is unknown.
 
 | phase | board | hash | timing_class | n | reps | in_git |
 |---|---|---|---|---|---|---|
-| 2 | ESP32 | 4478147465f99625 | A | 12 | 1 | False |
-| 2 | ESP32 | 5f10cc9afc3fffe5 | A | 2,3,4,5,6,7,8,9,10,11 | 100,100,100,100,100,100,100,100,100,13 | True |
-| 2 | ESP8266 | 5413c474786bad15 | B | 9,10 | 37,4 | False |
-| 2 | ESP8266 | 6a19c55beaadc693 | A | 2,3,4,5,6,7 | 100,100,100,100,100,100 | True |
-| 2 | ESP8266 | 6cb0e9ea301922b4 | X | 8 | 100 | False |
+| 2 | ESP32 | 4478147465f99625 | A | 9,10,12 | 100,100,1 | True |
+| 2 | ESP32 | 5f10cc9afc3fffe5 | A | 2,3,4,5,6,7,8,11 | 100,100,100,100,100,100,100,13 | True |
+| 2 | ESP8266 | 5413c474786bad15 | B | 2,3,4,5,6,7,8,9,10 | 100,100,100,100,100,100,100,37,4 | True |
 | 2 | Uno R3 | 7feb4a04e1208c6b | A | 2,3,4,5,6,7 | 100,100,100,100,100,100 | True |
 | 3 | ESP32 | 1e404bfed41a49f2 | A | 2,3,4,5,6,7,8,9,10,11,12,13 | 100,100,100,100,100,100,100,100,100,42,9,2 | True |
-| 3 | ESP8266 | 1b7b5ca0cb3143d8 | B | 2,3,4,5,6,7,8,9,10,11 | 100,100,100,100,100,100,100,100,100,42 | True |
-| 3 | ESP8266 | e33508351a496315 | A | 12,13 | 9,2 | True |
-| 3 | Uno R3 | 8ce7531666759bcc | A | 2,3,4,5,6,7,8,9,10 | 100,100,100,100,100,100,100,100,100 | True |
+| 3 | ESP8266 | e33508351a496315 | A | 2,3,4,5,6,7,8,9,10 | 100,100,100,100,100,100,100,100,100 | True |
+| 3 | Uno R3 | 8ce7531666759bcc | A | 2,3,4,5,6,7,8 | 100,100,100,100,100,100,100 | True |
 
-Timing-relevant changes (INTERPRETATION from `data/derived/firmware_wip_diff.patch` and `git diff 5076c76 579fe78`): ESP8266 Phase 2 grover n=9, 10 ran with the uncommitted watchdog edit (class B): a timer1 interrupt (1 s period) fires **inside** `t0..t1` and the soft watchdog is no longer stopped around the circuit; n=8 ran a third, unrecoverable version (class X). ESP32 grover n=12 ran the uncommitted 64-bit timer edit (class A: Arduino `micros()` is the low 32 bits of the same `esp_timer_get_time()`; the edit only removes a wrap at 71.6 min). ESP8266 Phase 3 h_all/bell_ghz/qft and grover n <= 11 ran offload firmware without the `micros()` poll that commit 579fe78 added inside the wait loop (class B, expected small, UNVERIFIED). Uno and ESP32 Phase 3 are class A throughout.
+Timing-relevant changes (INTERPRETATION from `data/derived/firmware_wip_diff.patch` and `git diff 5076c76 579fe78`): ESP8266 Phase 2 grover (selected: n=2-8 from the repeat session r2, n=9-10 from the original) is one source hash in every point (class B): a timer1 interrupt (1 s period) fires **inside** `t0..t1` and the soft watchdog is no longer stopped around the circuit; the original n=2-7 (class A) and n=8 (class X, unrecoverable) are replaced by r2 and appear only in the reproducibility table. ESP32 grover n=12 ran the uncommitted 64-bit timer edit (class A: Arduino `micros()` is the low 32 bits of the same `esp_timer_get_time()`; the edit only removes a wrap at 71.6 min); the repeat session r2 of n=9-10 ran the same hash. ESP8266 Phase 3 (selected: the repeat session r2) is one offload hash in every point (class A); the original sessions ran offload firmware without that hash (class B: a `micros()` poll inside the wait loop that commit 579fe78 added, expected small, UNVERIFIED) and are replaced. Uno and ESP32 Phase 3 are class A throughout.
 
-**Counter.** A separate ESP32 device timed all three target boards. Calibration status confirmed: all 60 session sidecars have `"calibration": {}` and `"selftest": "self-loopback only"` (the 17.5 ppm PC-clock comparison of 2026-10-04 in `data/calibration/counter_20261004.json` is not linked to any session): **uncalibrated**. Which counter points are usable is decided in one place, `analysis/common/counter_validity.py` (section 7).
+**Counter.** A separate ESP32 device timed all three target boards. Calibration status confirmed: all 70 session sidecars have `"calibration": {}` and `"selftest": "self-loopback only"` (the 17.5 ppm PC-clock comparison of 2026-10-04 in `data/calibration/counter_20261004.json` is not linked to any session): **uncalibrated**. Which counter points are usable is decided in one place, `analysis/common/counter_validity.py` (section 7).
 
-**Data quality: repeated rows.** In `raw.csv`, ESP32 grover n=9: 100 rows, 39 independent, ESP32 grover n=10: 100 rows, 18 independent: rows after the first period are exact microsecond-level copies of earlier rows (ESP32 grover n=10: rows 20-99 repeat rows 10-19, period 10), which looks like duplicated lines. INTERPRETATION after a check on 2026-10-30: for ESP32 grover n=9 the counter measured 100 distinct pulse widths, and at the reps where `micros()` repeats (period 7 after warm-up) those widths drift smoothly by 0.2-0.4 us per cycle instead of scattering like the first reps (+-20 us); this is what a deterministic, periodic duration looks like, not duplicated serial lines, so the repeat is a property of the timing and no logging fault was found (n=10 cannot be checked this way: its first-session counter points were refused). The re-collected session r2 shows the same low number of distinct values (n=9: 12, n=10: 18 of 100). Statistics for these points use only the independent rows (`analysis/common/weak.py: effective_reps`); the medians move by less than 1e-6 relative.
+**Data quality: repeated rows.** In `raw.csv` of the selected sessions, ESP32 grover n=9: 100 rows, 15 independent, ESP32 grover n=10: 100 rows, 29 independent: rows after the first period are exact microsecond-level copies of earlier rows, which looks like duplicated lines. INTERPRETATION after a check on the original ESP32 grover n=9 session (where counter pairs exist): the counter measured 100 distinct pulse widths for 100 reps; among the reps that share one `micros()` value the counter widths spread by a median of 5.25 us (max - min), whereas the first 30 reps of `micros()` have an IQR of 14.5 us. A smooth, small spread at the repeats is what a deterministic, periodic duration looks like, not duplicated serial lines, so the repeat is treated as a property of the timing and no logging fault was found (n=10 cannot be checked this way: its first-session counter points were refused). The repeat session r2 shows the same low number of distinct values (n=9: 12, n=10: 18 of 100). Statistics for these points use only the independent rows (`analysis/common/weak.py: effective_reps`); the median moves by at most 2.7e-07 relative.
 
 **Phase 1 (PC build).** `infidelity_tvd.csv` is a subset of the 20261003 run (identical values where they overlap); grover n=12 only in the 20261004 file.
 
@@ -113,7 +110,7 @@ Gate counts: `firmware/common/circuits.hpp` (`analysis/phase4/gatecount.py`, cro
 - **M1**: t = c x work(n), one constant per board (1 parameter). **M1c**: one constant per (board, circuit). **M2**: t = (c_H N_H + c_CNOT N_CNOT + c_CPHASE N_CPHASE) 2^n + a G, non-negative least squares on relative error (4 parameters per board, shared by the circuits). **M2g**: M2 fitted without grover.
 - **Split (the split and the floor were fixed before any test point was scored; the weak, hash and identifiability rules were not, see below):** per series the largest 3 ok n are held out; every other point with median >= 100 us is a fit point unless it is weak or hash-flagged (then it is not fitted either). `timemodel.assert_homogeneous` fails if a fit mixes firmware timing classes.
 
-**Status of the choice of M2 (stated plainly).** M2 has the functional form of "Model B" of `analysis/phase2_gate_cost_fit.py` / `docs/report/paper_outline.md`, whose out-of-sample errors on grover were already known before the Phase 4 analysis was started. M2 was written down in the first Phase 4 commit (`bf9b692`) before this analysis was first run, but it was **not defined blind**: it was not chosen before test errors on grover had been seen by the project. Fixed before scoring: the split (held-out = largest 3 n) and the 100 us floor. **Not** fixed before scoring: the weak rule (the first analysis used 10 repetitions, this fix round uses 30, after the first test scores were known), the hash classes, the identifiable rule and its boundary condition, and the effective-repetition check (section 2). Their combined effect is small (M2 over all series 18.0 % with the weak points, 19.1 % without). The condition-number cap (1e+04) never binds (largest value 4.7); the rule that binds is the zero-boundary condition, which has no claim of being set in advance. Held-out = largest 3 n stays primary; the sensitivity to 2 and 4 is reported in full.
+**Status of the choice of M2 (stated plainly).** M2 has the functional form of "Model B" of `analysis/phase2_gate_cost_fit.py` / `docs/report/paper_outline.md`, whose out-of-sample errors on grover were already known before the Phase 4 analysis was started. M2 was written down in the first Phase 4 commit (`bf9b692`) before this analysis was first run, but it was **not defined blind**: it was not chosen before test errors on grover had been seen by the project. Fixed before scoring: the split (held-out = largest 3 n) and the 100 us floor. **Not** fixed before scoring: the weak rule (the first analysis used 10 repetitions, this fix round uses 30, after the first test scores were known), the hash classes, the identifiable rule and its boundary condition, and the effective-repetition check (section 2). Their combined effect is small (M2 over all series 16.3 % with the weak points, 17.0 % without). The condition-number cap (1e+04) never binds (largest value 4.7); the rule that binds is the zero-boundary condition, which has no claim of being set in advance. Held-out = largest 3 n stays primary; the sensitivity to 2 and 4 is reported in full.
 
 Identifiability (`time_identifiability.csv`): a fit is identifiable if n_fit >= params + 2, the design matrix has full column rank, its column-scaled condition number is <= 1e+04 and no coefficient sits on the NNLS zero boundary.
 
@@ -123,35 +120,35 @@ Identifiability (`time_identifiability.csv`): a fit is identifiable if n_fit >= 
 | Uno R3 | bell_ghz | 3 | 2 3 4 | 1 | True | 4 | 12 | 4 | 4.68 | True | False | 2 / False |
 | Uno R3 | qft | 3 | 2 3 4 | 1 | True | 4 | 12 | 4 | 4.68 | True | False | 3 / False |
 | Uno R3 | grover | 3 | 2 3 4 | 1 | True | 4 | 12 | 4 | 4.68 | True | False | 3 / False |
-| ESP8266 | h_all | 6 | 4 5 6 7 8 9 | 1 | True | 4 | 24 | 4 | 2.62 | False | True | 2 / False |
-| ESP8266 | bell_ghz | 5 | 5 6 7 8 9 | 1 | True | 4 | 24 | 4 | 2.62 | False | True | 3 / False |
-| ESP8266 | qft | 7 | 3 4 5 6 7 8 9 | 1 | True | 4 | 24 | 4 | 2.62 | False | True | 3 / False |
-| ESP8266 | grover | 6 | 2 3 4 5 6 7 | 1 | True | 4 | 24 | 4 | 2.62 | False | True | 4 / True |
-| ESP32 | h_all | 3 | 8 9 10 | 1 | True | 4 | 18 | 4 | 1.84 | False | True | 2 / False |
-| ESP32 | bell_ghz | 3 | 8 9 10 | 1 | True | 4 | 18 | 4 | 1.84 | False | True | 3 / False |
-| ESP32 | qft | 5 | 6 7 8 9 10 | 1 | True | 4 | 18 | 4 | 1.84 | False | True | 3 / False |
-| ESP32 | grover | 7 | 3 4 5 6 7 8 9 | 1 | True | 4 | 18 | 4 | 1.84 | False | True | 4 / True |
+| ESP8266 | h_all | 6 | 4 5 6 7 8 9 | 1 | True | 4 | 18 | 4 | 2.61 | False | True | 2 / False |
+| ESP8266 | bell_ghz | 5 | 5 6 7 8 9 | 1 | True | 4 | 18 | 4 | 2.61 | False | True | 3 / False |
+| ESP8266 | qft | 7 | 3 4 5 6 7 8 9 | 1 | True | 4 | 18 | 4 | 2.61 | False | True | 3 / False |
+| ESP8266 | grover | 0 | nan | 1 | False | 4 | 18 | 4 | 2.61 | False | True | 0 / False |
+| ESP32 | h_all | 3 | 8 9 10 | 1 | True | 4 | 17 | 4 | 1.81 | False | True | 2 / False |
+| ESP32 | bell_ghz | 3 | 8 9 10 | 1 | True | 4 | 17 | 4 | 1.81 | False | True | 3 / False |
+| ESP32 | qft | 5 | 6 7 8 9 10 | 1 | True | 4 | 17 | 4 | 1.81 | False | True | 3 / False |
+| ESP32 | grover | 6 | 3 4 5 6 7 8 | 1 | True | 4 | 17 | 4 | 1.81 | False | True | 4 / True |
 
-OBSERVED: M1 is identifiable in every series. M2 fitted to the **board** passes the rule on ESP8266, ESP32 and fails on Uno R3 (a coefficient is exactly 0: the per-call term) at held-out 3, **but the verdict changes with the held-out size**: held-out 2: esp32, esp8266, uno; held-out 3: esp32, esp8266; held-out 4: esp32. The rule is a knife edge, so 'identifiable' is not used as a headline filter. M2 fitted to a **single series** passes only for grover on the ESP boards (single-kernel circuits leave columns empty). The earlier remark that N_CNOT 2^n and G are nearly collinear on the ESP8266 is withdrawn (condition number 2.62). **The ESP8266 c_CNOT = 0.0013 us per loop iteration is 0.10 cycles at 80 MHz, but `qsim_cnot` visits all 2^n indices (`firmware/common/qsim.hpp:86`), so a cost this small is physically impossible**; the NNLS split between the per-call term (a = 15.2 us) and the per-iteration terms is not reliable (INTERPRETATION: the per-call term absorbs part of the CNOT cost). On the ESP32 the kernel costs are 19 (H), 22 (CNOT) and 12 (CPHASE) cycles per iteration at 240 MHz, a plausible magnitude for a loop over 8-byte structs. Smallest-to-largest kernel coefficient per board: Uno R3 0.149, ESP8266 0.001, ESP32 0.546.
+OBSERVED: M1 is identifiable in every series. M2 fitted to the **board** passes the rule on ESP8266, ESP32 and fails on Uno R3 (a coefficient is exactly 0: the per-call term) at held-out 3, **but the verdict changes with the held-out size**: held-out 2: esp32, esp8266, uno; held-out 3: esp32, esp8266; held-out 4: esp32, esp8266. The rule is a knife edge, so 'identifiable' is not used as a headline filter. M2 fitted to a **single series** passes only for grover on the ESP boards (single-kernel circuits leave columns empty). The earlier remark that N_CNOT 2^n and G are nearly collinear on the ESP8266 is withdrawn (condition number 2.61). **The ESP8266 c_CNOT = 0.0522 us per loop iteration is 4.18 cycles at 80 MHz, but `qsim_cnot` visits all 2^n indices (`firmware/common/qsim.hpp:86`), so a cost this small is physically impossible**; the NNLS split between the per-call term (a = 8.4 us) and the per-iteration terms is not reliable (INTERPRETATION: the per-call term absorbs part of the CNOT cost). On the ESP32 the kernel costs are 19 (H), 22 (CNOT) and 12 (CPHASE) cycles per iteration at 240 MHz, a plausible magnitude for a loop over 8-byte structs. Smallest-to-largest kernel coefficient per board: Uno R3 0.149, ESP8266 0.020, ESP32 0.545.
 
 Fitted constants (us per loop iteration; a: us per gate call):
 
 | board | M1 c (us/iter) | n_fit | M2 c_H | c_CNOT | c_CPHASE | a per call (us) |
 |---|---|---|---|---|---|---|
 | Uno R3 | 20.8032 | 12 | 33.4902 | 4.9938 | 33.3057 | 0.00 |
-| ESP8266 | 0.7365 | 24 | 2.5749 | 0.0013 | 1.6024 | 15.23 |
-| ESP32 | 0.0736 | 18 | 0.0776 | 0.0901 | 0.0492 | 1.03 |
+| ESP8266 | 0.6770 | 18 | 2.6608 | 0.0522 | 1.4620 | 8.41 |
+| ESP32 | 0.0738 | 17 | 0.0775 | 0.0896 | 0.0489 | 1.03 |
 
 Held-out MAPE (point-weighted; `primary` = non-weak test points; `with weak` adds the weak ones; `clean` = non-weak and hash class A; identifiable = M2 board fit identifiable):
 
 | scope | model | primary: MAPE % (n pts) | with weak: MAPE % (n pts) | clean: MAPE % (n pts) | Uno R3 primary | ESP8266 primary | ESP32 primary |
 |---|---|---|---|---|---|---|---|
-| all series | M1 | 48.0 (32) | 44.7 (36) | 47.0 (30) | 44.8 (12) | 69.1 (11) | 26.4 (9) |
-| all series | M2 | 19.1 (32) | 18.0 (36) | 18.9 (30) | 24.9 (12) | 23.1 (11) | 6.5 (9) |
-| identifiable series only | M1 | 48.0 (32) | 44.7 (36) | 47.0 (30) | 44.8 (12) | 69.1 (11) | 26.4 (9) |
-| identifiable series only | M2 | 15.6 (20) | 14.5 (24) | 14.9 (18) | - | 23.1 (11) | 6.5 (9) |
-| excluding grover | M1 | 50.8 (27) | 50.8 (27) | 50.8 (27) | 55.2 (9) | 70.7 (9) | 26.4 (9) |
-| excluding grover | M2 | 19.6 (27) | 19.6 (27) | 19.6 (27) | 29.0 (9) | 23.3 (9) | 6.5 (9) |
+| all series | M1 | 47.3 (32) | 44.2 (36) | 46.1 (30) | 44.8 (12) | 67.2 (11) | 26.4 (9) |
+| all series | M2 | 17.0 (32) | 16.3 (36) | 16.5 (30) | 24.9 (12) | 17.2 (11) | 6.5 (9) |
+| identifiable series only | M1 | 46.1 (30) | 42.4 (33) | 46.1 (30) | 44.8 (12) | 67.7 (9) | 26.4 (9) |
+| identifiable series only | M2 | 12.4 (20) | 11.9 (24) | 10.9 (18) | - | 17.2 (11) | 6.5 (9) |
+| excluding grover | M1 | 49.8 (27) | 49.8 (27) | 49.8 (27) | 55.2 (9) | 67.7 (9) | 26.4 (9) |
+| excluding grover | M2 | 17.0 (27) | 17.0 (27) | 17.0 (27) | 29.0 (9) | 15.4 (9) | 6.5 (9) |
 
 Per series (primary; `*` = weak and not scored, `[class]` = firmware timing class):
 
@@ -161,46 +158,114 @@ Per series (primary; `*` = weak and not scored, `[class]` = firmware timing clas
 | Uno R3 | bell_ghz | 2 3 4 | 5[A], 6[A], 7[A] | 122.2 / 146.7 | 4.4 / 7.5 |
 | Uno R3 | qft | 2 3 4 | 5[A], 6[A], 7[A] | 12.9 / 21.4 | 71.0 / 94.6 |
 | Uno R3 | grover | 2 3 4 | 5[A], 6[A], 7[A] | 13.5 / 24.4 | 12.3 / 22.7 |
-| ESP8266 | h_all | 4 5 6 7 8 9 | 10[A], 11[A], 12[A] | 73.1 / 73.1 | 5.6 / 5.8 |
-| ESP8266 | bell_ghz | 5 6 7 8 9 | 10[A], 11[A], 12[A] | 92.2 / 100.5 | 36.2 / 40.2 |
-| ESP8266 | qft | 3 4 5 6 7 8 9 | 10[A], 11[A], 12[A] | 46.8 / 48.0 | 28.1 / 29.8 |
-| ESP8266 | grover | 2 3 4 5 6 7 | 8[X], 9[B], 10*[B] | 61.8 / 62.5 | 22.3 / 22.6 |
-| ESP32 | h_all | 8 9 10 | 11[A], 12[A], 13[A] | 6.5 / 6.7 | 1.2 / 1.2 |
-| ESP32 | bell_ghz | 8 9 10 | 11[A], 12[A], 13[A] | 27.4 / 27.5 | 12.0 / 12.2 |
-| ESP32 | qft | 6 7 8 9 10 | 11[A], 12[A], 13[A] | 45.4 / 50.7 | 6.3 / 10.1 |
-| ESP32 | grover | 3 4 5 6 7 8 9 | 10*[A], 11*[A], 12*[A] | no non-weak test point | no non-weak test point |
+| ESP8266 | h_all | 4 5 6 7 8 9 | 10[A], 11[A], 12[A] | 75.3 / 75.3 | 2.6 / 2.8 |
+| ESP8266 | bell_ghz | 5 6 7 8 9 | 10[A], 11[A], 12[A] | 76.6 / 84.3 | 23.1 / 26.0 |
+| ESP8266 | qft | 3 4 5 6 7 8 9 | 10[A], 11[A], 12[A] | 51.1 / 52.2 | 20.4 / 21.8 |
+| ESP8266 | grover |  | 8[B], 9[B], 10*[B] | 64.9 / 65.5 | 25.2 / 25.8 |
+| ESP32 | h_all | 8 9 10 | 11[A], 12[A], 13[A] | 6.4 / 6.6 | 1.3 / 1.4 |
+| ESP32 | bell_ghz | 8 9 10 | 11[A], 12[A], 13[A] | 27.3 / 27.4 | 12.4 / 12.6 |
+| ESP32 | qft | 6 7 8 9 10 | 11[A], 12[A], 13[A] | 45.6 / 51.0 | 5.8 / 9.6 |
+| ESP32 | grover | 3 4 5 6 7 8 | 10*[A], 11*[A], 12*[A] | no non-weak test point | no non-weak test point |
 
 Sensitivity to the held-out size (primary MAPE % (points); the primary choice is largest 3):
 
 | held-out = largest n | M1 all | M1 identifiable | M1c all | M1c identifiable | M2 all | M2 identifiable | M2g all | M2g identifiable |
 |---|---|---|---|---|---|---|---|---|
-| 2 | 47.0 (21) | 47.0 (21) | 25.3 (21) | 25.3 (21) | 15.8 (21) | 15.8 (21) | 12.1 (21) | 12.1 (21) |
-| 3 | 48.0 (32) | 48.0 (32) | 28.7 (32) | 28.7 (32) | 19.1 (32) | 15.6 (20) | 13.8 (32) | 12.3 (20) |
-| 4 | 47.9 (44) | 61.8 (20) | 31.8 (44) | 31.1 (20) | 19.2 (44) | 6.1 (13) | 14.0 (44) | 6.6 (13) |
+| 2 | 46.4 (21) | 45.4 (20) | 24.2 (20) | 24.2 (20) | 14.1 (21) | 14.1 (21) | 12.1 (21) | 12.1 (21) |
+| 3 | 47.3 (32) | 46.1 (30) | 27.6 (30) | 27.6 (30) | 17.0 (32) | 12.4 (20) | 13.8 (32) | 12.3 (20) |
+| 4 | 48.2 (43) | 63.4 (16) | 29.6 (40) | 25.5 (16) | 17.9 (43) | 14.5 (27) | 14.2 (43) | 14.6 (27) |
 
-OBSERVED: M2 beats M1 in every scope; the 'identifiable' scope M2 MAPE is 6.1-15.8 % across the held-out sizes 2-4 (the set of identifiable boards and points changes with the size, see the point counts); the excluded-grover and hash-clean numbers move the headline by only a few points. M2 on the points of the identifiable scope: 15.6 % against 49.9 % for M1 (ESP32 6.5 % vs 26.4 %, ESP8266 23.1 % vs 69.1 %). The ESP8266 grover test points are all hash-flagged (n=8 class X, n=9 class B, n=10 class B and weak), so the clean set has **no ESP8266 grover test point**; **no ESP32 grover test point is non-weak any more** (n=10 has 18 independent repetitions, n=11 13, n=12 1).
+OBSERVED: M2 beats M1 in every scope; the 'identifiable' scope M2 MAPE is 12.4-14.5 % across the held-out sizes 2-4 (the set of identifiable boards and points changes with the size, see the point counts); the excluded-grover and hash-clean numbers move the headline by only a few points. M2 on the points of the identifiable scope: 12.4 % against 48.8 % for M1 (ESP32 6.5 % vs 26.4 %, ESP8266 17.2 % vs 67.2 %). Every selected ESP8266 grover point is class B (one hash, timer1 interrupt inside the timed region), so the hash rule leaves **no ESP8266 grover fit point and no clean test point** (its test points n=8, 9, 10 are scored separately and flagged); **no ESP32 grover test point is non-weak any more** (n=10 has 29 independent repetitions, n=11 13, n=12 1).
 Where the model fails (INTERPRETATION): Uno qft (only 3 fit points per series and no identifiable M2); grover on the ESP boards is a firmware-version and rep-count confound, not a model result; memory-system effects (cache, flash wait states) are not in the model and were not checked (UNVERIFIED).
 
 ## 5. Offload
 
-Local = Phase 2 median per run (`micros()`, on the board). Offload = Phase 3 median `e2e_latency_us` per request (request frame, PC statevector simulation with Qiskit Aer, one sampled outcome, reply), 115 200 baud, no timeouts or CRC errors. The crossover is reported two ways: the **first measured n** at which offload is faster, and **n\*** by log-linear interpolation **between the two measured n that bracket it** (never extrapolated; WEAK if a bracketing point is weak). For every pair the offload/local ratio is given at the largest overlapping n and at the largest non-weak overlapping n. Phase 3 covers every Phase 2 ok n for all 12 board x circuit pairs (test `timemodel_test.py`); F4 plots the complete local and offload point sets.
+Local = Phase 2 median per run (`micros()`, on the board). Offload = Phase 3 median `e2e_latency_us` per request (request frame, PC statevector simulation with Qiskit Aer, one sampled outcome, reply), 115 200 baud, no timeouts or CRC errors. **Decomposition.** The round trip of a Phase 3 point is split into wire time (frame bytes x 10 bit / baud, 0.87 ms for a 10-byte frame at 115 200 baud), the PC simulation time (`pc_sim_s_median`, Aer build + run + sample, logged per point) and a residual (board compute, USB-serial latency, host scheduling); the parts are medians of one point and do not add exactly (`data/derived/phase3_decomposition.csv`). The simulation depends on circuit and n, not on the board, but on the speed of the host PC in the session: it varies about 2x between sessions on the same PC (grover n=9: 4.1-8.8 s over four sessions on three boards), while the board-and-link residual is stable at about 0.5-0.8 ms. **Band.** For each circuit and n the observed minimum and maximum `pc_sim` over every Phase 3 session on every board (replaced sessions included, in-scope n only; `data/derived/phase3_pc_sim_range.csv`) bound the offload latency: wire + residual (of the board, selected session) + `pc_sim` min / max. **Crossover** = bracket of two measured n between which the offload band drops below the Phase 2 local median and stays below at every larger measured n, once for the fast bound and once for the slow bound; no extrapolation and no interpolated single value. Labels: *within noise* = the local IQR and the offload IQR (shifted to the bound) overlap at an end of the bracket; *weak* = a point of the bracket has fewer than 30 reps or requests (or the extreme `pc_sim` comes from such a point); *none up to n* = local stays faster at the largest measured n under that bound. Scope: n >= 2 and, in Phase 3, n up to the board's Phase 2 wall. The bands reflect host PC speed, so a different PC moves the brackets (INTERPRETATION: the 2x session spread is a PC-state effect, its cause is not recorded in the sidecars).
 
-| board | circuit | local n range | first measured n offload faster | n* (interpolated between measured n) | n largest overlap | offload/local there | n largest non-weak overlap | offload/local there  |
-|---|---|---|---|---|---|---|---|---|
-| ESP32 | bell_ghz | 2-13 | 13 | 12.63 | 13 | 0.78 | 13 | 0.78 |
-| ESP32 | grover | 2-12 | 9 | 8.90 | 12 | 0.08 (weak point) | 9 | 0.94 |
-| ESP32 | h_all | 2-13 | none | - | 13 | 1.11 | 13 | 1.11 |
-| ESP32 | qft | 2-13 | 13 | 12.19 | 13 | 0.47 | 13 | 0.47 |
-| ESP8266 | bell_ghz | 2-12 | 10 | 9.94 | 12 | 0.21 | 12 | 0.21 |
-| ESP8266 | grover | 2-10 | 4 | 3.65 | 10 | 0.02 (weak point) | 9 | 0.05 |
-| ESP8266 | h_all | 2-12 | 8 | 7.33 | 12 | 0.03 | 12 | 0.03 |
-| ESP8266 | qft | 2-12 | 8 | 7.07 | 12 | 0.02 | 12 | 0.02 |
-| Uno R3 | bell_ghz | 2-7 | 6 | 5.96 | 7 | 0.36 | 7 | 0.36 |
-| Uno R3 | grover | 2-7 | 2 | - | 7 | 0.01 | 7 | 0.01 |
-| Uno R3 | h_all | 2-7 | 5 | 4.46 | 7 | 0.13 | 7 | 0.13 |
-| Uno R3 | qft | 2-7 | 4 | 3.67 | 7 | 0.09 | 7 | 0.09 |
+| board | circuit | measured n (local and offload) | crossover, fast PC (bracket of measured n) | labels (fast) | crossover, slow PC (bracket of measured n) | labels (slow) |
+|---|---|---|---|---|---|---|
+| ESP32 | bell_ghz | 2-13 | 12-13 | - | 12-13 | - |
+| ESP32 | grover | 2-12 | 8-9 | weak | 9-10 | weak |
+| ESP32 | h_all | 2-13 | 12-13 | within noise | none up to n=13 | no crossover up to the largest measured n |
+| ESP32 | qft | 2-13 | 11-12 | - | 12-13 | - |
+| ESP8266 | bell_ghz | 2-12 | 9-10 | within noise | 10-11 | within noise |
+| ESP8266 | grover | 2-10 | 3-4 | - | 4-5 | - |
+| ESP8266 | h_all | 2-12 | 7-8 | within noise | 7-8 | - |
+| ESP8266 | qft | 2-12 | 6-7 | within noise | 7-8 | - |
+| Uno R3 | bell_ghz | 2-7 | 5-6 | - | 6-7 | within noise |
+| Uno R3 | grover | 2-7 | <= 2 (offload faster at the smallest measured n) | offload faster at the smallest measured n | 2-3 | within noise |
+| Uno R3 | h_all | 2-7 | 4-5 | - | 4-5 | - |
+| Uno R3 | qft | 2-7 | 3-4 | - | 3-4 | within noise |
 
-OBSERVED: the Phase 3 floor at n <= 4 is 3.4 ms (Uno), 3.3 ms (ESP8266), 6.8 ms (ESP32) (median over the points); IQR/median of the Phase 3 round trips exceeds 20 % in 55 % of the 177 Phase 3 points (`analysis/phase4/p4common.py: load_offload`), so each n* carries about one qubit of uncertainty (INTERPRETATION). Beyond the local wall only offload exists: Uno offload to n=22 (wall 8), ESP8266 to n=15 (wall 13), ESP32 to n=14 (wall 14). Uno grover is already faster offloaded at the smallest n. Grover offload points at n >= 11 on the ESP boards have 2-42 requests (weak at n=12, 13).
+OBSERVED: the Phase 3 floor at n <= 4 is 3.4 ms (Uno), 3.7 ms (ESP8266), 6.8 ms (ESP32) (median over the points); IQR/median of the Phase 3 round trips exceeds 20 % in 60 % of the 124 Phase 3 points (`analysis/phase4/p4common.py: load_offload`), the spread between sessions is mostly the PC simulation time (section 8, item 12), which the band of the crossover table covers. Beyond the local wall only offload exists: Uno offload to n=8 (wall 8), ESP8266 to n=13 (wall 13), ESP32 to n=14 (wall 14). Grover offload points at n >= 11 on the ESP boards have 2-42 requests (weak at n=12, 13).
+
+### Reproducibility: points measured in more than one session
+
+Every in-scope point that exists in more than one session (original and repeat sessions r2, r2b, r2c; `data/derived/reproducibility.csv`). Sessions: `orig` = original collection. Max rel. difference = largest pairwise |a - b| / min(|a|, |b|). Phase 2 is the board timer (`micros()`, median over the independent repetitions), 9 points, max difference 0.0056 %. Phase 3 shows the round trip, its PC simulation part and the board-and-link residual separately (45 points, all ESP8266): the round trip differs by a median 14 % (max 114 %), the PC simulation by a median 21 %, the residual by a median 96 us (a relative figure of the residual is dominated by its small size and is in the CSV).
+
+**Phase 2 (board timer)**
+
+| board | circuit | n | sessions | median per session (us) | max rel. difference |
+|---|---|---|---|---|---|
+| ESP32 | grover | 9 | orig;r2;r2b;r2c | 7334256.000;7334247.000;7334249.000;7334247.000 | 0.0001 % |
+| ESP32 | grover | 10 | orig;r2 | 63566277.000;63566287.000 | 0.0000 % |
+| ESP8266 | grover | 2 | orig;r2 | 669.000;669.000 | 0.0000 % |
+| ESP8266 | grover | 3 | orig;r2 | 3003.000;3003.000 | 0.0000 % |
+| ESP8266 | grover | 4 | orig;r2 | 13930.000;13930.000 | 0.0000 % |
+| ESP8266 | grover | 5 | orig;r2 | 66238.500;66240.000 | 0.0023 % |
+| ESP8266 | grover | 6 | orig;r2 | 430161.000;430137.000 | 0.0056 % |
+| ESP8266 | grover | 7 | orig;r2;r2b | 2877381.000;2877385.000;2877385.000 | 0.0001 % |
+| ESP8266 | grover | 8 | orig;r2;r2b;r2c | 23788944.000;23789072.000;23789072.000;23789072.000 | 0.0005 % |
+
+**Phase 3 (offload round trip, ESP8266, original and r2)**
+
+| board | circuit | n | sessions | e2e per session (us) | max rel. diff e2e | pc_sim per session (us) | max rel. diff pc_sim | residual per session (us) | max abs. diff residual (us) |
+|---|---|---|---|---|---|---|---|---|---|
+| ESP8266 | bell_ghz | 2 | orig;r2 | 3098.000;3104.500 | 0.2 % | 1600.000;1600.000 | 0.0 % | 629.944;636.444 | 6 |
+| ESP8266 | bell_ghz | 3 | orig;r2 | 2889.000;3522.000 | 21.9 % | 1400.000;2000.000 | 42.9 % | 620.944;653.944 | 33 |
+| ESP8266 | bell_ghz | 4 | orig;r2 | 3274.500;2429.000 | 34.8 % | 1700.000;1000.000 | 70.0 % | 706.444;560.944 | 146 |
+| ESP8266 | bell_ghz | 5 | orig;r2 | 3250.000;3447.000 | 6.1 % | 1700.000;1800.000 | 5.9 % | 681.944;778.944 | 97 |
+| ESP8266 | bell_ghz | 6 | orig;r2 | 3233.500;4092.000 | 26.6 % | 1700.000;2400.000 | 41.2 % | 665.444;823.944 | 158 |
+| ESP8266 | bell_ghz | 7 | orig;r2 | 3419.500;4029.500 | 17.8 % | 1900.000;2500.000 | 31.6 % | 651.444;661.444 | 10 |
+| ESP8266 | bell_ghz | 8 | orig;r2 | 3642.500;4029.500 | 10.6 % | 2100.000;2400.000 | 14.3 % | 674.444;761.444 | 87 |
+| ESP8266 | bell_ghz | 9 | orig;r2 | 3497.500;4108.500 | 17.5 % | 2000.000;2600.000 | 30.0 % | 629.444;640.444 | 11 |
+| ESP8266 | bell_ghz | 10 | orig;r2 | 3914.500;4449.000 | 13.7 % | 2300.000;2800.000 | 21.7 % | 746.444;780.944 | 34 |
+| ESP8266 | bell_ghz | 11 | orig;r2 | 4509.500;4306.500 | 4.7 % | 2900.000;2500.000 | 16.0 % | 741.444;938.444 | 197 |
+| ESP8266 | bell_ghz | 12 | orig;r2 | 3868.000;3287.500 | 17.7 % | 2300.000;1900.000 | 21.1 % | 699.944;519.444 | 180 |
+| ESP8266 | bell_ghz | 13 | orig;r2 | 4576.000;4628.000 | 1.1 % | 2900.000;3100.000 | 6.9 % | 807.944;659.944 | 148 |
+| ESP8266 | grover | 2 | orig;r2 | 4002.000;4317.500 | 7.9 % | 2500.000;2700.000 | 8.0 % | 633.944;749.444 | 116 |
+| ESP8266 | grover | 3 | orig;r2 | 7178.500;6485.000 | 10.7 % | 5600.000;4800.000 | 16.7 % | 710.444;816.944 | 106 |
+| ESP8266 | grover | 4 | orig;r2 | 8734.000;10382.000 | 18.9 % | 7400.000;9000.000 | 21.6 % | 465.944;513.944 | 48 |
+| ESP8266 | grover | 5 | orig;r2 | 24186.500;21562.000 | 12.2 % | 22800.000;20000.000 | 14.0 % | 518.444;693.944 | 176 |
+| ESP8266 | grover | 6 | orig;r2 | 95679.500;86437.500 | 10.7 % | 94500.000;84900.000 | 11.3 % | 311.444;669.444 | 358 |
+| ESP8266 | grover | 7 | orig;r2 | 364144.500;336178.000 | 8.3 % | 363700.000;334700.000 | 8.7 % | -423.556;609.944 | 1034 |
+| ESP8266 | grover | 8 | orig;r2 | 1974981.500;1547022.500 | 27.7 % | 1982500.000;1545800.000 | 28.3 % | -8386.556;354.444 | 8741 |
+| ESP8266 | grover | 9 | orig;r2 | 8751309.500;4080423.500 | 114.5 % | 8782700.000;4079400.000 | 115.3 % | -32258.556;155.444 | 32414 |
+| ESP8266 | grover | 10 | orig;r2 | 31465469.000;19135890.000 | 64.4 % | 31464300.000;19138900.000 | 64.4 % | 300.944;-3878.056 | 4179 |
+| ESP8266 | h_all | 2 | orig;r2 | 3230.000;3498.500 | 8.3 % | 1700.000;1900.000 | 11.8 % | 661.944;730.444 | 68 |
+| ESP8266 | h_all | 3 | orig;r2 | 3176.500;3740.500 | 17.8 % | 1600.000;2100.000 | 31.2 % | 708.444;772.444 | 64 |
+| ESP8266 | h_all | 4 | orig;r2 | 3165.500;3710.000 | 17.2 % | 1700.000;2100.000 | 23.5 % | 597.444;741.944 | 144 |
+| ESP8266 | h_all | 5 | orig;r2 | 3257.500;4080.000 | 25.2 % | 1700.000;2500.000 | 47.1 % | 689.444;711.944 | 22 |
+| ESP8266 | h_all | 6 | orig;r2 | 3320.500;4126.000 | 24.3 % | 1800.000;2400.000 | 33.3 % | 652.444;857.944 | 206 |
+| ESP8266 | h_all | 7 | orig;r2 | 3164.000;3796.000 | 20.0 % | 1600.000;2200.000 | 37.5 % | 695.944;727.944 | 32 |
+| ESP8266 | h_all | 8 | orig;r2 | 3453.000;3601.000 | 4.3 % | 1900.000;2000.000 | 5.3 % | 684.944;732.944 | 48 |
+| ESP8266 | h_all | 9 | orig;r2 | 3412.500;3851.000 | 12.8 % | 2000.000;2100.000 | 5.0 % | 544.444;882.944 | 338 |
+| ESP8266 | h_all | 10 | orig;r2 | 3659.000;4388.500 | 19.9 % | 2100.000;2700.000 | 28.6 % | 690.944;820.444 | 130 |
+| ESP8266 | h_all | 11 | orig;r2 | 4200.000;5025.500 | 19.7 % | 2500.000;3400.000 | 36.0 % | 831.944;757.444 | 74 |
+| ESP8266 | h_all | 12 | orig;r2 | 4131.500;2684.000 | 53.9 % | 2600.000;1200.000 | 116.7 % | 663.444;615.944 | 48 |
+| ESP8266 | h_all | 13 | orig;r2 | 4960.000;5539.500 | 11.7 % | 3400.000;4000.000 | 17.6 % | 691.944;671.444 | 20 |
+| ESP8266 | qft | 2 | orig;r2 | 3661.000;3457.500 | 5.9 % | 2100.000;1800.000 | 16.7 % | 692.944;789.444 | 96 |
+| ESP8266 | qft | 3 | orig;r2 | 2896.000;4461.000 | 54.0 % | 1500.000;2900.000 | 93.3 % | 527.944;692.944 | 165 |
+| ESP8266 | qft | 4 | orig;r2 | 3931.500;4677.000 | 19.0 % | 2400.000;3100.000 | 29.2 % | 663.444;708.944 | 46 |
+| ESP8266 | qft | 5 | orig;r2 | 4849.000;4949.500 | 2.1 % | 3300.000;3300.000 | 0.0 % | 680.944;781.444 | 100 |
+| ESP8266 | qft | 6 | orig;r2 | 5826.000;5560.000 | 4.8 % | 4300.000;4000.000 | 7.5 % | 657.944;691.944 | 34 |
+| ESP8266 | qft | 7 | orig;r2 | 6625.500;5401.000 | 22.7 % | 5200.000;3900.000 | 33.3 % | 557.444;632.944 | 76 |
+| ESP8266 | qft | 8 | orig;r2 | 7337.000;5829.500 | 25.9 % | 5900.000;4400.000 | 34.1 % | 568.944;561.444 | 8 |
+| ESP8266 | qft | 9 | orig;r2 | 7456.500;6630.500 | 12.5 % | 6100.000;5200.000 | 17.3 % | 488.444;562.444 | 74 |
+| ESP8266 | qft | 10 | orig;r2 | 7568.500;7219.500 | 4.8 % | 6100.000;5800.000 | 5.2 % | 600.444;551.444 | 49 |
+| ESP8266 | qft | 11 | orig;r2 | 8081.000;7628.000 | 5.9 % | 6600.000;6100.000 | 8.2 % | 612.944;659.944 | 47 |
+| ESP8266 | qft | 12 | orig;r2 | 8487.500;8267.500 | 2.7 % | 6900.000;6900.000 | 0.0 % | 719.444;499.444 | 220 |
+| ESP8266 | qft | 13 | orig;r2 | 8689.500;8690.000 | 0.0 % | 7300.000;7100.000 | 2.8 % | 521.444;721.944 | 200 |
 
 ## 6. Grover correctness (item 1)
 
@@ -228,7 +293,7 @@ OBSERVED: the Phase 3 floor at n <= 4 is 3.4 ms (Uno), 3.3 ms (ESP8266), 6.8 ms 
 | 13 | 71 | 71 | 0.999916 | 16775183 | 0.609505 | 0.563161 | 0.609132 | 0.999388 | 0.391162 | 0.001095 | -2.016e-09 | - |
 | 14 | 100 | 100 | 1.000000 | 70866814 | 0.142686 | 0.088419 | 0.140189 | 0.982504 | 0.859795 | 0.017384 | -8.519e-09 | - |
 
-**(d) Cause: precision, not definition and not a bug.** The double build equals the closed-form state (infidelity <= 8.5e-09 for every n) and Aer does too (<= 6.2e-11 for n <= 12), so both implementations realise the circuit that theory describes for their k. The float32 build has the right **direction** (normalised infidelity <= 5.5e-05 for n <= 12; beyond n=12 the direction error also grows: n=13: 1.1e-03, n=14: 1.7e-02 (above the 1e-3 gate from n=13); argmax = |1...1>) but a decaying **norm**: `qsim_h` multiplies by the float32 constant c = 0.70710677 (relative error -1.71e-08), so each H multiplies norm^2 by 2c^2 = 1 -3.42e-08, a systematic bias; after N_H gates norm^2 = (2c^2)^N_H, and the constant alone predicts 1.16-1.25 times the measured log norm loss for n >= 8 (norm^2 observed / predicted: 1.0000-1.6137): it accounts for the whole loss and **over-predicts** it by about 16-25 %; some other float32 effect partly compensates and is not analysed (UNVERIFIED which, e.g. the rounding of the pair sums). Phase 1 computes 1 - |<a|b>|^2 **without renormalising** and P(marked) = |psi[-1]|^2 raw, so both inherit the norm loss: they equal 1 - norm^2 and P_theory x norm^2.
+**(d) Cause: precision, not definition and not a bug.** The double build equals the closed-form state (infidelity <= 8.5e-09 for every n) and Aer does too (<= 6.2e-11 for n <= 12), so both implementations realise the circuit that theory describes for their k. The float32 build has the right **direction** (normalised infidelity <= 5.5e-05 for n <= 12; beyond n=12 the direction error also grows: n=13: 1.1e-03, n=14: 1.7e-02 (above the 1e-3 gate from n=13); argmax = |1...1>) but a decaying **norm**: `qsim_h` multiplies by the float32 constant c = 0.70710677 (relative error -1.71e-08), so each H multiplies norm^2 by 2c^2 = 1 -3.42e-08, a systematic bias; after N_H gates norm^2 = (2c^2)^N_H, and the constant alone predicts 1.16-1.17 times the measured log norm loss for n >= 8 (norm^2 observed / predicted: 1.0000-1.6137): it accounts for the whole loss and **over-predicts** it by about 16-17 %; some other float32 effect partly compensates and is not analysed (UNVERIFIED which, e.g. the rounding of the pair sums). Phase 1 computes 1 - |<a|b>|^2 **without renormalising** and P(marked) = |psi[-1]|^2 raw, so both inherit the norm loss: they equal 1 - norm^2 and P_theory x norm^2.
 INTERPRETATION of the first-order guess "float32 rounding alone is too small": it is too small as random rounding, but a **coherent bias** in one constant accumulates linearly over 3,940,012 H gates at n=12. The first passing n of the raw Phase 1 criterion (<= 1e-3) is n=8; the first failing n is 9.
 
 **(e) What changed.** No firmware change (not allowed, and not needed: timing is not affected by the constant's value). No grover timing point is marked "circuit not validated". The Phase 1 outputs are kept; the corrected reading is in `data/derived/grover_findings.csv` and F5 shows both the raw (Phase 1) and the normalised float32 infidelity. The 1e-3 threshold applies to the raw definition as Phase 1 defined it. UNVERIFIED: whether the MCU builds lose norm identically (same IEEE single constant, but Uno/ESP8266 soft-float `cosf/sinf` and each board's rounding were not tested; no board returns its state). **Proposal (not applied):** renormalise the state once at the end of the circuit (one extra sweep), or apply the Hadamard scaling in a way that does not bias the norm; either changes the firmware and therefore the collected timings, so it would need the re-collection of the grover series (item 9).
@@ -241,51 +306,59 @@ INTERPRETATION of the first-order guess "float32 rounding alone is too small": i
 
 **The ESP32 grover n=12 case (1.71 s counter vs 4520 s micros()) is not explained by T_max.** The counter recorded two pulses for that point (`ref_pulses.csv`): seq 0 of 1.711 s with `anomaly_code 5` (count mismatch: an edge without its partner) and seq 1 of 4519.488 s with `anomaly_code 0` and `wraps 84` (= 4510 s of whole wraps), which is 0.002 % from micros(). The join (`pc/counter/crosscheck.py`, sequence join of the last run) paired the flagged first pulse. By rule R3 the point is **unusable**; the second pulse is evidence about the counter at 4520 s, kept out of the statistics (not unwrapped or chosen by me). **ESP32 grover n=10** has no pair: the counter saw 6 target runs and 24 usable pulses for 100 reps (frame sequence gap, `ref_issues.log`), the join refused (`refused_count_mismatch`): R1.
 
-**Why Uno and ESP8266 points were 'flagged'** (`data/derived/counter_flag_explanation.csv`, one row per point): the counter's anomaly codes are raised at `firmware/counter_esp32/src/main.cpp` `:236` (missing), `:237` (extra), `:221` (glitch), `:234,:471-473` (stuck high), `:211,:215` (count mismatch), `:402` (sequence gap), `:235,:477` (never started); the host sets `ref_status` (`pc/counter/session.py:192-199`), refuses joins (`pc/counter/crosscheck.py:83-111`) and sets `flagged` when the median difference exceeds 5 % and one micros() tick (`:140`). The typical Uno/ESP8266 'anomaly' is code 2 (extra pulses from the cut-short run before the restart that follows an upload); the join pairs only the last run, so 47 Phase 2 points with that code are usable.
+**Why Uno and ESP8266 points were 'flagged'** (`data/derived/counter_flag_explanation.csv`, one row per point): the counter's anomaly codes are raised at `firmware/counter_esp32/src/main.cpp` `:236` (missing), `:237` (extra), `:221` (glitch), `:234,:471-473` (stuck high), `:211,:215` (count mismatch), `:402` (sequence gap), `:235,:477` (never started); the host sets `ref_status` (`pc/counter/session.py:192-199`), refuses joins (`pc/counter/crosscheck.py:83-111`) and sets `flagged` when the median difference exceeds 5 % and one micros() tick (`:140`). The typical Uno/ESP8266 'anomaly' is code 2 (extra pulses from the cut-short run before the restart that follows an upload); the join pairs only the last run, so 42 Phase 2 points with that code are usable.
 
-Usable Phase 2 counter points: Uno R3 21 of 28, ESP8266 26 of 45, ESP32 45 of 50. Unusable points by reason:
+Usable Phase 2 counter points: Uno R3 19 of 28, ESP8266 32 of 55, ESP32 45 of 54. Unusable points by reason:
 
 | board | reason | points |
 |---|---|---|
-| ESP32 | R1 no pairs: count_mismatch | 1 |
+| ESP32 | R1 no pairs: count_mismatch | 3 |
 | ESP32 | R1 no pairs: no_target_run  | 3 |
 | ESP32 | R3 paired pulse of 1710895.663 us carries counter flag count_mismatch ; the join used a pulse the counter mark | 1 |
+| ESP32 | R5 1 implausible pair; R2 then fails: 99 pairs for 100 reps | 1 |
+| ESP32 | R5 1 implausible pair; R2 then fails: 99 pairs for 100 reps | 1 |
 | ESP8266 | R1 no pairs: arm_failed  | 2 |
-| ESP8266 | R1 no pairs: count_mismatch | 10 |
+| ESP8266 | R1 no pairs: count_mismatch | 14 |
 | ESP8266 | R1 no pairs: counter_lost  | 1 |
 | ESP8266 | R1 no pairs: no_target_run  | 5 |
 | ESP8266 | R1 no pairs: short_raw | 1 |
 | Uno R3 | R1 no pairs: count_mismatch | 2 |
 | Uno R3 | R1 no pairs: no_target_run  | 4 |
 | Uno R3 | R2 partial join: 99 pairs for 100 reps | 1 |
+| Uno R3 | R5 1 implausible pair; R2 then fails: 99 pairs for 100 reps | 1 |
+| Uno R3 | R5 1 implausible pair; R2 then fails: 99 pairs for 100 reps | 1 |
 
 micros() vs counter, usable points only (ratio = micros/counter per point; 'not weak' needs >= 30 paired reps):
 
 | board | subset | points | median micros/counter | min-max of point medians | IQR of point medians | longest micros() median (s) |
 |---|---|---|---|---|---|---|
-| Uno R3 | all usable | 21 | 0.9939 | 0.9018-0.9951 | 0.0076 | 29.8 |
-| Uno R3 | median>=100us | 21 | 0.9939 | 0.9018-0.9951 | 0.0076 | 29.8 |
-| Uno R3 | median>=100us, not weak | 21 | 0.9939 | 0.9018-0.9951 | 0.0076 | 29.8 |
-| ESP8266 | all usable | 26 | 0.9905 | 0.6376-0.9995 | 0.0328 | 0.0145 |
-| ESP8266 | median>=100us | 21 | 0.9939 | 0.9317-0.9995 | 0.0142 | 0.0145 |
-| ESP8266 | median>=100us, not weak | 21 | 0.9939 | 0.9317-0.9995 | 0.0142 | 0.0145 |
-| ESP32 | all usable | 45 | 0.9979 | 0.6250-1.0000 | 0.0329 | 529 |
-| ESP32 | median>=100us | 28 | 0.9996 | 0.9915-1.0000 | 0.0016 | 529 |
-| ESP32 | median>=100us, not weak | 27 | 0.9996 | 0.9915-1.0000 | 0.0017 | 7.33 |
+| Uno R3 | all usable | 19 | 0.9943 | 0.9018-0.9951 | 0.0086 | 29.8 |
+| Uno R3 | median>=100us | 19 | 0.9943 | 0.9018-0.9951 | 0.0086 | 29.8 |
+| Uno R3 | median>=100us, not weak | 19 | 0.9943 | 0.9018-0.9951 | 0.0086 | 29.8 |
+| ESP8266 | all usable | 29 | 0.9939 | 0.6376-1.0000 | 0.0312 | 2.88 |
+| ESP8266 | median>=100us | 24 | 0.9974 | 0.9317-1.0000 | 0.0122 | 2.88 |
+| ESP8266 | median>=100us, not weak | 24 | 0.9974 | 0.9317-1.0000 | 0.0122 | 2.88 |
+| ESP32 | all usable | 44 | 0.9983 | 0.6400-1.0000 | 0.0224 | 529 |
+| ESP32 | median>=100us | 29 | 0.9996 | 0.9915-1.0000 | 0.0016 | 529 |
+| ESP32 | median>=100us, not weak | 28 | 0.9996 | 0.9915-1.0000 | 0.0016 | 63.6 |
 
-OBSERVED: ESP32 (usable points, median >= 100 us): median ratio 0.9996, worst point 0.85 % off. Uno micros() reads 0.6 % below the counter; INTERPRETATION: far above the 17.5 ppm PC-clock comparison. The same counter agrees with the ESP32 `micros()` to 0.04 %, so a counter error of 0.6 % is unlikely and the Uno `micros()` timebase (INTERPRETATION: the resonator-derived AVR clock, not checked) is the likelier cause; this cannot be proven without a calibration. **Label: uncalibrated; representation limit T_max (not a guarantee of correctness at that length); compared with micros() up to 529 s on one weak point (13 pairs) and up to 7.3 s on non-weak points.**
+OBSERVED: ESP32 (usable points, median >= 100 us): median ratio 0.9996, worst point 0.85 % off. Uno micros() reads 0.6 % below the counter; INTERPRETATION: far above the 17.5 ppm PC-clock comparison. The same counter agrees with the ESP32 `micros()` to 0.04 %, so a counter error of 0.6 % is unlikely and the Uno `micros()` timebase (INTERPRETATION: the resonator-derived AVR clock, not checked) is the likelier cause; this cannot be proven without a calibration. **Label: uncalibrated; representation limit T_max (not a guarantee of correctness at that length); compared with micros() up to 529 s on one weak point (13 pairs) and up to 63.6 s on non-weak points.**
 
 ## 8. Limitations
 
-1. **Counter uncalibrated** (section 2), usable only as in section 7. T_max = 3.52e+06 s is a representation limit of the firmware (and the host also flags pulses above the armed `max_width_s`); the counter was compared with micros() up to 529 s on **one weak point** (13 pairs) and up to 7.3 s on non-weak points. The agreement is between two uncalibrated clocks.
+1. **Counter uncalibrated** (section 2), usable only as in section 7. T_max = 3.52e+06 s is a representation limit of the firmware (and the host also flags pulses above the armed `max_width_s`); the counter was compared with micros() up to 529 s on **one weak point** (13 pairs) and up to 63.6 s on non-weak points. The agreement is between two uncalibrated clocks.
 2. **No board-level correctness data.** Boards return timing only; correctness was validated on the PC build only. Grover (section 6): the float32 state is the right state up to a norm loss (the raw Phase 1 criterion fails from n=9; direction error <= 5.5e-05 for n <= 12; beyond n=12 the direction error also grows: n=13: 1.1e-03, n=14: 1.7e-02 (above the 1e-3 gate from n=13)); whether the MCU builds behave identically is UNVERIFIED.
 3. **Phase 3 samples one shot** per request on the PC (`pc/phase3_offload/sweep.py: simulate_and_sample`) and compares it with no reference; the round trip is a latency, not a correctness result.
 4. **One unit per board, one PC, one baud rate (115 200).** The crossover was not tested at other baud rates.
-5. **Provenance:** 60 of 60 sessions carry a dirty-tree flag, 57 have a firmware source hash equal to a committed tree and 3 ran uncommitted firmware; no session recorded a hash of the flashed binary (`docs/reproducibility/session_provenance.md`).
-6. **Weak points** (fewer than 30 independent repetitions or requests; rule in `analysis/common/weak.py`): ESP32 grover n=10 (18 independent of 100 recorded rows); ESP32 grover n=11 (13 reps); ESP32 grover n=12 (1 reps); ESP8266 grover n=10 (4 reps); Phase 3 grover n=12, 13 on the ESP boards (2-42 requests at n >= 11). They are never fitted or scored in the primary numbers.
-7. **Firmware version confound for grover** (section 2): the ESP8266 grover test points ran under uncommitted or unrecoverable firmware.
+5. **Provenance:** 70 of 70 sessions carry a dirty-tree flag, 69 have a firmware source hash equal to a committed tree and 1 ran uncommitted firmware; no session recorded a hash of the flashed binary (`docs/reproducibility/session_provenance.md`).
+6. **Weak points** (fewer than 30 independent repetitions or requests; rule in `analysis/common/weak.py`): ESP32 grover n=9 (15 independent of 100 recorded rows); ESP32 grover n=10 (29 independent of 100 recorded rows); ESP32 grover n=11 (13 reps); ESP32 grover n=12 (1 reps); ESP8266 grover n=10 (4 reps); Phase 3 grover n=12, 13 on the ESP boards (2-42 requests at n >= 11). They are never fitted or scored in the primary numbers.
+7. **Firmware class mixing that remains** (section 2): all selected ESP8266 grover points are class B (timer1 interrupt inside `t0..t1`) while the other ESP8266 circuits are class A, so ESP8266 grover is outside the fit and the clean scores; ESP32 grover n=2-8, 11 (hash 5f10cc9afc3fffe5) and n=9, 10, 12 (hash 4478147465f99625) are both class A by reading the diff (UNVERIFIED: no binary hash was recorded).
 8. The M2 constants are fitted values, not measured gate costs; M2 is not identifiable on Uno R3; M2 was not defined blind with respect to grover (section 4).
 9. Uno `micros()` resolution is 4 us, ESP boards 1 us; the model ignores points below 100 us.
+10. **Counter pairing fails on some long points.** Points of the selected data without a usable counter pair at n >= 7: ESP32 P2 bell_ghz n=14; ESP32 P2 grover n=12; ESP32 P2 h_all n=14; ESP32 P2 qft n=14; ESP8266 P2 bell_ghz n=9,12,13; ESP8266 P2 grover n=8,9,10; ESP8266 P2 h_all n=10,11,12,13; ESP8266 P2 qft n=9,10,11,12,13; Uno R3 P2 bell_ghz n=8; Uno R3 P2 grover n=8; Uno R3 P2 h_all n=8; Uno R3 P2 qft n=8; ESP32 P3 grover n=10,11,13; ESP8266 P3 grover n=9,10; Uno R3 P3 grover n=7,8; Uno R3 P3 h_all n=7. The ESP8266 Phase 2 grover n=8 point failed in three sessions (r2, r2b, r2c). INTERPRETATION: line noise on the counter input (the hardware PCNT, an edge counter independent of the capture interrupt, counted more edges than the capture interrupt handled in the `#D` diagnostic lines of the failed runs; short points pair 100/100); the cause is not established (UNVERIFIED: WiFi activity of the counter, power or wiring). The micros() data of these points are unaffected and used; only the micros()-vs-counter agreement lacks them.
+11. **Counter wrap artefact.** `unwrap_ticks` (`firmware/counter_esp32/src/main.cpp`) turns a spike whose fall stamp precedes the rise stamp by a few ticks into 2^32 - 1 ticks = 53.687 s, which the glitch filter does not remove. The plausibility rule R5 (`analysis/common/counter_validity.py`) rejects a pair whose counter/micros() ratio is outside [0.5, 2.0] or whose counter value is within 1 ms of k x 53.687091 s; the count rule is not relaxed, so one such pair makes the point unusable. It changed these points: ESP32 bell_ghz P2 n=3 (with_ref); ESP32 h_all P2 n=2 (with_ref); Uno R3 qft P2 n=3 (with_ref); Uno R3 qft P2 n=4 (with_ref). The counter firmware was not changed.
+12. **PC simulation speed differs between sessions.** The Aer simulation time of one Phase 3 circuit x n (n >= 6) differs by a median 1.53x and at most 2.92x between the fastest and the slowest session on the same PC (grover n=9: 4.1-8.8 s), while the board-and-link residual of the selected sessions has a median of 753 us (IQR 486-3214 us; at large n it also absorbs the bookkeeping error of subtracting two medians); the crossovers are therefore reported as brackets under the fastest and the slowest observed simulation (section 5). The cause of the PC speed change is not recorded in the sidecars (UNVERIFIED).
+13. **Counter self-test.** The loopback self-test (GPIO25 to GPIO35, `data/calibration/counter_selftest_20261031.txt`) passed 5 of 5 scenarios on 2026-10-31; the counter reads 2.0 to 2.9 us longer than the generated width at 100 us to 10 s (a constant offset of the loopback; one crystal generates and measures, so clock accuracy and the GPIO34 target pad are not tested; the offset cannot be split between generator and counter).
 
 ## 9. Re-collection proposals (no hardware was run)
 
@@ -293,48 +366,35 @@ Only re-collection that fixes a weakness above. Times are computed from the meas
 
 | id | priority | board | phase | points | reps | est_time | weakness |
 |---|---|---|---|---|---|---|---|
-| R1 | deadline | esp8266 | 2 | grover n=2..10 | n=2:100;n=3:100;n=4:100;n=5:100;n=6:100;n=7:100;n=8:100;n=9:37;n=10:4 | 4.72 h | ESP8266 grover n=8, 9, 10 ran under uncommitted firmware (classes X, B) while n=2-7 ran under the committed one |
-| R2 | deadline | esp32 | 3 | bell_ghz n=2..14 (whole series; the crossover is at n*=12.63) | 100 | 0.23 h | every crossover n* rests on ONE Phase 3 session per point and Phase 3 round trips have IQR/median > 20 % in most points |
-| R2 | deadline | esp32 | 3 | qft n=2..14 (whole series; the crossover is at n*=12.19) | 100 | 0.23 h | every crossover n* rests on ONE Phase 3 session per point and Phase 3 round trips have IQR/median > 20 % in most points |
-| R2 | deadline | esp8266 | 3 | bell_ghz n=2..15 (whole series; the crossover is at n*=9.94) | 100 | 0.28 h | every crossover n* rests on ONE Phase 3 session per point and Phase 3 round trips have IQR/median > 20 % in most points |
-| R2 | deadline | esp8266 | 3 | h_all n=2..15 (whole series; the crossover is at n*=7.33) | 100 | 0.28 h | every crossover n* rests on ONE Phase 3 session per point and Phase 3 round trips have IQR/median > 20 % in most points |
-| R2 | deadline | esp8266 | 3 | qft n=2..15 (whole series; the crossover is at n*=7.07) | 100 | 0.28 h | every crossover n* rests on ONE Phase 3 session per point and Phase 3 round trips have IQR/median > 20 % in most points |
-| R2 | deadline | uno | 3 | bell_ghz n=2..22 (whole series; the crossover is at n*=5.96) | 100 | 0.07 h | every crossover n* rests on ONE Phase 3 session per point and Phase 3 round trips have IQR/median > 20 % in most points |
-| R2 | deadline | uno | 3 | h_all n=2..22 (whole series; the crossover is at n*=4.46) | 100 | 0.06 h | every crossover n* rests on ONE Phase 3 session per point and Phase 3 round trips have IQR/median > 20 % in most points |
-| R2 | deadline | uno | 3 | qft n=2..22 (whole series; the crossover is at n*=3.67) | 100 | 0.10 h | every crossover n* rests on ONE Phase 3 session per point and Phase 3 round trips have IQR/median > 20 % in most points |
-| R3 | nice-to-have | esp8266 | 2 | grover n=2..10 (R1 with more reps) | n=2:100;n=3:100;n=4:100;n=5:100;n=6:100;n=7:100;n=8:100;n=9:100;n=10:30 | 20.27 h | ESP8266 grover n=10 has 4 reps and n=9 37 (n=10 weak) |
+| R3 | nice-to-have | esp8266 | 2 | grover n=2..10 (R1 with more reps) | n=2:100;n=3:100;n=4:100;n=5:100;n=6:100;n=7:100;n=8:100;n=9:100;n=10:30 | 20.29 h | ESP8266 grover n=10 has 4 reps and n=9 37 (n=10 weak) |
 | R4 | nice-to-have | esp32 | 2 | grover n=2..12 (whole series) | n=2:100;n=3:100;n=4:100;n=5:100;n=6:100;n=7:100;n=8:100;n=9:100;n=10:100;n=11:30;n=12:1 | 7.87 h | ESP32 grover n=11 has 13 reps and n=12 one (weak); no usable counter value at n=10 and n=12 |
-| R5 | nice-to-have | esp8266 | 3 | grover n=2..13 (whole series) | n=12:30, other n as now | 8.02 h | Phase 3 grover n=12 has 9 requests (weak) on the ESP boards |
+| R5 | nice-to-have | esp8266 | 3 | grover n=2..10 (whole series) | n=12:30, other n as now | 0.85 h | Phase 3 grover n=12 has 9 requests (weak) on the ESP boards |
 | R5 | nice-to-have | esp32 | 3 | grover n=2..13 (whole series) | n=12:30, other n as now | 7.35 h | Phase 3 grover n=12 has 9 requests (weak) on the ESP boards |
 
 Commands (placeholders in angle brackets are the serial ports):
 
-- **R1** ESP8266 Phase 2: `.venv/bin/python pc/run.py --board esp8266 --algorithm grover --phase 2 --port <ESP8266_PORT> --fresh --ref counter --counter-port tcp:5055`  (commit the firmware first; --fresh moves the existing files aside (never deletes); n=10 stays weak (4 reps) under the 2 h cap)
-- **R2** ESP32 Phase 3: `.venv/bin/python pc/run.py --board esp32 --algorithm bell_ghz --phase 3 --port <ESP32_PORT> --fresh --ref counter --counter-port tcp:5055` ; `.venv/bin/python pc/run.py --board esp32 --algorithm qft --phase 3 --port <ESP32_PORT> --fresh --ref counter --counter-port tcp:5055`  (second session of the series; the first is moved aside by --fresh, then compare the two medians per n)
-- **R2** ESP8266 Phase 3: `.venv/bin/python pc/run.py --board esp8266 --algorithm bell_ghz --phase 3 --port <ESP8266_PORT> --fresh --ref counter --counter-port tcp:5055` ; `.venv/bin/python pc/run.py --board esp8266 --algorithm h_all --phase 3 --port <ESP8266_PORT> --fresh --ref counter --counter-port tcp:5055` ; `.venv/bin/python pc/run.py --board esp8266 --algorithm qft --phase 3 --port <ESP8266_PORT> --fresh --ref counter --counter-port tcp:5055`  (second session of the series; the first is moved aside by --fresh, then compare the two medians per n)
-- **R2** Uno R3 Phase 3: `.venv/bin/python pc/run.py --board uno --algorithm bell_ghz --phase 3 --port <UNO_PORT> --fresh --ref counter --counter-port tcp:5055` ; `.venv/bin/python pc/run.py --board uno --algorithm h_all --phase 3 --port <UNO_PORT> --fresh --ref counter --counter-port tcp:5055` ; `.venv/bin/python pc/run.py --board uno --algorithm qft --phase 3 --port <UNO_PORT> --fresh --ref counter --counter-port tcp:5055`  (second session of the series; the first is moved aside by --fresh, then compare the two medians per n)
 - **R3** ESP8266 Phase 2: `.venv/bin/python pc/run.py --board esp8266 --algorithm grover --phase 2 --port <ESP8266_PORT> --fresh --ref counter --counter-port tcp:5055`  (same command as R1 but POINT_TIME_CAP_S raised above 7200 s for this run (pc/shared/timing_model.py:404; a code change in pc/, not made here); replaces R1)
 - **R4** ESP32 Phase 2: `.venv/bin/python pc/run.py --board esp32 --algorithm grover --phase 2 --port <ESP32_PORT> --fresh --ref counter --counter-port tcp:5055`  (POINT_TIME_CAP_S raised for this run; check the counter WiFi link first; n=12 at 30 reps would need 37.68 h (not proposed))
 - **R5** ESP8266 Phase 3: `.venv/bin/python pc/run.py --board esp8266 --algorithm grover --phase 3 --port <ESP8266_PORT> --fresh --ref counter --counter-port tcp:5055`  (POINT_TIME_CAP_S raised for this run; the PC simulation dominates and is identical for every board)
 - **R5** ESP32 Phase 3: `.venv/bin/python pc/run.py --board esp32 --algorithm grover --phase 3 --port <ESP32_PORT> --fresh --ref counter --counter-port tcp:5055`  (POINT_TIME_CAP_S raised for this run; the PC simulation dominates and is identical for every board)
 
-Deadline-critical (20 Nov): R1 (one committed firmware for the ESP8266 grover series) and R2 (second Phase 3 session of the 8 series that contain a crossover). Everything else is nice-to-have; Uno M2 identifiability cannot be fixed by re-collection (the Uno wall leaves n=2..7).
+R1 (one committed firmware for the ESP8266 grover series) and R2 (a second Phase 3 session of the crossover series) were carried out as repeat sessions (r2, r2b, r2c; `docs/audit/rerun_sessions.md`) and are no longer proposals. What remains is nice-to-have; Uno M2 identifiability cannot be fixed by re-collection (the Uno wall leaves n=2..7).
 
 ## 10. Paper-ready material
 
-**Reproducibility paragraph (for the paper):** All numbers and figures are regenerated from the committed raw CSVs by one command (`python analysis/reproduce.py`) on {HOSTOS}, Python {PYV}, with the exact package list, PlatformIO toolchain versions and counter wiring in README_REPRODUCE.md. Every result is a script output; tests assert the model split, the counter-validity rules, the grover theory check and that the run-history ledger is untouched. Provenance is recorded per session: 60 of 60 sessions carry a dirty-tree flag, 57 have a firmware source hash that equals a committed tree and 3 ran uncommitted firmware; no hash of the flashed binary was recorded.
+**Reproducibility paragraph (for the paper):** All numbers and figures are regenerated from the committed raw CSVs by one command (`python analysis/reproduce.py`) on macOS, Python 3.11.7, with the package list and counter wiring in README_REPRODUCE.md; which collection session feeds each point is fixed in one place (`analysis/common/sessions.py`). Repeat sessions agree with the original ones: Phase 2 board timer medians of 9 repeated points differ by at most 0.0056 % (median 0.00012 %); Phase 3 round trips of 45 points differ by a median 14 %, almost all of it the PC simulation time (median 21 %), while the board-and-link residual differs by a median 96 us. Tests assert the model split, the counter-validity rules, the session selection and the untouched run-history ledger.
 
 **Captions (draft):**
 - **F1 (`figures/phase4/F1_timing_vs_n.pdf`).** Median execution time per run (shaded: IQR) versus qubit count for the four circuits on each board; dotted lines mark measured memory walls and hollow markers weak points (fewer than 30 repetitions).
-- **F2 (`F2_parity.pdf`).** Predicted versus measured time, (a) one cost constant per board, (b) per-gate-kind costs; filled markers were fitted, hollow markers are the largest 3 n of each series held out (grey: weak, not scored). Held-out MAPE 48 % (a) and 19 % (b) over 32 non-weak points.
+- **F2 (`F2_parity.pdf`).** Predicted versus measured time, (a) one cost constant per board, (b) per-gate-kind costs; filled markers were fitted, hollow markers are the largest 3 n of each series held out (grey: weak, not scored). Held-out MAPE 47 % (a) and 17 % (b) over 32 non-weak points.
 - **F3 (`F3_memory_wall.pdf`, `tables/phase4_memory_wall.tex`).** Largest qubit count that fits: measured (last n before a wall with positive evidence) versus floor(log2(B/8)); on the ESP32 the total free heap overpredicts by one qubit (red).
-- **F4 (`F4_offload_crossover.pdf`).** Local execution time (solid, Phase 2) and offload round trip (dashed, Phase 3, 115 200 baud) per circuit; stars mark the crossover interpolated between measured n, hollow markers weak points.
+- **F4 (`F4_offload_crossover.pdf`).** Local execution time (solid line, IQR shaded, Phase 2) and the offload latency band (hatched, between the fastest and the slowest observed PC simulation time; dashed = the measured session, Phase 3, 115 200 baud) per circuit; bars mark the crossover bracket of two measured n for the fast (solid) and the slow (dotted) bound, hollow markers weak points. The band reflects host PC speed, not the board.
 - **F5 (`F5_phase1_accuracy.pdf`).** Infidelity of the float32 simulator against Qiskit Aer versus n (Phase 1 definition, no renormalisation); the dotted grover line is the normalised float32 infidelity, which stays below 6e-05 for n <= 12 while the raw value crosses 1e-3 at n=9.
 
 **Candidate abstract claims (number : source; from non-weak, counter-independent data; the time claim from firmware-consistent points only):**
 1. "The observed memory walls are reproduced by floor(log2(B/8)) with B read at n=2: n_max = 7 (Uno), 12 (ESP8266) and 13 (ESP32, largest free block; the total free heap overpredicts by one qubit), each equal to the first measured allocation failure minus one." Limits: the test resolves B to a factor of 2 and the Uno B comes from the same compiler RAM figure that triggers the build overflow. Source: `data/processed/phase4/memory_model.csv`; raw evidence `data/raw/phase2/*/{h_all,bell_ghz,qft}/with_ref/memory_wall.csv`.
-2. "A per-gate-kind timing model fitted on small n predicts held-out largest-n execution times with 19 % MAPE over 30 non-weak held-out points from one firmware version per series (6 % on the ESP32, 23 % on the ESP8266, 25 % on the Uno), against 47 % for one constant per board." Caveats to keep in the paper: M2 was not defined blind with respect to grover, its parameters are not reliably identifiable (the verdict changes with the held-out size) and its fitted constants are not physical gate costs. Source: `data/processed/phase4/time_scores.csv` (`clean (non-weak, hash class A)`, scope all), `time_predictions.csv` (role = test, weak = False, hash_flagged = False), `time_identifiability.csv`, `time_sensitivity.csv`.
-3. "For h_all, bell_ghz and qft, offloading to a PC is faster than local execution from n = 3.7-6.0 on the Uno, 7.1-9.9 on the ESP8266 and 12.2-12.6 on the ESP32 (qft to bell_ghz; interpolated between measured n, 115 200 baud, one PC, one session per point), and not within n <= 13 for ESP32 h_all; for grover the crossover is at n = 3.7 on the ESP8266 and 8.9 on the ESP32 and below the measured range on the Uno." Caveats: the ESP8266 Phase 3 h_all, bell_ghz and qft points all ran offload firmware without the later `micros()` poll (timing class B, expected small, UNVERIFIED); each n* carries about one qubit of uncertainty (noisy round trips). Source: `data/processed/phase4/offload_crossover.csv` (`n_star_interpolated`, `ratio_at_nonweak`, `crossover_weak`), raw `data/raw/phase2/*/*/with_ref/raw.csv`, `data/raw/phase3/*/*/with_ref/raw.csv`.
+2. "A per-gate-kind timing model fitted on small n predicts held-out largest-n execution times with 17 % MAPE over 30 non-weak held-out points from one firmware version per series (6 % on the ESP32, 15 % on the ESP8266, 25 % on the Uno), against 46 % for one constant per board." Caveats to keep in the paper: M2 was not defined blind with respect to grover, its parameters are not reliably identifiable (the verdict changes with the held-out size) and its fitted constants are not physical gate costs. Source: `data/processed/phase4/time_scores.csv` (`clean (non-weak, hash class A)`, scope all), `time_predictions.csv` (role = test, weak = False, hash_flagged = False), `time_identifiability.csv`, `time_sensitivity.csv`.
+3. "Offloading to a PC becomes faster than local execution within these brackets of measured n (fast / slow PC simulation): " + the brackets of the table in section 5 (ESP32 bell_ghz: 12-13 / 12-13; ESP32 grover: 8-9 / 9-10; ESP32 h_all: 12-13 / none up to n=13; ESP32 qft: 11-12 / 12-13; ESP8266 bell_ghz: 9-10 / 10-11; ESP8266 grover: 3-4 / 4-5; ESP8266 h_all: 7-8 / 7-8; ESP8266 qft: 6-7 / 7-8; Uno R3 bell_ghz: 5-6 / 6-7; Uno R3 grover: <= 2 (offload faster at the smallest measured n) / 2-3; Uno R3 h_all: 4-5 / 4-5; Uno R3 qft: 3-4 / 3-4). Caveats: one PC, one baud rate (115 200), the band reflects host PC speed, 'within noise' and 'weak' labels as in the table, ESP8266 Phase 3 from one session (r2, firmware hash e33508351a496315). Source: `data/processed/phase4/offload_crossover.csv`, `data/processed/phase4/offload_band.csv`, `data/derived/phase3_decomposition.csv`, `data/derived/phase3_pc_sim_range.csv`; raw `data/raw/phase2/*/*/` and `data/raw/phase3/*/*/` buckets chosen by `analysis/common/sessions.py`.
 
 ## 11. What changed vs the previous report (commit 0d94d2e)
 
@@ -342,24 +402,39 @@ Every number that moved, and why (read from the previous commit's CSVs):
 
 | number | previous report | now, primary | now, weak points included | why |
 |---|---|---|---|---|
-| M1 test MAPE, ESP8266 | 68.4 % (12 pts) | 69.1 % (11 pts) | 68.4 % (12 pts) | weak test points (reps < 30 independent) are no longer scored, and ESP32 grover n=9, 10 use only their independent rows; with the weak points included the previous number is reproduced up to the n=9, 10 effect |
-| M2 test MAPE, ESP8266 | 23.0 % (12 pts) | 23.1 % (11 pts) | 23.0 % (12 pts) | weak test points (reps < 30 independent) are no longer scored, and ESP32 grover n=9, 10 use only their independent rows; with the weak points included the previous number is reproduced up to the n=9, 10 effect |
+| M1 test MAPE, ESP8266 | 68.4 % (12 pts) | 67.2 % (11 pts) | 66.9 % (12 pts) | weak test points (reps < 30 independent) are no longer scored, and ESP32 grover n=9, 10 use only their independent rows; with the weak points included the previous number is reproduced up to the n=9, 10 effect |
+| M2 test MAPE, ESP8266 | 23.0 % (12 pts) | 17.2 % (11 pts) | 17.8 % (12 pts) | weak test points (reps < 30 independent) are no longer scored, and ESP32 grover n=9, 10 use only their independent rows; with the weak points included the previous number is reproduced up to the n=9, 10 effect |
 | M1 test MAPE, ESP32 | 21.0 % (12 pts) | 26.4 % (9 pts) | 21.0 % (12 pts) | weak test points (reps < 30 independent) are no longer scored, and ESP32 grover n=9, 10 use only their independent rows; with the weak points included the previous number is reproduced up to the n=9, 10 effect |
-| M2 test MAPE, ESP32 | 6.0 % (12 pts) | 6.5 % (9 pts) | 6.0 % (12 pts) | weak test points (reps < 30 independent) are no longer scored, and ESP32 grover n=9, 10 use only their independent rows; with the weak points included the previous number is reproduced up to the n=9, 10 effect |
-| M1 test MAPE, all boards | 44.7 % (36 pts) | 48.0 % (32 pts) | 44.7 % (36 pts) | weak test points (reps < 30 independent) are no longer scored, and ESP32 grover n=9, 10 use only their independent rows; with the weak points included the previous number is reproduced up to the n=9, 10 effect |
-| M2 test MAPE, all boards | 18.0 % (36 pts) | 19.1 % (32 pts) | 18.0 % (36 pts) | weak test points (reps < 30 independent) are no longer scored, and ESP32 grover n=9, 10 use only their independent rows; with the weak points included the previous number is reproduced up to the n=9, 10 effect |
-| micros()/counter median ratio, Uno R3 | 0.9939 (22 pts) | 0.9939 (21 pts) | - | only counter-usable points (analysis/common/counter_validity.py) are compared |
-| offload/local at the largest overlap, ESP32 grover | 0.081 | 0.939 at n=9 | 0.081 at n=12 | the largest overlapping n is a weak point; the primary number is taken at the largest non-weak overlap |
-| n*, ESP32 grover | 8.895304158474865 | 8.895303046258672 | - | changed |
-| offload/local at the largest overlap, ESP8266 grover | 0.019 | 0.045 at n=9 | 0.019 at n=10 | the largest overlapping n is a weak point; the primary number is taken at the largest non-weak overlap |
-| M2 c_H, ESP32 | 0.0776 | 0.0776 | - | the fit set changed (weak and hash-flagged points are not fitted) |
-| M2 c_CNOT, ESP32 | 0.0901 | 0.0901 | - | the fit set changed (weak and hash-flagged points are not fitted) |
-| M2 c_CPHASE, ESP32 | 0.0492 | 0.0492 | - | the fit set changed (weak and hash-flagged points are not fitted) |
-| M2 a_call, ESP32 | 1.0291 | 1.0291 | - | the fit set changed (weak and hash-flagged points are not fitted) |
+| M2 test MAPE, ESP32 | 6.0 % (12 pts) | 6.5 % (9 pts) | 6.1 % (12 pts) | weak test points (reps < 30 independent) are no longer scored, and ESP32 grover n=9, 10 use only their independent rows; with the weak points included the previous number is reproduced up to the n=9, 10 effect |
+| M1 test MAPE, all boards | 44.7 % (36 pts) | 47.3 % (32 pts) | 44.2 % (36 pts) | weak test points (reps < 30 independent) are no longer scored, and ESP32 grover n=9, 10 use only their independent rows; with the weak points included the previous number is reproduced up to the n=9, 10 effect |
+| M2 test MAPE, all boards | 18.0 % (36 pts) | 17.0 % (32 pts) | 16.3 % (36 pts) | weak test points (reps < 30 independent) are no longer scored, and ESP32 grover n=9, 10 use only their independent rows; with the weak points included the previous number is reproduced up to the n=9, 10 effect |
+| micros()/counter median ratio, Uno R3 | 0.9939 (22 pts) | 0.9943 (19 pts) | - | only counter-usable points (analysis/common/counter_validity.py) are compared |
+| micros()/counter median ratio, ESP8266 | 0.9905 (26 pts) | 0.9939 (29 pts) | - | only counter-usable points (analysis/common/counter_validity.py) are compared |
+| micros()/counter median ratio, ESP32 | 0.9979 (45 pts) | 0.9983 (44 pts) | - | only counter-usable points (analysis/common/counter_validity.py) are compared |
+| offload crossover, ESP32 bell_ghz | n* = 12.63 (interpolated, one session) | fast PC 12-13, slow PC 12-13 | - | selected sessions (ESP8266 Phase 3 from the r2 session, ESP8266 grover and ESP32 grover n=9-10 from repeat sessions), counter pairs checked by the plausibility rule, and the offload latency is a band over the observed PC simulation time instead of one interpolated value |
+| offload crossover, ESP32 grover | n* = 8.90 (interpolated, one session) | fast PC 8-9, slow PC 9-10 | - | selected sessions (ESP8266 Phase 3 from the r2 session, ESP8266 grover and ESP32 grover n=9-10 from repeat sessions), counter pairs checked by the plausibility rule, and the offload latency is a band over the observed PC simulation time instead of one interpolated value |
+| offload crossover, ESP32 h_all | none in the measured range | fast PC 12-13, slow PC none up to n=13 | - | selected sessions (ESP8266 Phase 3 from the r2 session, ESP8266 grover and ESP32 grover n=9-10 from repeat sessions), counter pairs checked by the plausibility rule, and the offload latency is a band over the observed PC simulation time instead of one interpolated value |
+| offload crossover, ESP32 qft | n* = 12.19 (interpolated, one session) | fast PC 11-12, slow PC 12-13 | - | selected sessions (ESP8266 Phase 3 from the r2 session, ESP8266 grover and ESP32 grover n=9-10 from repeat sessions), counter pairs checked by the plausibility rule, and the offload latency is a band over the observed PC simulation time instead of one interpolated value |
+| offload crossover, ESP8266 bell_ghz | n* = 9.94 (interpolated, one session) | fast PC 9-10, slow PC 10-11 | - | selected sessions (ESP8266 Phase 3 from the r2 session, ESP8266 grover and ESP32 grover n=9-10 from repeat sessions), counter pairs checked by the plausibility rule, and the offload latency is a band over the observed PC simulation time instead of one interpolated value |
+| offload crossover, ESP8266 grover | n* = 3.65 (interpolated, one session) | fast PC 3-4, slow PC 4-5 | - | selected sessions (ESP8266 Phase 3 from the r2 session, ESP8266 grover and ESP32 grover n=9-10 from repeat sessions), counter pairs checked by the plausibility rule, and the offload latency is a band over the observed PC simulation time instead of one interpolated value |
+| offload crossover, ESP8266 h_all | n* = 7.33 (interpolated, one session) | fast PC 7-8, slow PC 7-8 | - | selected sessions (ESP8266 Phase 3 from the r2 session, ESP8266 grover and ESP32 grover n=9-10 from repeat sessions), counter pairs checked by the plausibility rule, and the offload latency is a band over the observed PC simulation time instead of one interpolated value |
+| offload crossover, ESP8266 qft | n* = 7.07 (interpolated, one session) | fast PC 6-7, slow PC 7-8 | - | selected sessions (ESP8266 Phase 3 from the r2 session, ESP8266 grover and ESP32 grover n=9-10 from repeat sessions), counter pairs checked by the plausibility rule, and the offload latency is a band over the observed PC simulation time instead of one interpolated value |
+| offload crossover, Uno R3 bell_ghz | n* = 5.96 (interpolated, one session) | fast PC 5-6, slow PC 6-7 | - | selected sessions (ESP8266 Phase 3 from the r2 session, ESP8266 grover and ESP32 grover n=9-10 from repeat sessions), counter pairs checked by the plausibility rule, and the offload latency is a band over the observed PC simulation time instead of one interpolated value |
+| offload crossover, Uno R3 grover | below the measured range (offload faster at the smallest n) | fast PC <= 2 (offload faster at the smallest measured n), slow PC 2-3 | - | selected sessions (ESP8266 Phase 3 from the r2 session, ESP8266 grover and ESP32 grover n=9-10 from repeat sessions), counter pairs checked by the plausibility rule, and the offload latency is a band over the observed PC simulation time instead of one interpolated value |
+| offload crossover, Uno R3 h_all | n* = 4.46 (interpolated, one session) | fast PC 4-5, slow PC 4-5 | - | selected sessions (ESP8266 Phase 3 from the r2 session, ESP8266 grover and ESP32 grover n=9-10 from repeat sessions), counter pairs checked by the plausibility rule, and the offload latency is a band over the observed PC simulation time instead of one interpolated value |
+| offload crossover, Uno R3 qft | n* = 3.67 (interpolated, one session) | fast PC 3-4, slow PC 3-4 | - | selected sessions (ESP8266 Phase 3 from the r2 session, ESP8266 grover and ESP32 grover n=9-10 from repeat sessions), counter pairs checked by the plausibility rule, and the offload latency is a band over the observed PC simulation time instead of one interpolated value |
+| M2 c_H, ESP8266 | 2.5749 | 2.6608 | - | the fit set changed (weak and hash-flagged points are not fitted) |
+| M2 c_CNOT, ESP8266 | 0.0013 | 0.0522 | - | the fit set changed (weak and hash-flagged points are not fitted) |
+| M2 c_CPHASE, ESP8266 | 1.6024 | 1.4620 | - | the fit set changed (weak and hash-flagged points are not fitted) |
+| M2 a_call, ESP8266 | 15.2279 | 8.4149 | - | the fit set changed (weak and hash-flagged points are not fitted) |
+| M2 c_H, ESP32 | 0.0776 | 0.0775 | - | the fit set changed (weak and hash-flagged points are not fitted) |
+| M2 c_CNOT, ESP32 | 0.0901 | 0.0896 | - | the fit set changed (weak and hash-flagged points are not fitted) |
+| M2 c_CPHASE, ESP32 | 0.0492 | 0.0489 | - | the fit set changed (weak and hash-flagged points are not fitted) |
+| M2 a_call, ESP32 | 1.0291 | 1.0344 | - | the fit set changed (weak and hash-flagged points are not fitted) |
 | grover infidelity at n=12 (Phase 1 definition) | 0.109 (read as an error) | 5.51e-05 (state direction) | - | same raw number, new reading: it is norm loss of the float32 state, not a wrong state (section 6) |
-| ESP8266 M2 'collinear columns' remark | N_CNOT 2^n and G close to collinear | condition number 2.62 | - | the design matrix is well conditioned; the earlier remark is withdrawn |
+| ESP8266 M2 'collinear columns' remark | N_CNOT 2^n and G close to collinear | condition number 2.61 | - | the design matrix is well conditioned; the earlier remark is withdrawn |
 
-Unchanged: memory predictions and walls, gate counts, Phase 1 raw table, crossover n* values, the Phase 3 floor.
+Unchanged: memory predictions and walls, gate counts, Phase 1 raw table.
 
 ## 12. Reproduce
 
