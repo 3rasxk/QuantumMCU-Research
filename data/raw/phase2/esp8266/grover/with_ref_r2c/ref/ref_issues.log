@@ -1,0 +1,7 @@
+2026-10-31T05:55:43.170880+00:00  esp8266/grover/n=8  sequence gap: missing [147, 148]; requesting REPLAY from 147
+2026-10-31T05:55:46.220744+00:00  esp8266/grover/n=8  sequence gap: missing [147, 148]; requesting REPLAY from 147
+2026-10-31T05:55:49.240692+00:00  esp8266/grover/n=8  2 target runs seen by the counter ([44, 103] pulses); pairing the LAST run (the one whose rows the sweep read)
+2026-10-31T05:55:49.241792+00:00  esp8266/grover/n=8  anomaly code 2 (extra pulse)
+2026-10-31T05:55:49.242000+00:00  esp8266/grover/n=8  anomaly code 5 (count mismatch)
+2026-10-31T05:55:49.242182+00:00  esp8266/grover/n=8  anomaly code 6 (sequence gap)
+2026-10-31T05:55:49.257116+00:00  esp8266/grover/n=8  comparison refused: refused_count_mismatch 103 usable pulses (0 glitch) for 100 reps; refusing rep-order join
