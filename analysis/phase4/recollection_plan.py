@@ -22,7 +22,7 @@ PORT = {b: f"<{b.upper()}_PORT>" for b in C.BOARDS}
 def overhead(board, phase):
     tot = []
     for c in C.CIRCUITS:
-        p = pd.read_csv(os.path.join(C.series_dir(phase, board, c), "points.csv"))
+        p = C.raw_selected(phase, board, c, "points.csv")
         p = p[p.status == "ok"]
         tot.append((p.build_compile_s + p.upload_s + p.boot_wait_s).median())
     return float(np.median(tot))
@@ -44,29 +44,15 @@ def hours(s):
 
 def build():
     loc, off = C.load_local(), C.load_offload()
-    X = pd.read_csv(os.path.join(C.PROC, "offload_crossover.csv"))
     rows = []
 
     def add(pid, prio, why, board, phase, points, reps, secs, cmd, note=""):
         rows.append(dict(id=pid, priority=prio, weakness=why, board=board, phase=phase, points=points, reps=reps, est_seconds=secs,
                          est_time=hours(secs), commands=cmd, note=note))
 
-    # R1: ESP8266 grover Phase 2 under ONE committed firmware (hash classes X, B vs A): n = 2..10, reps as capped by 2 h
+    # R1 (ESP8266 grover Phase 2 under one committed firmware) and R2 (second Phase 3 session of the crossover series) were carried out on
+    # 2026-10-30/31 as repeat sessions r2, r2b, r2c (pc/run.py --rerun, docs/audit/rerun_sessions.md); they are no longer proposals.
     reps = {n: min(100, int(CAP_S // (loc[(loc.board == "esp8266") & (loc.circuit == "grover") & (loc.n == n)].median_us.iloc[0] / 1e6))) for n in range(2, 11)}
-    secs = sum(p2_point_s(loc, "esp8266", "grover", n, r) for n, r in reps.items())
-    add("R1", "deadline", "ESP8266 grover n=8, 9, 10 ran under uncommitted firmware (classes X, B) while n=2-7 ran under the committed one",
-        "esp8266", 2, "grover n=2..10", ";".join(f"n={n}:{r}" for n, r in reps.items()), secs,
-        f".venv/bin/python pc/run.py --board esp8266 --algorithm grover --phase 2 --port {PORT['esp8266']} --fresh {COUNTER}",
-        "commit the firmware first; --fresh moves the existing files aside (never deletes); n=10 stays weak (4 reps) under the 2 h cap")
-    # R2: Phase 3 repeat of the series that contain a crossover. pc/run.py --fresh moves the WHOLE (board, circuit, phase) series aside (never
-    # deletes) and resume skips done n, so a single n cannot be repeated without code changes: the whole series is re-run.
-    for r in X[X.first_n_offload_faster.notna() & X.n_star_interpolated.notna() & (X.circuit != "grover")].itertuples():
-        ns = sorted(off[(off.board == r.board) & (off.circuit == r.circuit)].n)
-        secs = sum(p3_point_s(off, r.board, r.circuit, n, 100) for n in ns)
-        add("R2", "deadline", "every crossover n* rests on ONE Phase 3 session per point and Phase 3 round trips have IQR/median > 20 % in most points",
-            r.board, 3, f"{r.circuit} n={ns[0]}..{ns[-1]} (whole series; the crossover is at n*={r.n_star_interpolated:.2f})", "100", secs,
-            f".venv/bin/python pc/run.py --board {r.board} --algorithm {r.circuit} --phase 3 --port {PORT[r.board]} --fresh {COUNTER}",
-            "second session of the series; the first is moved aside by --fresh, then compare the two medians per n")
     # R3: ESP8266 grover with the cap raised: n=9 100 reps, n=10 30 reps
     reps3 = dict(reps)
     reps3[9], reps3[10] = 100, 30

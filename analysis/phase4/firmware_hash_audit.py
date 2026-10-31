@@ -17,7 +17,7 @@ def main():
     rows = []
     for ph in (2, 3):
         for b in ("uno", "esp8266", "esp32"):
-            d = audit.audit_series(ph, b, "grover")
+            d = audit.audit_selected(ph, b, "grover")
             for r in d[d.ok_rows > 0].itertuples():
                 rows.append(dict(phase=ph, board=b, n=int(r.n), reps=int(r.reps), hash=r.fw_hashes, commit_recorded=r.commits))
     df = pd.DataFrame(rows).merge(cls, left_on=["board", "phase", "hash"], right_on=["board", "phase", "hash"], how="left")

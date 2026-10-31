@@ -45,7 +45,7 @@ MODELS = ["M1", "M1c", "M2", "M2g"]
 def hash_table():
     """firmware hash and timing class of every Phase 2 point (board, circuit, n)"""
     import audit
-    pts = pd.concat([audit.audit_series(2, b, c) for b in C.BOARDS for c in C.CIRCUITS], ignore_index=True)
+    pts = pd.concat([audit.audit_selected(2, b, c) for b in C.BOARDS for c in C.CIRCUITS], ignore_index=True)
     pts = pts[pts.ok_rows > 0][["board", "circuit", "n", "fw_hashes", "n_hashes"]]
     assert (pts.n_hashes == 1).all(), "a point with several hashes"
     cls = pd.read_csv(CLASSES)

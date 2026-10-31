@@ -26,8 +26,12 @@ from common import weak as _weak  # noqa: E402  (analysis/common/weak.py: the on
 SMALL_REPS = _weak.WEAK_MIN   # points with fewer reps / requests are weak (item 5)
 
 
-def series_dir(phase, board, circuit):
-    return os.path.join(RAW, f"phase{phase}", board, circuit, "with_ref")
+from common import sessions as SES  # noqa: E402  (analysis/common/sessions.py: which session feeds the analysis, per point)
+
+
+def raw_selected(phase, board, circuit, filename="raw.csv"):
+    """rows of `filename` of the final dataset: each n from its selected session (SES.select_session), in-scope n only; `session` column added"""
+    return SES.read_selected(phase, board, circuit, filename)
 
 
 def load_local():
@@ -38,12 +42,12 @@ def load_local():
     rows = []
     for b in BOARDS:
         for c in CIRCUITS:
-            raw = pd.read_csv(os.path.join(series_dir(2, b, c), "raw.csv"))
+            raw = raw_selected(2, b, c)
             for n, g in raw.groupby("n"):
                 xall = g["exec_time_us"].to_numpy(dtype=float)
                 eff = _weak.effective_reps(xall)
                 x = xall[:eff]                      # statistics over the independent repetitions only (exact copies dropped)
-                rows.append(dict(board=b, circuit=c, n=int(n), reps=eff, reps_recorded=len(xall), median_us=float(np.median(x)),
+                rows.append(dict(board=b, circuit=c, n=int(n), session=g["session"].iloc[0], reps=eff, reps_recorded=len(xall), median_us=float(np.median(x)),
                                  q1_us=float(np.percentile(x, 25)), q3_us=float(np.percentile(x, 75)),
                                  min_us=float(x.min()), max_us=float(x.max())))
     return pd.DataFrame(rows).sort_values(["board", "circuit", "n"]).reset_index(drop=True)
@@ -54,12 +58,12 @@ def load_offload():
     rows = []
     for b in BOARDS:
         for c in CIRCUITS:
-            raw = pd.read_csv(os.path.join(series_dir(3, b, c), "raw.csv"))
+            raw = raw_selected(3, b, c)
             n_all = raw.groupby("n").size()
             raw = raw[(raw["timed_out"] == 0) & (raw["crc_error"] == 0)]
             for n, g in raw.groupby("n"):
                 x = g["e2e_latency_us"].to_numpy(dtype=float)
-                rows.append(dict(board=b, circuit=c, n=int(n), baud=int(g["baud_rate"].iloc[0]), reps=_weak.effective_reps(x), reps_recorded=len(x),
+                rows.append(dict(board=b, circuit=c, n=int(n), session=g["session"].iloc[0], baud=int(g["baud_rate"].iloc[0]), reps=_weak.effective_reps(x), reps_recorded=len(x),
                                  reqs_total=int(n_all[n]), median_us=float(np.median(x)),
                                  q1_us=float(np.percentile(x, 25)), q3_us=float(np.percentile(x, 75))))
     return pd.DataFrame(rows).sort_values(["board", "circuit", "n"]).reset_index(drop=True)
@@ -70,11 +74,11 @@ def load_walls():
     rows = []
     for b in BOARDS:
         for c in CIRCUITS:
-            mw = pd.read_csv(os.path.join(series_dir(2, b, c), "memory_wall.csv"))
-            w = mw[mw["status"].isin(["build_overflow", "malloc_failed"])]
+            mw = raw_selected(2, b, c, "memory_wall.csv")
+            w = mw[mw["status"].isin(["build_overflow", "malloc_failed"])] if len(mw) else mw
             for _, r in w.iterrows():
                 rows.append(dict(board=b, circuit=c, n=int(r["n"]), status=r["status"],
                                  theoretical_bytes=int(r["theoretical_bytes"]),
                                  compile_ram_pct=r["compile_ram_pct"],
-                                 file=os.path.relpath(os.path.join(series_dir(2, b, c), "memory_wall.csv"), ROOT)))
+                                 file=os.path.relpath(os.path.join(SES.bucket_dir(2, b, c, r["session"]), "memory_wall.csv"), ROOT)))
     return pd.DataFrame(rows)

@@ -28,8 +28,8 @@ def env_of(base, sid):
     return json.load(open(p))
 
 
-def audit_series(phase, board, circuit):
-    base = os.path.join(RAW, f"phase{phase}", board, circuit, "with_ref")
+def audit_series(phase, board, circuit, session="with_ref"):
+    base = os.path.join(RAW, f"phase{phase}", board, circuit, session)
     pts, raw = rd(f"{base}/points.csv"), rd(f"{base}/raw.csv")
     term = rd(f"{base}/memory_wall.csv" if phase == 2 else f"{base}/session_log.csv")
     if pts.empty or raw.empty:
@@ -66,6 +66,22 @@ def audit_series(phase, board, circuit):
     else:
         df["ref_status"] = ""
     return df
+
+
+def audit_selected(phase, board, circuit):
+    """audit_series over every session of the series, keeping per n only the rows of the SELECTED session (analysis/common/sessions.py); `session` column added"""
+    import sys
+    sys.path.insert(0, os.path.join(ROOT, "analysis"))
+    from common import sessions as SES
+    frames = []
+    for b in SES.buckets(phase, board, circuit):
+        df = audit_series(phase, board, circuit, b)
+        if df is None:
+            continue
+        df = df[[SES.is_selected(phase, board, circuit, int(n), b) for n in df["n"]]].copy()
+        df["session"] = b
+        frames.append(df)
+    return pd.concat(frames, ignore_index=True) if frames else None
 
 
 def phase1():
@@ -142,7 +158,7 @@ def main():
               f"last_pass_n={int(g[g['pass_1e-3']].n.max())} first_fail_n={int(fail.n.min())} infid@first_fail={fail.infidelity.iloc[0]:.3e}")
     cal = json.load(open(os.path.join(ROOT, "data", "calibration", "counter_20261004.json")))
     print("\nCOUNTER CALIBRATION FILE:", {k: cal[k] for k in ("timestamp_utc", "ppm", "ppm_stderr", "within_50ppm", "limitation")})
-    sidecars = glob.glob(os.path.join(RAW, "phase*", "*", "*", "with_ref", "env", "*.ref.json"))
+    sidecars = glob.glob(os.path.join(RAW, "phase*", "*", "*", "with_ref*", "env", "*.ref.json"))
     sc = [json.load(open(f)) for f in sidecars]
     print("ref sidecars:", len(sc), "| calibration empty:", sum(1 for x in sc if not x.get("calibration")),
           "| selftest values:", sorted({x.get("selftest") for x in sc}))

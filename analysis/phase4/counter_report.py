@@ -75,8 +75,9 @@ def summary(a, floor_us=100.0):
 def main():
     os.makedirs(DERIVED, exist_ok=True)
     os.makedirs(PROC, exist_ok=True)
-    vt = cv.validity_table()
-    vt.rename(columns={"T_max_s": "T_max_s"}).to_csv(os.path.join(DERIVED, "counter_validity.csv"), index=False)
+    vt_all = cv.validity_table()                              # every session, `session` and `selected` columns
+    vt_all.to_csv(os.path.join(DERIVED, "counter_validity.csv"), index=False)
+    vt = cv.validity_table(selected_only=True)                # the session whose counter pairs the analysis uses
     ex = explanation_table(vt)
     ex.to_csv(os.path.join(DERIVED, "counter_flag_explanation.csv"), index=False)
     a = agreement(vt)

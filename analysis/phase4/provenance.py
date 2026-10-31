@@ -30,7 +30,7 @@ def main():
     in_git = {(r.board, r.phase, r.hash): bool(r.in_git) for r in sc.itertuples()}
     rows = []
     # one row per session env JSON (60 on disk); sessions.csv has fewer rows (a resumed or interrupted session may not write one)
-    for ep in sorted(glob.glob(os.path.join(RAW, "phase*", "*", "*", "with_ref", "env", "*.json"))):
+    for ep in sorted(glob.glob(os.path.join(RAW, "phase*", "*", "*", "with_ref*", "env", "*.json"))):
         if ep.endswith(".ref.json"):
             continue
         parts = ep.split(os.sep)
@@ -70,7 +70,7 @@ def write_environment(df):
     as recorded by the sessions themselves (env JSON)."""
     import subprocess
     envs = {}
-    for f in glob.glob(os.path.join(RAW, "phase*", "*", "*", "with_ref", "env", "*.json")):
+    for f in glob.glob(os.path.join(RAW, "phase*", "*", "*", "with_ref*", "env", "*.json")):
         if f.endswith(".ref.json"):
             continue
         e = json.load(open(f))

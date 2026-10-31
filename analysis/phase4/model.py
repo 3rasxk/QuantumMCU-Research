@@ -36,7 +36,7 @@ def memory_model():
     for b in C.BOARDS:
         last_ok = {c: int(loc[(loc.board == b) & (loc.circuit == c)].n.max()) for c in C.CIRCUITS}
         for c in C.CIRCUITS:
-            raw = pd.read_csv(os.path.join(C.series_dir(2, b, c), "raw.csv"))
+            raw = C.raw_selected(2, b, c)
             n_lo = int(raw.n.min())
             r0 = raw[raw.n == n_lo].iloc[0]
             w = walls[(walls.board == b) & (walls.circuit == c)]
@@ -44,7 +44,7 @@ def memory_model():
             wall_ev = (w.status.iloc[0] + " (" + w.file.iloc[0] + ")") if len(w) else "none observed"
             cands = {}
             if b == "uno":
-                mw = pd.read_csv(os.path.join(C.series_dir(2, b, c), "memory_wall.csv"))
+                mw = C.raw_selected(2, b, c, "memory_wall.csv")
                 ok = mw[mw.status == "ok"]
                 over = (ok.compile_ram_used_bytes - ok.theoretical_bytes).unique()
                 assert len(over) == 1, over
@@ -88,45 +88,23 @@ def counter_summary(D):
 # ----------------------------------------------------------------------------------------------
 # Offload crossover
 # ----------------------------------------------------------------------------------------------
-def _bracket_weak(g, first):
-    """True if a point that fixes the crossover (the last n before it and the first n after it, local and offload) is weak"""
-    if first is None:
-        return False
-    b = g[g.n.isin([first - 1, first])]
-    return bool(((b.reps_local < weak.WEAK_MIN) | (b.reps_offload < weak.WEAK_MIN)).any())
-
-
 def offload_crossover():
-    loc, off = C.load_local(), C.load_offload()
-    m = loc.merge(off, on=["board", "circuit", "n"], suffixes=("_local", "_offload"))
-    m["offload_over_local"] = m.median_us_offload / m.median_us_local
-    m.to_csv(os.path.join(C.PROC, "offload_vs_local.csv"), index=False)
-    rows = []
-    for (b, c), g in m.groupby(["board", "circuit"]):
-        g = g.sort_values("n")
-        gn = g[(g.reps_local >= weak.WEAK_MIN) & (g.reps_offload >= weak.WEAK_MIN)]   # non-weak overlapping points only
-        faster = g[g.median_us_offload < g.median_us_local]
-        first = int(faster.n.min()) if len(faster) else None
-        # a crossover is "stable" if offload stays faster at every larger measured n
-        stable = bool(first is not None and (g[g.n >= first].median_us_offload < g[g.n >= first].median_us_local).all())
-        interp = None
-        if first is not None and first > g.n.min():
-            lo = g[g.n == first - 1].iloc[0]
-            hi = g[g.n == first].iloc[0]
-            d0, d1 = np.log(lo.offload_over_local), np.log(hi.offload_over_local)  # >0 then <0
-            if d0 > 0 > d1:
-                interp = float(first - 1 + d0 / (d0 - d1))
-        rows.append(dict(board=b, circuit=c, n_range=f"{g.n.min()}-{g.n.max()}", n_local_max=int(g.n.max()),
-                         first_n_offload_faster=first, stable_to_n_local_max=stable,
-                         n_star_interpolated=interp,
-                         ratio_at_n_largest_overlap=float(g.offload_over_local.iloc[-1]), n_largest_overlap=int(g.n.iloc[-1]),
-                         largest_overlap_is_weak=bool(g.iloc[-1].reps_local < weak.WEAK_MIN or g.iloc[-1].reps_offload < weak.WEAK_MIN),
-                         n_largest_overlap_nonweak=int(gn.n.iloc[-1]), ratio_at_nonweak=float(gn.offload_over_local.iloc[-1]),
-                         min_offload_req=int(g.reps_offload.min()), min_local_reps=int(g.reps_local.min()),
-                         crossover_weak=_bracket_weak(g, first),
-                         label="interpolated between measured n; never extrapolated" if interp is not None else
-                               ("measured: offload already faster at the smallest n" if first is not None else "no crossover in the measured range")))
-    X = pd.DataFrame(rows)
+    """Local (Phase 2) vs offload (Phase 3) on the selected sessions: the band and the crossover brackets live in analysis/phase4/offload_band.py.
+    Returns (m, X): m = one row per (board, circuit, n) with both a local and an offload point; X = one row per (board, circuit) with the two brackets."""
+    import offload_band as OB
+    m, allp, rng = OB.band_table()
+    m = m.rename(columns={"median_us_local": "median_us_local"})
+    m["median_us_offload"] = m.e2e_us
+    m["reps_local"] = m.reps
+    m["reps_offload"] = m.requests
+    m["offload_over_local"] = m.e2e_us / m.median_us
+    m["median_us_local"] = m.median_us
+    m.to_csv(os.path.join(C.PROC, "offload_band.csv"), index=False)
+    m[["board", "circuit", "n", "median_us_local", "median_us_offload", "reps_local", "reps_offload", "offload_over_local"]].to_csv(
+        os.path.join(C.PROC, "offload_vs_local.csv"), index=False)
+    allp.to_csv(os.path.join(OB.DER, "phase3_decomposition.csv"), index=False)
+    rng.to_csv(os.path.join(OB.DER, "phase3_pc_sim_range.csv"), index=False)
+    X = OB.crossover_table(m)
     X.to_csv(os.path.join(C.PROC, "offload_crossover.csv"), index=False)
     return m, X
 
