@@ -1,13 +1,13 @@
 board,circuit,n_first,n_last,n_points,n_fast_lo,n_fast_hi,fast_kind,fast_labels,n_slow_lo,n_slow_hi,slow_kind,slow_labels
 esp32,bell_ghz,2,13,12,12.0,13,bracket,,12.0,13.0,bracket,
 esp32,grover,2,12,11,8.0,9,bracket,weak,9.0,10.0,bracket,weak
-esp32,h_all,2,13,12,12.0,13,bracket,within noise,,,none,no crossover up to the largest measured n
+esp32,h_all,2,13,12,12.0,13,bracket,within noise,,,none,no crossover up to the largest measured n; within noise at the largest measured n
 esp32,qft,2,13,12,11.0,12,bracket,,12.0,13.0,bracket,
 esp8266,bell_ghz,2,12,11,9.0,10,bracket,within noise,10.0,11.0,bracket,within noise
-esp8266,grover,2,10,9,3.0,4,bracket,,4.0,5.0,bracket,
+esp8266,grover,2,10,9,3.0,4,bracket,weak point beyond the bracket,4.0,5.0,bracket,weak point beyond the bracket
 esp8266,h_all,2,12,11,7.0,8,bracket,within noise,7.0,8.0,bracket,
 esp8266,qft,2,12,11,6.0,7,bracket,within noise,7.0,8.0,bracket,
 uno,bell_ghz,2,7,6,5.0,6,bracket,,6.0,7.0,bracket,within noise
-uno,grover,2,7,6,,2,below,offload faster at the smallest measured n,2.0,3.0,bracket,within noise
+uno,grover,2,7,6,,2,below,offload faster at the smallest measured n; within noise at the smallest measured n,2.0,3.0,bracket,within noise
 uno,h_all,2,7,6,4.0,5,bracket,,4.0,5.0,bracket,
 uno,qft,2,7,6,3.0,4,bracket,,3.0,4.0,bracket,within noise
