@@ -1,0 +1,70 @@
+\section{Results}\label{sec:results}
+\subsection{Phase 1: float32 accuracy}
+Against Qiskit Aer (up to $n=\AerMaxN$), \hall, \bell\ and \qft\ pass the \PoneGate\ infidelity gate at every tested $n$ (largest infidelity \PoneMaxHall, \PoneMaxBell, \PoneMaxQft). \grover\ passes up to $n=\PoneGroverLastPass$ (largest passing infidelity \PoneGroverMaxPass) and fails from $n=\PoneGroverFirstFail$; at $n=12$ the raw infidelity is \GroverTwelveRaw\ while the raw marked-state probability P(marked) is still \GroverTwelvePm\ (it is the theoretical value times the lost norm; not shown in Fig.~\ref{fig:f5}). In the PC build this is a loss of norm, not a wrong state: a float64 build of the same circuit matches the closed-form Grover state (infidelity $\le$ \DoubleMax), Aer does too ($\le$ \AerMax, $n\le12$), and the float32 state keeps its direction (infidelity of the normalised state against the closed-form state $\le$ \DirMaxTwelve\ for $n\le12$; \DirThirteen\ at $n=13$ and \DirFourteen\ at $n=14$, above the \DirGate\ gate from $n=13$). The float32 constant $1/\sqrt2$ has relative error \ConstRelErr, so each H gate multiplies the squared norm by $1-$\NormPerH, a coherent bias that accumulates over \GroverTwelveNH\ H gates at $n=12$. The constant alone over-predicts the measured log norm loss by a factor \LogLossLo--\LogLossHi\ for $n=8\ldots13$ (about \LogLossOverPct\,\% too much; another float32 effect partly compensates, which one is unverified), so it accounts for the whole loss but over-predicts it, and this statement does \emph{not} extend to $n=14$ (factor \LogLossFourteen). All of this concerns the PC builds; whether the microcontroller builds lose norm identically was not tested.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/F5_phase1_accuracy.pdf}
+\caption{Phase~1 (PC build): infidelity of the float32 simulator against Qiskit Aer versus $n$, as defined in Phase~1 (no renormalisation). The dotted \grover\ line is the normalised float32 infidelity (direction error), which stays below \DirMaxTwelve\ for $n\le12$ (it grows to \DirFourteen\ at $n=14$; reference: Aer up to $n=\AerMaxN$, the closed-form state beyond) while the raw value crosses \PoneGate\ at $n=\PoneGroverFirstFail$. PC builds only; no board-level correctness data exist.}\label{fig:f5}
+\end{figure}
+
+\subsection{Memory walls}
+Table~\ref{tab:mem} and Fig.~\ref{fig:f3} compare the prediction with the measured wall. For \hall, \bell\ and \qft\ the largest working $n$ equals (first failing $n$) $-1$ on every board: \MemOkUno\ (Uno, SRAM, linker overflow), \MemOkEspLo\ (\espA) and \MemOkEspHi\ (\espB), allocation failure. The rule reproduces it in all \MemWallRows\ board--circuit rows when $B$ is the Uno static RAM, the \espA\ free heap and the \espB\ \emph{largest free block} (\MemBEspHi\,B); the \espB\ total free heap (\MemBEspHiTotal\,B) predicts $n=\MemPredEspHiTotal$, one qubit too many, because the state of $n=\MemWallEspHi$ needs one contiguous block of \MemStateAtWallEspHi\,B. Caveats: the test resolves $B$ only to a factor of two; the Uno $B$ is derived from the same compiler RAM figure that triggers the overflow, so that confirmation is close to circular; and the largest block read at $n=2$ is a lower bound on the contiguous block available at boot. \grover\ on the ESP boards never reached a wall: the \espA\ stopped at $n=\GroverLastNEspLo$ (\GroverLastMinEspLo\,min per run, \GroverLastRepsEspLo\ repetitions) and the \espB\ at $n=\GroverLastNEspHi$ (\GroverLastMinEspHi\,min, \GroverLastRepsEspHi\ repetition), limited by the \PointCapH\,h per-point cap; their predicted $n_{\max}$ ($\GroverPredEspLo$, $\GroverPredEspHi$) is \emph{untested}.
+
+\begin{table}[t]
+\caption{Predicted versus measured memory wall for \hall, \bell, \qft\ ($B$ in bytes, read at $n=2$; Uno $B$ varies by circuit). "wrong": prediction exceeds the last working $n$.}\label{tab:mem}
+\centering\footnotesize
+\resizebox{\columnwidth}{!}{\input{tables/memory}}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{figures/F3_memory_wall.pdf}
+\caption{Largest qubit count that fits: measured (last $n$ before a wall with positive evidence) versus $\lfloor\log_2(B/\AmpBytes)\rfloor$; on the \espB\ the total free heap overpredicts by one qubit. The test resolves $B$ only to a factor of two and the Uno $B$ comes from the compiler figure that triggers the overflow.}\label{fig:f3}
+\end{figure}
+
+\subsection{Execution time versus $n$ and time-model accuracy}
+Fig.~\ref{fig:f1} shows the median time per run: on a log axis the non-\grover\ series are roughly straight, consistent with work $\propto$ gate calls $\times2^n$ (Uno \qft\ bends at the smallest $n$). Fig.~\ref{fig:f2} and Table~\ref{tab:time} give the held-out scores. M2 reaches \MapeTwo\,\% MAPE over \NTestTwo\ non-weak held-out points (\MapeDecTwoClean\,\% over the \NCleanTwo\ that are also firmware class~A), against \MapeOne\,\% for M1; per board M2 scores \MapeTwoUno\,\% (Uno), \MapeTwoEspLo\,\% (\espA) and \MapeTwoEspHi\,\% (\espB), M1 \MapeOneUno, \MapeOneEspLo\ and \MapeOneEspHi\,\%. M1c (one constant per board and circuit) reaches \MapeOneCOne\,\% on \NCOne\ points and M2g (no \grover\ in the fit) \MapeTwoG\,\%. Including the weak points (\NWeakTwo\ points instead of \NTestTwo) moves M2 from \WeakSwitchWithout\ to \WeakSwitchWith\,\%. By series, the largest M2 error is Uno \qft\ (\MapeTwoUnoQft\,\%). Per-board numbers in this subsection use all non-weak points; the abstract uses the class-A subset, hence \MapeTwoEspLo\ versus \MapeTwoEspLoClean\,\% for the \espA.
+
+\emph{Identifiability.} M1 is identifiable everywhere. M2 fitted to a board passes the identifiability rule on \IdBoardsThree\ at held-out size 3, \emph{but the verdict changes with the held-out size} (size 2: \IdBoardsTwo; size 4: \IdBoardsFour), because a coefficient of exactly zero sits on the boundary on the Uno; the rule is a knife edge and is not used as a headline filter. On the identifiable subset M2 scores \MapeTwoIdent\,\% on \NTwoIdent\ points. \emph{Sensitivity:} over held-out sizes 2--4 M2 stays within \SensTwoAllMin--\SensTwoAllMax\,\% on all series and \SensTwoIdentMin--\SensTwoIdentMax\,\% on the identifiable subset (M1: \SensOneAllTwo--\SensOneAllFour\,\%).
+\emph{What M2's constants are not.} They are fitted values, not measured gate costs. On the \espA\ the fitted CNOT cost of \CnotEspLo\us\ per loop iteration is \CyclesCnotEspLo\ CPU cycles at \FcpuEspLo\,MHz although the kernel visits all $2^n$ indices, which is physically impossible; the split with the per-call term ($a$ = \ACallEspLo\us) is not reliable. On the \espB\ the fitted costs (\CyclesHEspHi, \CyclesCnotEspHi, \CyclesCphaseEspHi\ cycles per iteration for H, CNOT, CP at \FcpuEspHi\,MHz) are plausible in magnitude. \espA\ \grover\ is excluded from the fit and from the clean scores: all its selected points ran firmware with a timer interrupt inside the timed region (class B), and \espB\ \grover\ has no non-weak test point. Where the model fails (interpretation): Uno \qft\ (three fit points, no identifiable M2); memory-system effects (cache, flash wait states) are not modelled and were not checked.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{figures/F1_timing_vs_n.pdf}
+\caption{Median execution time per run (shaded: IQR; Phase~2, board \texttt{micros()}, \Reps\ repetitions per point unless hollow) versus qubit count for the four circuits on each board; dotted lines: measured memory walls (first failing $n$). Hollow markers: weak points (fewer than \WeakMin\ repetitions); \espA\ \grover\ is firmware class~B.}\label{fig:f1}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.92\textwidth]{figures/F2_parity.pdf}
+\caption{Predicted versus measured time per run: (a) M1, one constant per board; (b) M2, per-gate-kind costs. Filled markers: fitted; hollow: the largest three $n$ of each series, held out (grey: weak, not scored). Held-out MAPE \MapeOne\,\% (a) and \MapeTwo\,\% (b) over \NTestTwo\ non-weak points. M2 was not defined blind; its constants are fits.}\label{fig:f2}
+\end{figure*}
+
+\begin{table}[t]
+\caption{Held-out MAPE (\%, number of non-weak points). "clean": additionally firmware class~A. Lower block: primary MAPE when the largest $k$ $n$ of every series are held out; "ident.": identifiable boards only. Primary choice: $k=3$.}\label{tab:time}
+\centering\footnotesize
+\resizebox{\columnwidth}{!}{\input{tables/time}}
+\end{table}
+
+\subsection{\texttt{micros()} versus the counter}\label{sec:res-counter}
+Of the Phase~2 counter points, \UsableNUno\ of \RecordedNUno\ (Uno), \UsableNEspLo\ of \RecordedNEspLo\ (\espA) and \UsableNEspHi\ of \RecordedNEspHi\ (\espB) pass the validity rules. On usable points with median $\ge$\,\ModelFloorUs\us and at least \WeakMin\ pairs, the median \texttt{micros()}/counter ratio is \RatioMedUno\ (Uno, \RatioNUno\ points), \RatioMedEspLo\ (\espA, \RatioNEspLo) and \RatioMedEspHi\ (\espB, \RatioNEspHi); the longest compared run is \RatioLongSUno, \RatioLongSEspLo\ and \RatioLongSEspHi\,s respectively (\EspHiLongest\,s on one weak \espB\ point). On the \espB\ the worst point is \EspHiWorstPct\,\% off. Point medians range over \RatioMinUno--\RatioMaxUno\ (Uno) and \RatioMinEspLo--\RatioMaxEspLo\ (\espA). The Uno \texttt{micros()} reads \UnoBelowPct\,\% below the counter; we interpret this as more likely a property of the Uno timebase than of the counter (the same counter agrees with the \espB\ to better than \EspHiWorstPct\,\%), but without calibration this cannot be proven. These are agreements between two uncalibrated clocks, conditional on the coarse R5 filter, and the counter could not pair most long \espA\ points nor the largest Uno points (suspected line noise on its input; unverified; list in the report), so agreement above \RatioLongSEspLo\,s on the ESP boards is not documented.
+
+\subsection{Offload crossover}
+Fig.~\ref{fig:f4} and Table~\ref{tab:cross} give the crossover. The Phase~3 round trip has a floor at $n\le4$ of \FloorMsUno\,ms (Uno), \FloorMsEspLo\,ms (\espA) and \FloorMsEspHi\,ms (\espB) (median over the points), and the IQR/median of the round trips exceeds \IqrThresh\,\% in \IqrOver\,\% of the \NOffPoints\ Phase~3 points. Most of the spread between sessions is the PC simulation time: for $n\ge6$ the fastest and slowest session differ by a median \SimSpreadMed$\times$ and at most \SimSpreadMax$\times$ (\GroverNineSimLo--\GroverNineSimHi\,s for \grover\ $n=9$ over \GroverNineSessions\ sessions), while the board-and-link residual of points whose simulation takes under \SimSmallMs\,ms has a median of \ResidMed\us\ (IQR \ResidLo--\ResidHi\us). \CrossBoth\ of \NCross\ board--circuit pairs have a bracket under both bounds; \CrossNone\ pair (\espB\ \hall) has no crossover up to the largest measured $n$ under the slow bound, and \CrossBelow\ (Uno \grover) is already faster offloaded at the smallest measured $n$ under the fast bound. \LabNoise\ of the bracket labels are \emph{within noise} and \LabWeak\ rest on a weak point. Beyond the local wall only offload exists (Uno to $n=\OffNMaxUno$, \espA\ to $\OffNMaxEspLo$, \espB\ to $\OffNMaxEspHi$). The band reflects the host PC, not the board; one PC, one baud rate. The ESP8266 Phase~3 data come from one repeat session.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{figures/F4_offload_crossover.pdf}
+\caption{Local execution time per run (solid, IQR shaded; Phase~2) and offload latency per request (hatched band: fastest to slowest observed PC simulation time; dashed: the measured session; Phase~3, \BaudSp\,baud) versus $n$ per circuit. Bars: crossover bracket of two measured $n$ for the fast (solid) and slow (dotted) bound; arrow: offload already faster at the smallest measured $n$; no bar: no crossover up to the largest measured $n$. Hollow markers: weak points. The band reflects the host PC's simulation speed (about \SimSpreadAbout$\times$ between sessions), not the board.}\label{fig:f4}
+\end{figure*}
+
+\begin{table}[t]
+\caption{Crossover brackets: the two consecutive measured $n$ between which offload becomes faster than local and stays faster, for the fastest and slowest observed PC simulation. $\le2$: faster at the smallest measured $n$; none: no crossover up to the largest measured $n$. $^\dagger$ within noise (IQRs overlap at an end of the bracket); $^\ddagger$ a weak point lies in or beyond the bracket (ESP8266 \grover: beyond it). One PC, \BaudSp\,baud.}\label{tab:cross}
+\centering\footnotesize
+\resizebox{\columnwidth}{!}{\input{tables/crossover}}
+\end{table}
+
+\subsection{Reproducibility}
+Phase~2 board-timer medians of \ReproPtwoN\ points (all \grover\ on the ESP boards) measured in more than one session differ by at most \ReproPtwoMaxPct\,\% (median \ReproPtwoMedPct\,\%). Phase~3 round trips of \ReproPthreeN\ \espA\ points differ between the original and repeat session by a median \ReproPthreeE\,\% (max \ReproPthreeEMax\,\%), and the PC simulation part by a median \ReproPthreeSim\,\%, while the board-and-link residual differs by a median \ReproPthreeResid\us: the variation between sessions is mostly the PC simulation time, which the band of Table~\ref{tab:cross} covers. The cause of the PC speed change is not recorded.
+

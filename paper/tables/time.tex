@@ -1,0 +1,15 @@
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+ & all & clean & Uno & ESP8266 & ESP32 \\
+\midrule
+M1 (1 constant / board) & 47.3 (32) & 46.1 (30) & 44.8 (12) & 67.2 (11) & 26.4 (9) \\
+M1c (1 / board and circuit) & 27.6 (30) & 27.6 (30) & 44.0 (12) & 23.3 (9) & 9.9 (9) \\
+M2 (per gate kind) & 17.0 (32) & 16.5 (30) & 24.9 (12) & 17.2 (11) & 6.5 (9) \\
+M2g (M2 without grover) & 13.8 (32) & 13.0 (30) & 16.2 (12) & 17.2 (11) & 6.3 (9) \\
+\midrule
+held out & M1 & M2 & M2, ident. & & \\
+largest 2 n & 46.4 (21) & 14.1 (21) & 14.1 (21) & & \\
+largest 3 n & 47.3 (32) & 17.0 (32) & 12.4 (20) & & \\
+largest 4 n & 48.2 (43) & 17.9 (43) & 14.5 (27) & & \\
+\bottomrule
+\end{tabular}

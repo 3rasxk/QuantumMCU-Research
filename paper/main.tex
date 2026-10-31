@@ -1,0 +1,37 @@
+% Build: make paper   (see Makefile). Blind by default: \blindfalse in the next line only for the camera-ready version.
+\documentclass[conference]{IEEEtran}
+\usepackage{booktabs,graphicx,amsmath,xspace,microtype}
+\usepackage{iftex}
+\ifXeTeX\usepackage{fontspec}% tectonic (XeTeX) has no Times bold for IEEEtran; the TeX Gyre files ship with it
+\setmainfont{texgyretermes-regular.otf}[BoldFont=texgyretermes-bold.otf,ItalicFont=texgyretermes-italic.otf,BoldItalicFont=texgyretermes-bolditalic.otf]
+\setmonofont{texgyrecursor-regular.otf}[BoldFont=texgyrecursor-bold.otf,ItalicFont=texgyrecursor-italic.otf,Scale=MatchLowercase]\fi
+\usepackage[hidelinks]{hyperref}
+\newif\ifblind
+\blindtrue
+%\blindfalse
+\input{numbers}
+\input{sections/macros}
+\begin{document}
+\title{What Limits Statevector Quantum-Circuit Simulation on Microcontrollers? Memory, Time and Offload on Uno, ESP8266 and ESP32}
+\ifblind
+\author{\IEEEauthorblockN{Anonymous submission}}
+\else
+\author{\IEEEauthorblockN{TODO-author}\IEEEauthorblockA{TODO-affiliation\\ TODO-email}}
+\fi
+\maketitle
+\begin{abstract}
+\input{sections/abstract}
+\end{abstract}
+\begin{IEEEkeywords}
+statevector simulation, microcontrollers, memory wall, performance model, computation offloading
+\end{IEEEkeywords}
+\input{sections/intro}
+\input{sections/related}
+\input{sections/method}
+\input{sections/results}
+\input{sections/discussion}
+\input{sections/limitations}
+\input{sections/conclusion}
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+\end{document}

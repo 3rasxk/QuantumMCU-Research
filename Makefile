@@ -10,3 +10,16 @@ paper-figures-full:
 
 test:
 	@for f in $$(git ls-files '*_test.py'); do $(PY) $$f > /dev/null 2>&1 && echo "ok   $$f" || echo "FAIL $$f"; done
+
+# make paper : numbers.tex and tables from the derived CSVs, link F1-F5 from figures/phase4, build paper/main.pdf (latexmk, else tectonic)
+.PHONY: paper paper-numbers paper-figs
+paper-numbers:
+	$(PY) analysis/paper/make_numbers.py
+
+paper-figs:
+	@mkdir -p paper/figures
+	@for f in F1_timing_vs_n F2_parity F3_memory_wall F4_offload_crossover F5_phase1_accuracy; do ln -sf ../../figures/phase4/$$f.pdf paper/figures/$$f.pdf; done
+
+paper: paper-numbers paper-figs
+	@if command -v latexmk >/dev/null 2>&1; then cd paper && latexmk -pdf -interaction=nonstopmode main.tex; \
+	else cd paper && tectonic -X compile --keep-logs --keep-intermediates main.tex; fi
