@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # timer_vs_counter_house_plots.py
-# Per board: counter time (solid), the board's micros() time (dashed) and |micros() - counter| (dotted), one colour per board (µs, log scale, point medians;
-# the sign of the difference is not shown) vs n, one chart per circuit with the three boards, in the house line-chart style of the graph-create skill
+# Per board: time per run from the external reference counter (solid) and from the board's own timer, micros() (dashed), one colour per board
+# (µs, log scale, point medians) vs n, one chart per circuit with the three boards, in the house line-chart style of the graph-create skill
 # (same layout as analysis/algorithm_house_plots.py: no title, legend = board names, linear y). Only points whose counter pair passed the validity rules
 # (usable) in the selected sessions are drawn (data/derived/counter_validity.csv, read-only); the line is drawn straight over unusable points.
 #   data/figures/phase2/timer_vs_counter/<circuit>.png   data/figures/phase3/timer_vs_counter/<circuit>.png
@@ -23,20 +23,18 @@ from plot_style import FAMILIES, plot_grouped_lines, save_figure  # noqa: E402
 
 cv = pd.read_csv(os.path.join(ROOT, "data", "derived", "counter_validity.csv"))
 cv = cv[cv.selected.astype(bool) & cv.usable.astype(bool) & (cv.counter_median_us > 0) & (cv.micros_median_us > 0)]
-cv = cv.assign(ratio=(cv.micros_median_us - cv.counter_median_us).abs())     # column name kept: it is the plotted value, in µs
-cv = cv[cv.ratio > 0]                                                        # a log axis cannot show an exact 0
 NAME = {"uno": "Uno", "esp8266": "ESP8266", "esp32": "ESP32"}
 for ph in (2, 3):
     for c in ("h_all", "bell_ghz", "qft", "grover"):
         g = cv[(cv.phase == ph) & (cv.circuit == c)]
-        SER = ["counter", "micros()", "|micros() - counter|"]
-        STYLE = {"counter": "-", "micros()": "--", "|micros() - counter|": ":"}
+        SER = ["reference counter", "on-board timer"]
+        STYLE = {"reference counter": "-", "on-board timer": "--"}
         rows = []
         for r in g.sort_values(["board", "n"]).itertuples():
-            for lab, v in zip(SER, (r.counter_median_us, r.micros_median_us, r.ratio)):
-                rows.append({"n": int(r.n), "ratio": float(v), "board": NAME[r.board], "series": lab})
+            for lab, v in zip(SER, (r.counter_median_us, r.micros_median_us)):
+                rows.append({"n": int(r.n), "time_us": float(v), "board": NAME[r.board], "series": lab})
         df = pd.DataFrame(rows)
-        fig, ax = plot_grouped_lines(df, "n", "ratio", "board", "series", title="", xlabel="Number of qubits, $n$",
+        fig, ax = plot_grouped_lines(df, "n", "time_us", "board", "series", title="", xlabel="Number of qubits, $n$",
                                      ylabel=r"Time per run (µs, log scale)",
                                      group_order=list(NAME.values()), series_order=SER)
         for ln in ax.lines:                                   # one colour per board; line style tells the clock
@@ -45,7 +43,7 @@ for ph in (2, 3):
                 if lab.startswith(bn + " "):
                     kind = lab[len(bn) + 1:]
                     ln.set_linestyle(STYLE[kind])
-                    if kind == "micros()":      # dark shade of the board's colour, thinner and on top, so it stays visible over the (almost equal) counter line
+                    if kind == "on-board timer":      # dark shade of the board's colour, thinner and on top, so it stays visible over the (almost equal) counter line
                         ln.set_color(FAMILIES[gi][3])
                         ln.set_linewidth(1.4)
                         ln.set_zorder(4)
@@ -53,7 +51,7 @@ for ph in (2, 3):
                     else:
                         ln.set_color(FAMILIES[gi][0])
         ax.legend(loc="upper left", ncol=3, fontsize=8.5, framealpha=0.9)
-        lo, hi = df.ratio.min(), df.ratio.max()
+        lo, hi = df.time_us.min(), df.time_us.max()
         lo_e = int(np.floor(np.log10(lo)))
         ax.set_ylim(10.0 ** lo_e, 10.0 ** (np.log10(hi) + 0.13 * (np.log10(hi) - lo_e)))   # whole decade below, headroom for the legend
         ax.yaxis.set_major_locator(mticker.LogLocator(base=10, numticks=30))
