@@ -14,6 +14,8 @@ import glob
 import os
 import sys
 
+import matplotlib.ticker as mticker
+import numpy as np
 import pandas as pd
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -44,6 +46,16 @@ for ph, (title, SER, ylab) in PHASES.items():
         df = pd.DataFrame(rows)
         fig, ax = plot_grouped_lines(df, "n", "time_us", "board", "series", title=title.format(c=c), xlabel="Number of qubits, $n$", ylabel=ylab,
                                      group_order=list(NAME.values()), series_order=[s for s, _ in SER])
+        # y axis fitted to the data: limits on the whole decades around it (plus headroom for the legend), a label at every decade, minor ticks at 2..9
+        lo, hi = df.time_us.min(), df.time_us.max()
+        lo_e = int(np.floor(np.log10(lo)))
+        top = np.log10(hi) + 0.13 * (np.log10(hi) - lo_e)      # headroom for the legend rows
+        ax.set_ylim(10.0 ** lo_e, 10.0 ** top)
+        ax.yaxis.set_major_locator(mticker.LogLocator(base=10, numticks=30))
+        ax.yaxis.set_major_formatter(mticker.LogFormatterMathtext(base=10))
+        ax.yaxis.set_minor_locator(mticker.LogLocator(base=10, subs=np.arange(2, 10), numticks=60))
+        ax.yaxis.set_minor_formatter(mticker.NullFormatter())
+        ax.tick_params(axis="y", which="minor", length=3, direction="out")
         out = os.path.join(ROOT, "data", "figures", f"phase{ph}", "algorithms", f"{c}.png")
         os.makedirs(os.path.dirname(out), exist_ok=True)
         save_figure(fig, out)
