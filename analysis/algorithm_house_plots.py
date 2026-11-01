@@ -48,6 +48,9 @@ for ph, (title, SER, ylab) in PHASES.items():
         df = pd.DataFrame(rows)
         fig, ax = plot_grouped_lines(df, "n", "time_us", "board", "series", title="", xlabel="Number of qubits, $n$", ylabel=ylab,
                                      group_order=list(NAME.values()), series_order=[s for s, _ in SER])
+        if len(SER) == 1:                                      # one series per board: the legend names only the board
+            for t in ax.get_legend().get_texts():
+                t.set_text(t.get_text().replace(" " + SER[0][0], ""))
         # y axis fitted to the data: limits on the whole decades around it (plus headroom for the legend), a label at every decade, minor ticks at 2..9
         lo, hi = df.time_us.min(), df.time_us.max()
         lo_e = int(np.floor(np.log10(lo)))
