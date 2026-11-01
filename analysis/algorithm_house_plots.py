@@ -30,9 +30,9 @@ cv = pd.read_csv(os.path.join(ROOT, "data", "derived", "counter_validity.csv"))
 cv = cv[cv.selected.astype(bool) & cv.usable.astype(bool) & (cv.counter_median_us > 0)]
 NAME = {"uno": "Uno", "esp8266": "ESP8266", "esp32": "ESP32"}
 CIRC = ("h_all", "bell_ghz", "qft", "grover")
-PHASES = {2: ("Phase 2 -- {c}, local (counter)", [("local", 2)], "Time per run (µs, log scale; counter)"),
-          3: ("Phase 3 -- {c}, offload (counter)", [("round trip", 3)], "Time per request (µs, log scale; counter)"),
-          4: ("Phase 4 -- {c}, local vs offload (counter)", [("local", 2), ("offload", 3)], "Time per run (µs, log scale; counter)")}
+PHASES = {2: ("Phase 2 -- {c}, local (counter)", [("local", 2)], "Time per run (µs, log scale)"),
+          3: ("Phase 3 -- {c}, offload (counter)", [("round trip", 3)], "Time per request (µs, log scale)"),
+          4: ("Phase 4 -- {c}, local vs offload (counter)", [("local", 2), ("offload", 3)], "Time per run (µs, log scale)")}
 for ph, (title, SER, ylab) in PHASES.items():
     for c in CIRC:
         rows = []
@@ -46,7 +46,7 @@ for ph, (title, SER, ylab) in PHASES.items():
                 pts = [(n, t) for n, t in sorted(have[lab].items()) if ns is None or n in ns]
                 rows += [{"n": n, "time_us": float(t), "board": NAME[b], "series": lab} for n, t in pts]
         df = pd.DataFrame(rows)
-        fig, ax = plot_grouped_lines(df, "n", "time_us", "board", "series", title=title.format(c=c), xlabel="Number of qubits, $n$", ylabel=ylab,
+        fig, ax = plot_grouped_lines(df, "n", "time_us", "board", "series", title="", xlabel="Number of qubits, $n$", ylabel=ylab,
                                      group_order=list(NAME.values()), series_order=[s for s, _ in SER])
         # y axis fitted to the data: limits on the whole decades around it (plus headroom for the legend), a label at every decade, minor ticks at 2..9
         lo, hi = df.time_us.min(), df.time_us.max()
