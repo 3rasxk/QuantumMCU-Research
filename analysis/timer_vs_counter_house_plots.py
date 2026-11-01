@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # timer_vs_counter_house_plots.py
-# micros() minus counter (µs, point medians) vs n, one chart per circuit with the three boards, in the house line-chart style of the graph-create skill
+# |micros() minus counter| (µs, log scale, point medians; the sign is not shown) vs n, one chart per circuit with the three boards, in the house line-chart style of the graph-create skill
 # (same layout as analysis/algorithm_house_plots.py: no title, legend = board names, linear y). Only points whose counter pair passed the validity rules
 # (usable) in the selected sessions are drawn (data/derived/counter_validity.csv, read-only); the line is drawn straight over unusable points.
 #   data/figures/phase2/timer_vs_counter/<circuit>.png   data/figures/phase3/timer_vs_counter/<circuit>.png
@@ -9,6 +9,7 @@ import glob
 import os
 import sys
 
+import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 
@@ -21,7 +22,8 @@ from plot_style import plot_grouped_lines, save_figure  # noqa: E402
 
 cv = pd.read_csv(os.path.join(ROOT, "data", "derived", "counter_validity.csv"))
 cv = cv[cv.selected.astype(bool) & cv.usable.astype(bool) & (cv.counter_median_us > 0) & (cv.micros_median_us > 0)]
-cv = cv.assign(ratio=cv.micros_median_us - cv.counter_median_us)     # column name kept: it is the plotted value, in µs
+cv = cv.assign(ratio=(cv.micros_median_us - cv.counter_median_us).abs())     # column name kept: it is the plotted value, in µs
+cv = cv[cv.ratio > 0]                                                        # a log axis cannot show an exact 0
 NAME = {"uno": "Uno", "esp8266": "ESP8266", "esp32": "ESP32"}
 for ph in (2, 3):
     for c in ("h_all", "bell_ghz", "qft", "grover"):
@@ -29,13 +31,18 @@ for ph in (2, 3):
         rows = [{"n": int(r.n), "ratio": float(r.ratio), "board": NAME[r.board], "series": "ratio"} for r in g.sort_values(["board", "n"]).itertuples()]
         df = pd.DataFrame(rows)
         fig, ax = plot_grouped_lines(df, "n", "ratio", "board", "series", title="", xlabel="Number of qubits, $n$",
-                                     ylabel=r"micros() $-$ counter (µs, per-point medians)", log_y=False,
+                                     ylabel=r"|micros() $-$ counter| (µs, log scale)",
                                      group_order=list(NAME.values()), series_order=["ratio"])
         for t in ax.get_legend().get_texts():
             t.set_text(t.get_text().replace(" ratio", ""))
-        lo, hi = min(df.ratio.min(), 0.0), max(df.ratio.max(), 0.0)          # always shows 0 (no difference)
-        span = max(hi - lo, 1.0)
-        ax.set_ylim(lo - 0.05 * span, hi + 0.25 * span)                      # headroom for the legend
+        lo, hi = df.ratio.min(), df.ratio.max()
+        lo_e = int(np.floor(np.log10(lo)))
+        ax.set_ylim(10.0 ** lo_e, 10.0 ** (np.log10(hi) + 0.13 * (np.log10(hi) - lo_e)))   # whole decade below, headroom for the legend
+        ax.yaxis.set_major_locator(mticker.LogLocator(base=10, numticks=30))
+        ax.yaxis.set_major_formatter(mticker.LogFormatterMathtext(base=10))
+        ax.yaxis.set_minor_locator(mticker.LogLocator(base=10, subs=np.arange(2, 10), numticks=60))
+        ax.yaxis.set_minor_formatter(mticker.NullFormatter())
+        ax.tick_params(axis="y", which="minor", length=3, direction="out")
         out = os.path.join(ROOT, "data", "figures", f"phase{ph}", "timer_vs_counter", f"{c}.png")
         os.makedirs(os.path.dirname(out), exist_ok=True)
         save_figure(fig, out)
