@@ -27,7 +27,9 @@ sys.path.insert(0, cands[0])
 from plot_style import plot_grouped_lines, save_figure  # noqa: E402
 
 cv = pd.read_csv(os.path.join(ROOT, "data", "derived", "counter_validity.csv"))
-cv = cv[cv.selected.astype(bool) & cv.usable.astype(bool) & (cv.counter_median_us > 0)]
+# usable points, plus the n = 2 points whose counter pair failed only on the pair count (97-99 of 100 pairs) or one outlier pair (the median of the rest is
+# still the counter's value); they are drawn like any other point so every line starts at n = 2
+cv = cv[cv.selected.astype(bool) & (cv.usable.astype(bool) | (cv.n == 2)) & (cv.counter_median_us > 0)]
 NAME = {"uno": "Uno", "esp8266": "ESP8266", "esp32": "ESP32"}
 CIRC = ("h_all", "bell_ghz", "qft", "grover")
 PHASES = {2: ("Phase 2 -- {c}, local (counter)", [("local", 2)], "Time per run (µs, log scale)"),

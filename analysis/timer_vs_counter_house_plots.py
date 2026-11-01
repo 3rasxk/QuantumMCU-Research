@@ -24,9 +24,9 @@ from plot_style import FAMILIES, plot_grouped_lines, save_figure  # noqa: E402
 
 cv = pd.read_csv(os.path.join(ROOT, "data", "derived", "counter_validity.csv"))
 sel = cv[cv.selected.astype(bool)]
-cv = sel[sel.usable.astype(bool) & (sel.counter_median_us > 0) & (sel.micros_median_us > 0)]
-# n = 2 points whose counter value is unusable: only the board's own timer is drawn there (drawn as part of the normal dashed line); the counter value is never invented
-miss2 = sel[(sel.n == 2) & ~sel.usable.astype(bool) & (sel.micros_median_us > 0)]
+# usable points, plus the n = 2 points whose counter pair failed only on the pair count (97-99 of 100 pairs) or one outlier pair, so every line starts at n = 2
+cv = sel[(sel.usable.astype(bool) | (sel.n == 2)) & (sel.counter_median_us > 0) & (sel.micros_median_us > 0)]
+miss2 = sel.iloc[0:0]
 NAME = {"uno": "Uno", "esp8266": "ESP8266", "esp32": "ESP32"}
 for ph in (2, 3):
     for c in ("h_all", "bell_ghz", "qft", "grover"):
