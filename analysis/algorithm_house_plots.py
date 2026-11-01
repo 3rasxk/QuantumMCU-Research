@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # algorithm_house_plots.py
 # One chart per circuit (three boards), in the house line-chart style of the graph-create skill (grouped log-y lines, no markers); group = board.
+# The offload (Phase 3) lines are smoothed for display; local lines are drawn as measured ([1,2,1]/4 average of log10 time over neighbouring points, end points kept); the title says so.
 # EVERY time here is the ESP32 reference counter's median pulse width of the point (data/derived/counter_validity.csv, selected sessions); the
 # board's own micros() is never drawn. Only points whose counter pair passed the validity rules (usable) are drawn; where a point is unusable the
 # line is drawn straight between the neighbouring usable points (no marker, so the gap is not visible: see the list printed at the end).
@@ -32,6 +33,16 @@ CIRC = ("h_all", "bell_ghz", "qft", "grover")
 PHASES = {2: ("Phase 2 -- {c}, local (counter)", [("local", 2)], "Time per run (µs, log scale; counter)"),
           3: ("Phase 3 -- {c}, offload (counter)", [("round trip", 3)], "Time per request (µs, log scale; counter)"),
           4: ("Phase 4 -- {c}, local vs offload (counter)", [("local", 2), ("offload", 3)], "Time per run (µs, log scale; counter)")}
+def smooth(vals):
+    """display smoothing only: [1, 2, 1] / 4 moving average of log10(time) over neighbouring points, the two end points are kept"""
+    v = np.log10(np.asarray(vals, float))
+    if len(v) < 3:
+        return list(10 ** v)
+    out = v.copy()
+    out[1:-1] = (v[:-2] + 2 * v[1:-1] + v[2:]) / 4
+    return list(10 ** out)
+
+
 for ph, (title, SER, ylab) in PHASES.items():
     for c in CIRC:
         rows = []
@@ -41,10 +52,11 @@ for ph, (title, SER, ylab) in PHASES.items():
                 g = cv[(cv.phase == src) & (cv.board == b) & (cv.circuit == c)]
                 have[lab] = dict(zip(g.n.astype(int), g.counter_median_us))
             ns = set.intersection(*[set(v) for v in have.values()]) if ph == 4 else None
-            for lab, _ in SER:
-                rows += [{"n": n, "time_us": float(t), "board": NAME[b], "series": lab} for n, t in sorted(have[lab].items()) if ns is None or n in ns]
+            for lab, src in SER:
+                pts = [(n, t) for n, t in sorted(have[lab].items()) if ns is None or n in ns]
+                rows += [{"n": n, "time_us": float(t), "board": NAME[b], "series": lab} for (n, _), t in zip(pts, smooth([t for _, t in pts]) if src == 3 else [t for _, t in pts])]
         df = pd.DataFrame(rows)
-        fig, ax = plot_grouped_lines(df, "n", "time_us", "board", "series", title=title.format(c=c), xlabel="Number of qubits, $n$", ylabel=ylab,
+        fig, ax = plot_grouped_lines(df, "n", "time_us", "board", "series", title=title.format(c=c) + (", offload smoothed" if any(src == 3 for _, src in SER) else ""), xlabel="Number of qubits, $n$", ylabel=ylab,
                                      group_order=list(NAME.values()), series_order=[s for s, _ in SER])
         # y axis fitted to the data: limits on the whole decades around it (plus headroom for the legend), a label at every decade, minor ticks at 2..9
         lo, hi = df.time_us.min(), df.time_us.max()
