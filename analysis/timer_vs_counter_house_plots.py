@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # timer_vs_counter_house_plots.py
-# |micros() minus counter| and the board's micros() time itself (µs, log scale, point medians; the sign of the difference is not shown) vs n, one chart per circuit with the three boards, in the house line-chart style of the graph-create skill
+# Per board: counter time (solid), the board's micros() time (dashed) and |micros() - counter| (dotted), one colour per board (µs, log scale, point medians;
+# the sign of the difference is not shown) vs n, one chart per circuit with the three boards, in the house line-chart style of the graph-create skill
 # (same layout as analysis/algorithm_house_plots.py: no title, legend = board names, linear y). Only points whose counter pair passed the validity rules
 # (usable) in the selected sessions are drawn (data/derived/counter_validity.csv, read-only); the line is drawn straight over unusable points.
 #   data/figures/phase2/timer_vs_counter/<circuit>.png   data/figures/phase3/timer_vs_counter/<circuit>.png
@@ -18,7 +19,7 @@ cands = glob.glob(os.path.expanduser("~/.claude/skills/synced/*/graph-create/scr
 if not cands:
     sys.exit("graph-create skill not found under ~/.claude/skills/synced/*/graph-create")
 sys.path.insert(0, cands[0])
-from plot_style import plot_grouped_lines, save_figure  # noqa: E402
+from plot_style import FAMILIES, plot_grouped_lines, save_figure  # noqa: E402
 
 cv = pd.read_csv(os.path.join(ROOT, "data", "derived", "counter_validity.csv"))
 cv = cv[cv.selected.astype(bool) & cv.usable.astype(bool) & (cv.counter_median_us > 0) & (cv.micros_median_us > 0)]
@@ -28,15 +29,30 @@ NAME = {"uno": "Uno", "esp8266": "ESP8266", "esp32": "ESP32"}
 for ph in (2, 3):
     for c in ("h_all", "bell_ghz", "qft", "grover"):
         g = cv[(cv.phase == ph) & (cv.circuit == c)]
-        SER = ["micros()", "|micros() - counter|"]
+        SER = ["counter", "micros()", "|micros() - counter|"]
+        STYLE = {"counter": "-", "micros()": "--", "|micros() - counter|": ":"}
         rows = []
         for r in g.sort_values(["board", "n"]).itertuples():
-            rows.append({"n": int(r.n), "ratio": float(r.micros_median_us), "board": NAME[r.board], "series": SER[0]})
-            rows.append({"n": int(r.n), "ratio": float(r.ratio), "board": NAME[r.board], "series": SER[1]})
+            for lab, v in zip(SER, (r.counter_median_us, r.micros_median_us, r.ratio)):
+                rows.append({"n": int(r.n), "ratio": float(v), "board": NAME[r.board], "series": lab})
         df = pd.DataFrame(rows)
         fig, ax = plot_grouped_lines(df, "n", "ratio", "board", "series", title="", xlabel="Number of qubits, $n$",
                                      ylabel=r"Time per run (µs, log scale)",
                                      group_order=list(NAME.values()), series_order=SER)
+        for ln in ax.lines:                                   # one colour per board; line style tells the clock
+            lab = ln.get_label()
+            for gi, bn in enumerate(NAME.values()):
+                if lab.startswith(bn + " "):
+                    kind = lab[len(bn) + 1:]
+                    ln.set_linestyle(STYLE[kind])
+                    if kind == "micros()":      # dark shade of the board's colour, thinner and on top, so it stays visible over the (almost equal) counter line
+                        ln.set_color(FAMILIES[gi][3])
+                        ln.set_linewidth(1.4)
+                        ln.set_zorder(4)
+                        ln.set_dashes((4, 3))
+                    else:
+                        ln.set_color(FAMILIES[gi][0])
+        ax.legend(loc="upper left", ncol=3, fontsize=8.5, framealpha=0.9)
         lo, hi = df.ratio.min(), df.ratio.max()
         lo_e = int(np.floor(np.log10(lo)))
         ax.set_ylim(10.0 ** lo_e, 10.0 ** (np.log10(hi) + 0.13 * (np.log10(hi) - lo_e)))   # whole decade below, headroom for the legend
