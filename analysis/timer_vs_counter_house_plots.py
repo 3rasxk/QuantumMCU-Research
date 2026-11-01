@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # timer_vs_counter_house_plots.py
 # Per board: time per run from the external reference counter (solid) and from the board's own timer, micros() (dashed), one colour per board
-# (µs, log scale, point medians) vs n, one chart per circuit with the three boards, in the house line-chart style of the graph-create skill
+# (µs, log scale, point medians) vs n; the gap between the two lines is shaded, one chart per circuit with the three boards, in the house line-chart style of the graph-create skill
 # (same layout as analysis/algorithm_house_plots.py: no title, legend = board names, linear y). Only points whose counter pair passed the validity rules
 # (usable) in the selected sessions are drawn (data/derived/counter_validity.csv, read-only); the line is drawn straight over unusable points.
 #   data/figures/phase2/timer_vs_counter/<circuit>.png   data/figures/phase3/timer_vs_counter/<circuit>.png
@@ -11,6 +11,7 @@ import os
 import sys
 
 import matplotlib.ticker as mticker
+from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
 
@@ -50,7 +51,15 @@ for ph in (2, 3):
                         ln.set_dashes((4, 3))
                     else:
                         ln.set_color(FAMILIES[gi][0])
-        ax.legend(loc="upper left", ncol=3, fontsize=8.5, framealpha=0.9)
+        inv = {v: k for k, v in NAME.items()}
+        for gi, bn in enumerate(NAME.values()):                # shade the gap between the two clocks, in the board's colour
+            gg = g[g.board == inv[bn]].sort_values("n")
+            if len(gg):
+                ax.fill_between(gg.n, gg.counter_median_us, gg.micros_median_us, color=FAMILIES[gi][0], alpha=0.55, lw=0, zorder=3)
+        hs, ls = ax.get_legend_handles_labels()
+        hs.append(Patch(facecolor="0.5", alpha=0.55, label="difference between the two"))
+        ls.append("difference between the two")
+        ax.legend(hs, ls, loc="upper left", ncol=4, fontsize=8, framealpha=0.9)
         lo, hi = df.time_us.min(), df.time_us.max()
         lo_e = int(np.floor(np.log10(lo)))
         ax.set_ylim(10.0 ** lo_e, 10.0 ** (np.log10(hi) + 0.13 * (np.log10(hi) - lo_e)))   # whole decade below, headroom for the legend
