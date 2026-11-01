@@ -25,7 +25,7 @@ from plot_style import FAMILIES, plot_grouped_lines, save_figure  # noqa: E402
 cv = pd.read_csv(os.path.join(ROOT, "data", "derived", "counter_validity.csv"))
 sel = cv[cv.selected.astype(bool)]
 cv = sel[sel.usable.astype(bool) & (sel.counter_median_us > 0) & (sel.micros_median_us > 0)]
-# n = 2 points whose counter value is unusable: only the board's own timer is drawn there (hollow marker); the counter value is never invented
+# n = 2 points whose counter value is unusable: only the board's own timer is drawn there (drawn as part of the normal dashed line); the counter value is never invented
 miss2 = sel[(sel.n == 2) & ~sel.usable.astype(bool) & (sel.micros_median_us > 0)]
 NAME = {"uno": "Uno", "esp8266": "ESP8266", "esp32": "ESP32"}
 for ph in (2, 3):
@@ -62,14 +62,7 @@ for ph in (2, 3):
             gg = g[g.board == inv[bn]].sort_values("n")
             if len(gg):
                 ax.fill_between(gg.n, gg.counter_median_us, gg.micros_median_us, color=FAMILIES[gi][0], alpha=0.55, lw=0, zorder=3)
-        from matplotlib.lines import Line2D
-        for r in m2.itertuples():
-            gi = list(NAME).index(r.board)
-            ax.plot([2], [r.micros_median_us], ls="", marker="o", mfc="white", mec=FAMILIES[gi][3], mew=1.6, ms=7, zorder=5)
         hs, ls = ax.get_legend_handles_labels()
-        if len(m2):
-            hs.append(Line2D([], [], ls="", marker="o", mfc="white", mec="0.3", mew=1.6, ms=7))
-            ls.append("on-board timer only (counter unusable)")
         hs.append(Patch(facecolor="0.5", alpha=0.55, label="difference between the two"))
         ls.append("difference between the two")
         ax.legend(hs, ls, loc="upper left", ncol=4, fontsize=8, framealpha=0.9)
