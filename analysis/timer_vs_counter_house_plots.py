@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # timer_vs_counter_house_plots.py
-# |micros() minus counter| (µs, log scale, point medians; the sign is not shown) vs n, one chart per circuit with the three boards, in the house line-chart style of the graph-create skill
+# |micros() minus counter| and the board's micros() time itself (µs, log scale, point medians; the sign of the difference is not shown) vs n, one chart per circuit with the three boards, in the house line-chart style of the graph-create skill
 # (same layout as analysis/algorithm_house_plots.py: no title, legend = board names, linear y). Only points whose counter pair passed the validity rules
 # (usable) in the selected sessions are drawn (data/derived/counter_validity.csv, read-only); the line is drawn straight over unusable points.
 #   data/figures/phase2/timer_vs_counter/<circuit>.png   data/figures/phase3/timer_vs_counter/<circuit>.png
@@ -28,13 +28,15 @@ NAME = {"uno": "Uno", "esp8266": "ESP8266", "esp32": "ESP32"}
 for ph in (2, 3):
     for c in ("h_all", "bell_ghz", "qft", "grover"):
         g = cv[(cv.phase == ph) & (cv.circuit == c)]
-        rows = [{"n": int(r.n), "ratio": float(r.ratio), "board": NAME[r.board], "series": "ratio"} for r in g.sort_values(["board", "n"]).itertuples()]
+        SER = ["micros()", "|micros() - counter|"]
+        rows = []
+        for r in g.sort_values(["board", "n"]).itertuples():
+            rows.append({"n": int(r.n), "ratio": float(r.micros_median_us), "board": NAME[r.board], "series": SER[0]})
+            rows.append({"n": int(r.n), "ratio": float(r.ratio), "board": NAME[r.board], "series": SER[1]})
         df = pd.DataFrame(rows)
         fig, ax = plot_grouped_lines(df, "n", "ratio", "board", "series", title="", xlabel="Number of qubits, $n$",
-                                     ylabel=r"|micros() $-$ counter| (µs, log scale)",
-                                     group_order=list(NAME.values()), series_order=["ratio"])
-        for t in ax.get_legend().get_texts():
-            t.set_text(t.get_text().replace(" ratio", ""))
+                                     ylabel=r"Time per run (µs, log scale)",
+                                     group_order=list(NAME.values()), series_order=SER)
         lo, hi = df.ratio.min(), df.ratio.max()
         lo_e = int(np.floor(np.log10(lo)))
         ax.set_ylim(10.0 ** lo_e, 10.0 ** (np.log10(hi) + 0.13 * (np.log10(hi) - lo_e)))   # whole decade below, headroom for the legend
