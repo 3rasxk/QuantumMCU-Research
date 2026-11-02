@@ -80,29 +80,3 @@ for ph in (2, 3):
         os.makedirs(os.path.dirname(out), exist_ok=True)
         save_figure(fig, out)
         print(out)
-
-# ---- Phase 3 difference charts: on-board timer minus reference counter, linear y axis with a tick every 10 µs (one file per circuit)
-import matplotlib.ticker as mt  # noqa: E402
-
-for c in ("h_all", "bell_ghz", "qft", "grover"):
-    g = cv[(cv.phase == 3) & (cv.circuit == c)]
-    rows = [{"n": int(r.n), "diff_us": float(r.micros_median_us - r.counter_median_us), "board": NAME[r.board], "series": "difference"}
-            for r in g.sort_values(["board", "n"]).itertuples()]
-    df = pd.DataFrame(rows)
-    fig, ax = plot_grouped_lines(df, "n", "diff_us", "board", "series", title="", xlabel="Number of qubits, $n$",
-                                 ylabel="On-board timer $-$ reference counter (µs)", log_y=False,
-                                 group_order=list(NAME.values()), series_order=["difference"])
-    for t in ax.get_legend().get_texts():
-        t.set_text(t.get_text().replace(" difference", ""))
-    lo, hi = min(df.diff_us.min(), 0.0), max(df.diff_us.max(), 0.0)
-    lo10, hi10 = np.floor(lo / 10.0) * 10.0, np.ceil(hi / 10.0) * 10.0
-    ax.set_ylim(lo10 - 5, hi10 + 5 + 0.25 * max(hi10 - lo10, 10))      # headroom for the legend
-    if hi10 - lo10 <= 300:                               # a tick every 10 µs only where that is readable; grover spans thousands of µs (automatic ticks there)
-        ax.yaxis.set_major_locator(mt.MultipleLocator(10))
-        ax.yaxis.set_minor_locator(mt.MultipleLocator(2))
-    ax.yaxis.set_major_formatter(mt.FormatStrFormatter("%d"))
-    ax.axhline(0, color="0.4", lw=0.8, zorder=0)
-    ax.tick_params(axis="y", which="minor", length=3, direction="out")
-    out = os.path.join(ROOT, "data", "figures", "phase3", "timer_vs_counter", f"{c}_difference.png")
-    save_figure(fig, out)
-    print(out)
