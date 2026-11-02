@@ -74,6 +74,13 @@ for ph in (2, 3):
         ax.yaxis.set_minor_locator(mticker.LogLocator(base=10, subs=np.arange(2, 10), numticks=60))
         ax.yaxis.set_minor_formatter(mticker.NullFormatter())
         ax.tick_params(axis="y", which="minor", length=3, direction="out")
+        if ph == 3:                                           # Phase 3 spans only about 1.5 decades: label every tick (2, 3, ... 9 x 10^k) with plain numbers
+            fmt = mticker.FuncFormatter(lambda v, _: f"{v:,.0f}")
+            ax.yaxis.set_major_formatter(fmt)
+            ax.yaxis.set_minor_formatter(fmt)
+            ax.tick_params(axis="y", which="minor", labelsize=8)
+            llo, lhi = np.log10(lo), np.log10(hi)                  # and fit the axis to the data instead of whole decades
+            ax.set_ylim(10 ** (llo - 0.06), 10 ** (lhi + 0.30 * (lhi - llo) + 0.04))
         out = os.path.join(ROOT, "data", "figures", f"phase{ph}", "timer_vs_counter", f"{c}.png")
         os.makedirs(os.path.dirname(out), exist_ok=True)
         save_figure(fig, out)
