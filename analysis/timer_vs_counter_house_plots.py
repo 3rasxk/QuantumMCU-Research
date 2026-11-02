@@ -29,6 +29,8 @@ cv = sel[(sel.usable.astype(bool) | (sel.n == 2)) & (sel.counter_median_us > 0) 
 miss2 = sel.iloc[0:0]
 NAME = {"uno": "Uno", "esp8266": "ESP8266", "esp32": "ESP32"}
 for ph in (2, 3):
+    U = 1000.0 if ph == 3 else 1.0                       # Phase 3 charts are in nanoseconds (1 us = 1000 ns), Phase 2 in microseconds
+    UNIT = "ns" if ph == 3 else "µs"
     for c in ("h_all", "bell_ghz", "qft", "grover"):
         g = cv[(cv.phase == ph) & (cv.circuit == c)]
         SER = ["reference counter", "on-board timer"]
@@ -36,13 +38,13 @@ for ph in (2, 3):
         rows = []
         for r in g.sort_values(["board", "n"]).itertuples():
             for lab, v in zip(SER, (r.counter_median_us, r.micros_median_us)):
-                rows.append({"n": int(r.n), "time_us": float(v), "board": NAME[r.board], "series": lab})
+                rows.append({"n": int(r.n), "time_us": float(v) * U, "board": NAME[r.board], "series": lab})
         m2 = miss2[(miss2.phase == ph) & (miss2.circuit == c)]
         for r in m2.itertuples():
             rows.append({"n": 2, "time_us": float(r.micros_median_us), "board": NAME[r.board], "series": SER[1]})
         df = pd.DataFrame(rows)
         fig, ax = plot_grouped_lines(df, "n", "time_us", "board", "series", title="", xlabel="Number of qubits, $n$",
-                                     ylabel=r"Time per run (µs, log scale)",
+                                     ylabel=f"Time per run ({UNIT}, log scale)",
                                      group_order=list(NAME.values()), series_order=SER)
         for ln in ax.lines:                                   # one colour per board; line style tells the clock
             lab = ln.get_label()
@@ -61,7 +63,7 @@ for ph in (2, 3):
         for gi, bn in enumerate(NAME.values()):                # shade the gap between the two clocks, in the board's colour
             gg = g[g.board == inv[bn]].sort_values("n")
             if len(gg):
-                ax.fill_between(gg.n, gg.counter_median_us, gg.micros_median_us, color=FAMILIES[gi][0], alpha=0.55, lw=0, zorder=3)
+                ax.fill_between(gg.n, gg.counter_median_us * U, gg.micros_median_us * U, color=FAMILIES[gi][0], alpha=0.55, lw=0, zorder=3)
         hs, ls = ax.get_legend_handles_labels()
         hs.append(Patch(facecolor="0.5", alpha=0.55, label="difference between the two"))
         ls.append("difference between the two")
@@ -74,13 +76,6 @@ for ph in (2, 3):
         ax.yaxis.set_minor_locator(mticker.LogLocator(base=10, subs=np.arange(2, 10), numticks=60))
         ax.yaxis.set_minor_formatter(mticker.NullFormatter())
         ax.tick_params(axis="y", which="minor", length=3, direction="out")
-        if ph == 3:                                           # Phase 3 spans only about 1.5 decades: label every tick (2, 3, ... 9 x 10^k) with plain numbers
-            fmt = mticker.FuncFormatter(lambda v, _: f"{v:,.0f}")
-            ax.yaxis.set_major_formatter(fmt)
-            ax.yaxis.set_minor_formatter(fmt)
-            ax.tick_params(axis="y", which="minor", labelsize=8)
-            llo, lhi = np.log10(lo), np.log10(hi)                  # and fit the axis to the data instead of whole decades
-            ax.set_ylim(10 ** (llo - 0.06), 10 ** (lhi + 0.30 * (lhi - llo) + 0.04))
         out = os.path.join(ROOT, "data", "figures", f"phase{ph}", "timer_vs_counter", f"{c}.png")
         os.makedirs(os.path.dirname(out), exist_ok=True)
         save_figure(fig, out)
