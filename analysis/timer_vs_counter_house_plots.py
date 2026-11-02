@@ -29,8 +29,8 @@ cv = sel[(sel.usable.astype(bool) | (sel.n == 2)) & (sel.counter_median_us > 0) 
 miss2 = sel.iloc[0:0]
 NAME = {"uno": "Uno", "esp8266": "ESP8266", "esp32": "ESP32"}
 for ph in (2, 3):
-    U = 1000.0 if ph == 3 else 1.0                       # Phase 3 charts are in nanoseconds (1 us = 1000 ns), Phase 2 in microseconds
-    UNIT = "ns" if ph == 3 else "µs"
+    U = 10.0 if ph == 3 else 1.0                          # Phase 3 charts are in units of 100 ns (1 us = 10 units), Phase 2 in microseconds
+    UNIT = "units of 100 ns" if ph == 3 else "µs"
     for c in ("h_all", "bell_ghz", "qft", "grover"):
         g = cv[(cv.phase == ph) & (cv.circuit == c)]
         SER = ["reference counter", "on-board timer"]
