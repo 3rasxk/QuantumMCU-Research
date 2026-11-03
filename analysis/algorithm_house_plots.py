@@ -20,10 +20,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-cands = glob.glob(os.path.expanduser("~/.claude/skills/synced/*/graph-create/scripts"))
-if not cands:
-    sys.exit("graph-create skill not found under ~/.claude/skills/synced/*/graph-create")
-sys.path.insert(0, cands[0])
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor"))   # vendored graph-create style (analysis/vendor/plot_style.py)
 from plot_style import plot_grouped_lines, save_figure  # noqa: E402
 
 cv = pd.read_csv(os.path.join(ROOT, "data", "derived", "counter_validity.csv"))
