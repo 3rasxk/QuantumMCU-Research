@@ -5,7 +5,7 @@
 
 Writes
   figures/phase4/F4_crossover_by_circuit.{pdf,png}     the paper figure: 4 panels (h_all, bell_ghz, qft, grover), three boards each
-  data/figures/phase4/crossover/<board>_<circuit>.png  the 12 single-series versions (docs / appendix, not in the paper)
+  (the 12 single-series versions in data/figures/phase4/crossover/ are drawn in the house style by analysis/crossover_house_plots.py)
   data/processed/phase4/band_check.csv                 the shared-versus-per-board band check (see below)
 
 Per board and circuit: local median with IQR (Phase 2, board micros()); offload band = wire + residual of that board + [PC simulation min, max]
@@ -35,7 +35,6 @@ import tradeoff as TO  # noqa: E402
 plt = MF.plt
 COL, MRK, W2 = MF.COL, MF.MRK, MF.W2
 BAND_TOL = 0.10
-OUT_DIR = os.path.join(C.ROOT, "data", "figures", "phase4", "crossover")
 
 
 def band_decision(m):
@@ -123,18 +122,7 @@ def main():
     fig.tight_layout(rect=(0, 0, 1, 0.89))
     MF.save(fig, "F4_crossover_by_circuit")
 
-    os.makedirs(OUT_DIR, exist_ok=True)
-    for b in C.BOARDS:
-        for c in C.CIRCUITS:
-            fig, ax = plt.subplots(figsize=(MF.W1 * 1.5, 2.9))
-            draw_series(ax, b, c, loc, m, X, walls, 0)
-            style_axes(ax, f"{C.BOARD_LABEL[b]}, {c}")
-            ax.set_xlabel("Qubits $n$")
-            ax.set_ylabel(r"Time per run ($\mu$s)")
-            fig.tight_layout()
-            fig.savefig(os.path.join(OUT_DIR, f"{b}_{c}.png"), dpi=200, metadata=MF.META_PNG)
-            plt.close(fig)
-    print("wrote figures/phase4/F4_crossover_by_circuit and 12 files in", os.path.relpath(OUT_DIR, C.ROOT))
+    print("wrote figures/phase4/F4_crossover_by_circuit")
 
 
 if __name__ == "__main__":

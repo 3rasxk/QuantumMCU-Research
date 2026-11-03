@@ -54,6 +54,7 @@ def main():
     run([PY, os.path.join(P4, "make_figures.py")], env=env)
     run([PY, os.path.join(P4, "tradeoff.py")])                                          # band check, decision cells, predicted crossover (after the data were seen)
     run([PY, os.path.join(P4, "plot_crossover_by_circuit.py")], env=env)
+    run([PY, os.path.join(ROOT, "analysis", "crossover_house_plots.py")], env=env)           # the 12 board x circuit charts in the house style
     run([PY, os.path.join(P4, "plot_decision_map.py")], env=env)
     run([PY, os.path.join(P4, "plot_supporting.py")], env=env)
     run([PY, os.path.join(P4, "recollection_plan.py")], stdout=subprocess.DEVNULL)
