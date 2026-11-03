@@ -19,7 +19,7 @@ A point is
   hash-flagged its firmware hash is in a timing class other than A (analysis/phase4/firmware_hash_classes.csv): not fitted; reported separately
 Identifiability: a model fit is identifiable if n_fit >= p + 2, the design matrix has full column rank, its column-scaled condition number
 is <= COND_MAX, and no NNLS coefficient is <= 1e-12 (the zero boundary). COND_MAX = 1e4 never binds (the largest condition number is about 5).
-WARNING: the boundary condition is a knife edge. A coefficient of 0.0013 passes and 0.0000 fails, and the verdict for a board changes with
+WARNING: the boundary condition is a knife edge. A coefficient just above zero passes and exactly 0 fails (the smallest passing value is printed in docs/phase4_report.md), and the verdict for a board changes with
 the held-out size (see time_sensitivity.csv, column identifiable_boards). Read 'identifiable' as 'the NNLS solution has no exact zero', not as
 'the parameters are physically determined'.
 """
