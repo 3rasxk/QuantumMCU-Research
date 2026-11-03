@@ -30,7 +30,7 @@ ORDER = [TO.LOCAL, TO.OFFLOAD, TO.DEPENDS, TO.NOISE, TO.NORUN, TO.NOMEAS]
 def main():
     cells = TO.cells()
     cells.to_csv(os.path.join(C.PROC, "decision_cells.csv"), index=False)
-    fig, axs = plt.subplots(2, 2, figsize=(MF.W2, 3.2), sharex=True, sharey=True)
+    fig, axs = plt.subplots(2, 2, figsize=(MF.W2, 3.4), sharex=True, sharey=True)
     ns = TO.GRID_N
     for ax, c in zip(axs.flat, C.CIRCUITS):
         for yi, b in enumerate(C.BOARDS):
@@ -44,13 +44,13 @@ def main():
         ax.set_xticklabels(ns)
         ax.set_yticks(range(len(C.BOARDS)))
         ax.set_yticklabels([C.BOARD_LABEL[b] for b in C.BOARDS])
-        ax.tick_params(length=2)
-        ax.set_title(c, fontsize=8, loc="left", pad=2)
+        ax.tick_params(length=2, labelsize=7.5)
+        ax.set_title(c, fontsize=9, loc="left", pad=2)
     for ax in axs[1]:
-        ax.set_xlabel("Qubits $n$")
+        ax.set_xlabel("Qubits $n$", fontsize=8)
     from matplotlib.patches import Patch
     hs = [Patch(facecolor=PAL[k], edgecolor="0.5", lw=0.4, label=TO.CELL_LABEL[k]) for k in ORDER]
-    fig.legend(handles=hs, loc="lower center", ncol=3, frameon=False, bbox_to_anchor=(0.5, 0.0), columnspacing=1.0, handletextpad=0.5)
+    fig.legend(handles=hs, loc="lower center", ncol=3, frameon=False, bbox_to_anchor=(0.5, 0.0), columnspacing=1.0, handletextpad=0.5, fontsize=7.5)
     fig.tight_layout(rect=(0, 0.17, 1, 1))
     MF.save(fig, "F6_decision_map")
     print("wrote figures/phase4/F6_decision_map;", cells.cell.value_counts().to_dict())

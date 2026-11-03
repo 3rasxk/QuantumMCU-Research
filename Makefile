@@ -18,8 +18,7 @@ paper-numbers:
 
 paper-figs:
 	@mkdir -p paper/figures
-	@for f in F1_timing_vs_n F2_parity F3_memory_wall F4_offload_crossover F5_phase1_accuracy; do ln -sf ../../figures/phase4/$$f.pdf paper/figures/$$f.pdf; done
-	$(PY) analysis/paper/make_f1_house.py
+	@for f in F2_parity F3_memory_wall F4_crossover_by_circuit F5_phase1_accuracy F6_decision_map; do ln -sf ../../figures/phase4/$$f.pdf paper/figures/$$f.pdf; done
 
 paper: paper-numbers paper-figs
 	@if command -v latexmk >/dev/null 2>&1; then cd paper && latexmk -pdf -interaction=nonstopmode main.tex; \

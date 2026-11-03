@@ -338,10 +338,67 @@ def flag(r, bd):
 
 xrows = []
 order = {"uno": 0, "esp8266": 1, "esp32": 2}
+cp = rd(P, "crossover_predicted.csv")                       # tradeoff.py: M1 / M2 predicted brackets (added after the data were seen)
+SYM = {"match": "$=$", "off by one": "$\\pm1$", "off by more": "$\\ge2$"}
+
+
+def model_cell(r):
+    g = cp[(cp.board == r.board) & (cp.circuit == r.circuit)].set_index("bound")
+    st = g.model_status.iloc[0]
+    if st == "no model":
+        return "--"
+    if st == "not identifiable":
+        return "n/i"
+    return f"{SYM[g.loc['fast', 'cmp_M2']]} / {SYM[g.loc['slow', 'cmp_M2']]}"
+
+
 for r in sorted(xo.itertuples(), key=lambda r: (order[r.board], CIRC.index(r.circuit))):
-    xrows.append(f"{NAME[r.board]} & {r.circuit.replace('_', chr(92) + '_')} & {int(r.n_first)}--{int(r.n_last)} & {brk(r, 'fast')}{flag(r, 'fast')} & {brk(r, 'slow')}{flag(r, 'slow')} \\\\")
+    xrows.append(f"{NAME[r.board]} & {r.circuit.replace('_', chr(92) + '_')} & {int(r.n_first)}--{int(r.n_last)} & {brk(r, 'fast')}{flag(r, 'fast')} & {brk(r, 'slow')}{flag(r, 'slow')} & {model_cell(r)} \\\\")
 open(os.path.join(OUT, "tables", "crossover.tex"), "w").write(
-    "\\begin{tabular}{@{}llccc@{}}\n\\toprule\nBoard & Circuit & Measured $n$ & Fast sim. & Slow sim. \\\\\n\\midrule\n" + "\n".join(xrows) + "\n\\bottomrule\n\\end{tabular}\n")
+    "\\begin{tabular}{@{}llcccc@{}}\n\\toprule\nBoard & Circuit & Measured $n$ & Fast sim. & Slow sim. & M2 vs measured \\\\\n\\midrule\n" + "\n".join(xrows) + "\n\\bottomrule\n\\end{tabular}\n")
+
+# how far the bracket moves between the fast and the slow PC bound (pairs with a crossover under both bounds)
+_sh = xo[xo.fast_kind.isin(["bracket", "below"]) & xo.slow_kind.isin(["bracket", "below"])]
+_d = (_sh.n_slow_hi - _sh.n_fast_hi).astype(int)
+put("ShiftN", len(_sh))
+put("ShiftSame", int((_d == 0).sum()))
+put("ShiftOne", int((_d == 1).sum()))
+put("ShiftMore", int((_d > 1).sum()))
+put("ShiftMax", int(_d.max()))
+# predicted crossover (M1 / M2 plus the offload equation; series with an identifiable M2 and at least one fit point only)
+ok_ = cp[cp.model_status == "ok"]
+put("PredSeriesOk", int(ok_.drop_duplicates(["board", "circuit"]).shape[0]))
+put("PredSeriesNI", int(cp[cp.model_status == "not identifiable"].drop_duplicates(["board", "circuit"]).shape[0]))
+put("PredSeriesNoModel", int(cp[cp.model_status == "no model"].drop_duplicates(["board", "circuit"]).shape[0]))
+put("PredN", len(ok_))
+for mod, tag in (("M2", "Two"), ("M1", "One")):
+    put("PredMatch" + tag, int((ok_["cmp_" + mod] == "match").sum()))
+    put("PredOffOne" + tag, int((ok_["cmp_" + mod] == "off by one").sum()))
+    put("PredOffMore" + tag, int((ok_["cmp_" + mod] == "off by more").sum()))
+put("PredEnds", int(ok_.bracket_ends.sum()))
+put("PredEndsHeld", int(ok_.bracket_ends_held_out.sum()))
+# band check and decision map
+bc = rd(P, "band_check.csv")
+put("BandRatioMin", f"{bc.groupby('circuit').ratio.max().min():.1f}")
+put("BandRatioMax", f"{bc.groupby('circuit').ratio.max().max():.1f}")
+put("BandTolPct", 10)       # BAND_TOL in analysis/phase4/plot_crossover_by_circuit.py
+dc = rd(P, "decision_cells.csv")
+for k, tag in (("local", "Local"), ("offload", "Offload"), ("depends", "Depends"), ("noise", "Noise"), ("norun", "NoRun"), ("nomeas", "NoMeas")):
+    put("MapN" + tag, int((dc.cell == k).sum()))
+put("MapNCells", len(dc))
+# offload breakdown (ESP32): shares of the round trip
+bk = rd(P, "offload_band.csv")
+bk = bk[bk.board == "esp32"].assign(res0=lambda d: d.residual_us.clip(lower=0))
+bk["tot"] = bk.wire_us + bk.res0 + bk.pc_sim_us
+non_g = bk[bk.circuit != "grover"]
+put("BreakWirePct", f0((non_g.wire_us / non_g.tot).median() * 100))
+put("BreakResPct", f0((non_g.res0 / non_g.tot).median() * 100))
+bg = bk[bk.circuit == "grover"].sort_values("n")
+sh = (bg.pc_sim_us / bg.tot).to_numpy()
+ns_g = bg.n.to_numpy()
+PC_SHARE = 0.9       # "the PC simulation dominates" = at least this share of the round trip
+put("BreakPcShare", int(round(PC_SHARE * 100)))
+put("BreakPcGroverN", int(next(ns_g[i] for i in range(len(sh)) if (sh[i:] >= PC_SHARE).all())))
 
 # ------------------------------------------------------------------ reproducibility
 r2 = rep[rep.phase == 2]
