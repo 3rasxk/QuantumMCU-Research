@@ -3,7 +3,7 @@
 # Phase 4 in one bar chart, graph-create house style (analysis/vendor/plot_style.py): for every board and circuit the number of qubits n at which the Local
 # (Phase 2) and the Offload (Phase 3) lines cross, rounded UP to the first whole n at which offload is faster. The crossing is the dot of the charts in
 # data/figures/phase4/crossover/<board>/<circuit>.png (same data: ESP32 counter medians of the Phase 2 / Phase 3 algorithms charts, same rule: straight segments
-# between measured n, see analysis/crossover_house_plots.py). No bar = the drawn lines do not cross ("none").
+# between measured n, see analysis/crossover_house_plots.py). No bar = the drawn lines do not cross ("no crossing").
 # It is NOT the crossover of Table III (micros() and round trip, as a bracket). Output: data/figures/phase4/all_boards_all_circuits.png
 #
 # Use:  .venv/bin/python analysis/phase4_all_in_one.py
@@ -43,20 +43,18 @@ def main():
             o = cv[(cv.phase == 3) & (cv.board == b) & (cv.circuit == c)].sort_values("n")
             pts = crossings(g.n, g.counter_median_us, o.n, o.counter_median_us)
             if not pts:
-                ax.text(x, 0.2, "none", ha="center", va="bottom", fontsize=9)
+                ax.text(x, 0.2, "no crossing", ha="center", va="bottom", fontsize=8.5, rotation=90)
                 continue
             k = math.ceil(pts[-1][0] - 1e-9)           # first whole n at which offload is faster than local
             ax.bar(x, k, color=col, zorder=3)
             ax.text(x, k + 0.2, f"{k}", ha="center", va="bottom", fontsize=9)
             top = max(top, k)
     ax.set_xticks([bi * (nc + 1) + (nc - 1) / 2 for bi in range(nb)], [LABEL[b] for b in C.BOARDS])
-    ax.set_ylabel("Number of qubits $n$ where the Local and Offload lines cross\n(rounded up to the first whole $n$ at which offload is faster)")
+    ax.set_ylabel("Crossover point (number of qubits $n$, rounded up)")
     ax.set_ylim(0, top + 2.5)
-    ax.set_yticks(sorted(set(range(0, top + 1, 2)) | {top}))
+    ax.set_yticks(range(0, top + 1))                    # equal spacing: a tick at every whole n
     leg = ax.legend(handles=handles, loc="upper left", ncol=nb)
     leg.set_zorder(2.4)
-    fig.supxlabel("n of the crossing of the drawn lines (ESP32 counter medians, straight segments between measured n), rounded up;\n"
-                  "none = the lines do not cross.", fontsize=7.5, color="0.3")
     out = HERE.parent / "data" / "figures" / "phase4" / "all_boards_all_circuits.png"
     house.save_figure(fig, str(out))
     print(out)
