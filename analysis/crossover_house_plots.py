@@ -10,7 +10,7 @@
 # The dot (named in the legend) marks where the two DRAWN lines cross (straight segments between measured n, in the log-y plot): an interpolated point of the picture, not a measured
 # value; the reported crossover is the bracket of two measured n (Table III, docs/phase4_report.md section 5), which these charts do not show.
 # No crossing of the drawn lines = no dot. IQR, weak points, PC-speed bounds (fast / slow band), memory walls and brackets are in figures/phase4/F4_crossover_by_circuit.pdf.
-# Output: data/figures/phase4/crossover/<board>_<circuit>.png     Use:  .venv/bin/python analysis/crossover_house_plots.py
+# Output: data/figures/phase4/crossover/<board>/<circuit>.png     (one folder per board)     Use:  .venv/bin/python analysis/crossover_house_plots.py
 import os
 import sys
 
@@ -29,25 +29,31 @@ OUT = os.path.join(ROOT, "data", "figures", "phase4", "crossover")
 
 
 def crossings(nl, tl, no, to):
-    """points where the polylines (n, log10 t) of the two lines cross, over the n where both are defined; [(n, t_us)]"""
-    ll, lo = dict(zip(nl, np.log10(tl))), dict(zip(no, np.log10(to)))
-    ns = sorted(set(ll) & set(lo))
-    d = [ll[n] - lo[n] for n in ns]
+    """points where the two DRAWN polylines (n, log10 t) cross: each line is a straight segment between its own neighbouring points (also across a missing n),
+    so both are evaluated on the union of their n inside the n range they share, where both are straight between consecutive union points; [(n, t_us)]"""
+    nl, no = np.asarray(nl, float), np.asarray(no, float)
+    ll, lo = np.log10(np.asarray(tl, float)), np.log10(np.asarray(to, float))
+    lo_n, hi_n = max(nl.min(), no.min()), min(nl.max(), no.max())
+    if lo_n > hi_n:
+        return []
+    xs = np.array(sorted({float(x) for x in np.concatenate([nl, no]) if lo_n <= x <= hi_n}))
+    yl, yo = np.interp(xs, nl, ll), np.interp(xs, no, lo)
+    d = yl - yo
     pts = []
-    for i in range(len(ns)):
+    for i in range(len(xs)):
         if d[i] == 0:
-            pts.append((float(ns[i]), 10 ** ll[ns[i]]))
-        if i + 1 < len(ns) and ns[i + 1] == ns[i] + 1 and d[i] * d[i + 1] < 0:
+            pts.append((float(xs[i]), 10 ** yl[i]))
+        if i + 1 < len(xs) and d[i] * d[i + 1] < 0:
             t = d[i] / (d[i] - d[i + 1])
-            pts.append((ns[i] + t, 10 ** (ll[ns[i]] + t * (ll[ns[i + 1]] - ll[ns[i]]))))
+            pts.append((xs[i] + t * (xs[i + 1] - xs[i]), 10 ** (yl[i] + t * (yl[i + 1] - yl[i]))))
     return pts
 
 
 def main():
     cv = pd.read_csv(os.path.join(ROOT, "data", "derived", "counter_validity.csv"))
     cv = cv[cv.selected.astype(bool) & (cv.usable.astype(bool) | (cv.n == 2)) & (cv.counter_median_us > 0)]      # as analysis/algorithm_house_plots.py
-    os.makedirs(OUT, exist_ok=True)
     for b in C.BOARDS:
+        os.makedirs(os.path.join(OUT, b), exist_ok=True)
         for c in C.CIRCUITS:
             g = cv[(cv.phase == 2) & (cv.board == b) & (cv.circuit == c)].sort_values("n")
             o = cv[(cv.phase == 3) & (cv.board == b) & (cv.circuit == c)].sort_values("n")
@@ -75,7 +81,7 @@ def main():
             ax.set_ylim(10.0 ** lo_e, 10.0 ** (hi_l + 0.2 * (hi_l - lo_e)))
             ax.yaxis.set_major_locator(mticker.LogLocator(base=10, numticks=30))
             ax.yaxis.set_major_formatter(mticker.LogFormatterSciNotation(base=10))
-            out = os.path.join(OUT, f"{b}_{c}.png")
+            out = os.path.join(OUT, b, f"{c}.png")
             save_figure(fig, out)
             print(out)
 
