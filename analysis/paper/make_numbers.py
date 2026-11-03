@@ -374,6 +374,12 @@ for tag, thr, txt in (("Lo", 1e-4, "$10^{-4}$"), ("Hi", 1e-2, "$10^{-2}$")):
     put("PoneThresh" + tag, txt)
     put("PoneGroverLastPass" + tag, int(a[a.infidelity <= thr].n.max()))
     assert (p1[p1.circuit != "grover"].infidelity <= thr).all(), "the other circuits must pass at every threshold shown"
+# primary Phase 1 criterion (set after the data were seen): infidelity of the NORMALISED float32 state (its direction) at the gate and at a tighter / looser value
+for tag, thr in (("", 1e-3), ("Lo", 1e-4), ("Hi", 1e-2)):
+    ok = gf[gf.f32_direction_infidelity <= thr]
+    put("PoneDirLastPass" + tag, int(ok.n.max()))
+put("PoneDirFirstFail", int(gf[gf.f32_direction_infidelity > 1e-3].n.min()))
+assert int(M["PoneDirFirstFail"]) == int(M["PoneDirLastPass"]) + 1, "direction criterion must fail from one n on"
 g = gf.set_index("n")
 put("GroverTwelveRaw", f"{g.loc[12].f32_infid_vs_ideal_raw:.3f}")
 put("GroverTwelvePm", f2(g.loc[12].f32_p_marked_raw))

@@ -25,8 +25,9 @@ sys.path.insert(0, cands[0])
 from plot_style import plot_grouped_lines, save_figure  # noqa: E402
 
 d = pd.read_csv(os.path.join(ROOT, "data", "processed", "phase4", "phase1_infidelity.csv"))
-LAB = {"h_all": "H-all", "bell_ghz": "Bell/GHZ", "qft": "QFT", "grover": "Grover"}
+LAB = {"h_all": "H-all", "bell_ghz": "Bell/GHZ", "qft": "QFT", "grover": "Grover", "grover_norm": "Grover (normalised)"}
 ORDER = [LAB[c] for c in ("h_all", "bell_ghz", "qft", "grover")]
+ORDER_ACC = ORDER + [LAB["grover_norm"]]
 THRESH = 1e-3
 out_dir = os.path.join(ROOT, "data", "figures", "phase1")
 
@@ -46,14 +47,14 @@ def add_threshold(ax):
     ax.axhline(THRESH, color="0.35", lw=1.2, ls="--", zorder=1)
     hs, ls = ax.get_legend_handles_labels()
     hs.append(Line2D([], [], color="0.35", lw=1.2, ls="--"))
-    ls.append(r"pass threshold ($10^{-3}$)")
+    ls.append(r"project acceptance threshold ($10^{-3}$)")
     ax.legend(hs, ls, loc="upper left", ncol=3, fontsize=9, framealpha=0.9)
 
 
-def one_series(df, x, y, xlabel, ylabel, name, x_scale=None, threshold=False):
+def one_series(df, x, y, xlabel, ylabel, name, x_scale=None, threshold=False, order=None):
     df = df.assign(series="v", group=df.circuit.map(LAB))
     fig, ax = plot_grouped_lines(df, x, y, "group", "series", title="", xlabel=xlabel, ylabel=ylabel,
-                                 group_order=ORDER, series_order=["v"], x_scale=x_scale, integer_x=(x_scale is None),
+                                 group_order=order or ORDER, series_order=["v"], x_scale=x_scale, integer_x=(x_scale is None),
                                  legend_label="{group}")
     fit_y(ax, df[y].min(), max(df[y].max(), THRESH if threshold else 0))
     if threshold:
@@ -66,7 +67,11 @@ d = d.sort_values(["circuit", "n"])
 one_series(d, "depth", "infidelity", "Circuit depth (gate layers, log scale)", "Infidelity, $1-F$ (log scale)", "infidelity_vs_depth.png",
            x_scale="log10", threshold=True)
 one_series(d, "depth", "tvd", "Circuit depth (gate layers, log scale)", "Total variation distance, TVD (log scale)", "tvd_vs_depth.png", x_scale="log10")
-one_series(d, "n", "infidelity", "Number of qubits, $n$", "Infidelity, $1-F$ (log scale)", "phase1_accuracy.png", threshold=True)
+# phase1_accuracy also shows the infidelity of grover's NORMALISED float32 state (its direction): from n = 6 on, below that it is double-precision rounding (< 1e-11)
+gfind = pd.read_csv(os.path.join(ROOT, "data", "derived", "grover_findings.csv"))
+gnorm = gfind[gfind.n >= 6][["n", "f32_direction_infidelity"]].rename(columns={"f32_direction_infidelity": "infidelity"}).assign(circuit="grover_norm", depth=np.nan, tvd=np.nan)
+one_series(pd.concat([d, gnorm]), "n", "infidelity", "Number of qubits, $n$", "Infidelity, $1-F$ (log scale)", "phase1_accuracy.png",
+           threshold=True, order=ORDER_ACC)
 
 for c, g in d.groupby("circuit"):
     rows = []
