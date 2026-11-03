@@ -80,7 +80,7 @@ rng, rep, gf = rd(D, "phase3_pc_sim_range.csv"), rd(D, "reproducibility.csv"), r
 cv, p1, pred = rd(D, "counter_validity.csv"), rd(P, "phase1_infidelity.csv"), rd(P, "time_predictions.csv")
 fl = rd(P, "offload_floor.csv").set_index("board")
 aud = rd(P, "audit_points.csv")
-sel = cv[cv.selected.astype(bool)]
+sel = cv[cv.selected.astype(bool) & (cv.reps_in_raw > 0)]      # wall points (no run, no reps) are not counter points
 
 WEAK_MIN = int(grep(r"WEAK_MIN\s*=\s*(\d+)", open(os.path.join(ROOT, "analysis", "common", "weak.py")).read()))
 put("WeakMin", WEAK_MIN)
@@ -341,7 +341,7 @@ order = {"uno": 0, "esp8266": 1, "esp32": 2}
 for r in sorted(xo.itertuples(), key=lambda r: (order[r.board], CIRC.index(r.circuit))):
     xrows.append(f"{NAME[r.board]} & {r.circuit.replace('_', chr(92) + '_')} & {int(r.n_first)}--{int(r.n_last)} & {brk(r, 'fast')}{flag(r, 'fast')} & {brk(r, 'slow')}{flag(r, 'slow')} \\\\")
 open(os.path.join(OUT, "tables", "crossover.tex"), "w").write(
-    "\\begin{tabular}{@{}llccc@{}}\n\\toprule\nBoard & Circuit & Measured $n$ & Fast PC & Slow PC \\\\\n\\midrule\n" + "\n".join(xrows) + "\n\\bottomrule\n\\end{tabular}\n")
+    "\\begin{tabular}{@{}llccc@{}}\n\\toprule\nBoard & Circuit & Measured $n$ & Fast sim. & Slow sim. \\\\\n\\midrule\n" + "\n".join(xrows) + "\n\\bottomrule\n\\end{tabular}\n")
 
 # ------------------------------------------------------------------ reproducibility
 r2 = rep[rep.phase == 2]
@@ -362,6 +362,8 @@ for c in ("h_all", "bell_ghz", "qft"):
     a = p1[(p1.circuit == c)]
     put("PoneMax" + {"h_all": "Hall", "bell_ghz": "Bell", "qft": "Qft"}[c], sci(a.infidelity.max(), 2))
     put("PoneAllPass" + {"h_all": "Hall", "bell_ghz": "Bell", "qft": "Qft"}[c], int(a["pass_1e-3"].all()))
+put("PoneNMax", int(min(p1[p1.circuit == c].n.max() for c in ("h_all", "bell_ghz", "qft"))))
+put("RFivePoints", int(sel.reason.astype(str).str.startswith("R5").sum()))
 a = p1[p1.circuit == "grover"]
 okg = a[a["pass_1e-3"]]
 assert all(int(M["PoneAllPass" + k]) for k in ("Hall", "Bell", "Qft")), "the paper says h_all, bell_ghz and qft pass at every tested n"

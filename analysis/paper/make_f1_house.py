@@ -27,8 +27,8 @@ d["bo"] = d.board.map({"Uno": 0, "ESP8266": 1, "ESP32": 2})
 d["co"] = d.circuit.map({"h_all": 0, "bell_ghz": 1, "qft": 2, "grover": 3})
 d = d.sort_values(["bo", "co", "n"])
 fig, ax = plot_grouped_lines(d, "n", "time_us", "board", "circuit",
-                             title="Phase 2 -- all boards, all circuits",
-                             xlabel="Number of qubits, $n$", ylabel="Median execution time per rep (µs, log scale)",
+                             title="",
+                             xlabel="Number of qubits, $n$", ylabel="Median execution time per run (µs, log scale)",
                              group_order=["Uno", "ESP8266", "ESP32"], series_order=["h_all", "bell_ghz", "qft", "grover"])
 out = os.path.join(ROOT, "paper", "figures", "F1_timing_vs_n_house.png")
 os.makedirs(os.path.dirname(out), exist_ok=True)
