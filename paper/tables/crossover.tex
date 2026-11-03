@@ -1,18 +1,18 @@
-\begin{tabular}{@{}llccc@{}}
+\begin{tabular}{@{}llcccc@{}}
 \toprule
-Board & Circuit & Measured $n$ & Fast sim. & Slow sim. \\
+Board & Circuit & Measured $n$ & Fast sim. & Slow sim. & M2 vs measured \\
 \midrule
-Uno R3 & h\_all & 2--7 & 4--5 & 4--5 \\
-Uno R3 & bell\_ghz & 2--7 & 5--6 & 6--7$^{\dagger}$ \\
-Uno R3 & qft & 2--7 & 3--4 & 3--4$^{\dagger}$ \\
-Uno R3 & grover & 2--7 & $\le$2$^{\dagger}$ & 2--3$^{\dagger}$ \\
-ESP8266 & h\_all & 2--12 & 7--8$^{\dagger}$ & 7--8 \\
-ESP8266 & bell\_ghz & 2--12 & 9--10$^{\dagger}$ & 10--11$^{\dagger}$ \\
-ESP8266 & qft & 2--12 & 6--7$^{\dagger}$ & 7--8 \\
-ESP8266 & grover & 2--10 & 3--4$^{\ddagger}$ & 4--5$^{\ddagger}$ \\
-ESP32 & h\_all & 2--13 & 12--13$^{\dagger}$ & none$^{\dagger}$ \\
-ESP32 & bell\_ghz & 2--13 & 12--13 & 12--13 \\
-ESP32 & qft & 2--13 & 11--12 & 12--13 \\
-ESP32 & grover & 2--12 & 8--9$^{\ddagger}$ & 9--10$^{\ddagger}$ \\
+Uno R3 & h\_all & 2--7 & 4--5 & 4--5 & n/i \\
+Uno R3 & bell\_ghz & 2--7 & 5--6 & 6--7$^{\dagger}$ & n/i \\
+Uno R3 & qft & 2--7 & 3--4 & 3--4$^{\dagger}$ & n/i \\
+Uno R3 & grover & 2--7 & $\le$2$^{\dagger}$ & 2--3$^{\dagger}$ & n/i \\
+ESP8266 & h\_all & 2--12 & 7--8$^{\dagger}$ & 7--8 & $=$ / $=$ \\
+ESP8266 & bell\_ghz & 2--12 & 9--10$^{\dagger}$ & 10--11$^{\dagger}$ & $\pm1$ / $=$ \\
+ESP8266 & qft & 2--12 & 6--7$^{\dagger}$ & 7--8 & $=$ / $=$ \\
+ESP8266 & grover & 2--10 & 3--4$^{\ddagger}$ & 4--5$^{\ddagger}$ & -- \\
+ESP32 & h\_all & 2--13 & 12--13$^{\dagger}$ & none$^{\dagger}$ & $=$ / $=$ \\
+ESP32 & bell\_ghz & 2--13 & 12--13 & 12--13 & $=$ / $=$ \\
+ESP32 & qft & 2--13 & 11--12 & 12--13 & $=$ / $=$ \\
+ESP32 & grover & 2--12 & 8--9$^{\ddagger}$ & 9--10$^{\ddagger}$ & $=$ / $=$ \\
 \bottomrule
 \end{tabular}
