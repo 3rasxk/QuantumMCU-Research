@@ -434,3 +434,87 @@ Unchanged: memory predictions and walls, gate counts, Phase 1 raw table.
 ## 12. Reproduce
 
 `.venv/bin/python analysis/reproduce.py` (about 2 min; `--full` also re-runs the PC grover builds against Aer). Details, environment, wiring and per-figure commands: `README_REPRODUCE.md`. Tests: `for f in $(git ls-files '*_test.py'); do .venv/bin/python $f; done`.
+
+## 13. Trade-off equations, per-circuit crossover figure, decision map and predicted crossover (added after the data were seen)
+
+**Status.** Everything in this section was added **after the data were seen** (made after the data freeze of `docs/DATA_FREEZE.md`; it uses existing data only and changes no number of sections 1-12): the equations are a restatement of what the code computes, the per-circuit crossover figure, the decision map, the ratio and breakdown figures and the predicted crossover are new views of the same crossover table. Code: `analysis/phase4/tradeoff.py` (tests: `analysis/phase4/tradeoff_test.py`), `plot_crossover_by_circuit.py`, `plot_decision_map.py`, `plot_supporting.py`.
+
+### 13.1 Equations, checked against the code that computes them
+
+Notation: n qubits, board b, circuit c; B = bytes available for the state; G_c(n) = gate calls; N_(c,k)(n) = gate calls of kind k in H, CNOT, CPHASE.
+
+| no. | equation | code (file:line) | check |
+|---|---|---|---|
+| (1) | M(n) = 8 x 2^n bytes (complex float32 = two 4-byte floats) | `firmware/common/qsim.hpp:30-33` (struct Cplx), `analysis/phase4/model.py:58-63` | **match** |
+| (2) | n_max = floor(log2(B / 8)) | `analysis/phase4/model.py:58` | **differed in B**: B is not "the largest contiguous free block" on every board. Uno: B = 2048 B minus the compiler-reported static use (`model.py:51`); ESP8266: total free heap read after the allocation at n = 2 (`model.py:53`); ESP32: two candidates, the total free heap and the largest free block (`model.py:55-56`); only the largest block matches the wall, the total free heap is one qubit too high (section 3). The formula itself matches |
+| (3) | M1: T_local(n) = c_b x G_c(n) x 2^n | `analysis/phase4/timemodel.py:102-106` (fit), `:153` (prediction), `analysis/phase4/gatecount.py:76-78` (work) | **match**; G_c counts every gate call of every kind, the init sweep is not counted; c_b is fitted per board on relative error and shared by the circuits |
+| (4) | M2: T_local(n) = sum_k c_(b,k) N_(c,k)(n) 2^n + a_b G_c(n), k in H, CNOT, CPHASE | `analysis/phase4/timemodel.py:108-114` (columns x_h, x_cn, x_cp, x_g), `:154` | **match**; the coefficients are non-negative (NNLS) on relative error, shared by the circuits of a board; the per-call term is a_b times the total number of gate calls G_c = N_H + N_CNOT + N_CPHASE |
+| (5) | gate counts: h_all: G = n; bell_ghz: 1 H + (n-1) CNOT, G = n; qft: n H + n(n-1)/2 CPHASE; grover: n H + k(n) x [2 G_mcp(n-1) + 6n H + 2n CPHASE], G_mcp(1) = 1, G_mcp(k) = 8 x 3^(k-2) - 3 for k >= 2, so G_grover = n + k(n) (16 x 3^(n-3) + 8n - 6) for n >= 3; k(n) = max(floor(pi/4 sqrt(2^n)), 1) in float32 | `analysis/phase4/gatecount.py:35-73` (recursion, `mc_phase`, `mc_x`), `:50-54` (k), `firmware/common/circuits.hpp:20-25, 33-39, 53-61, 80-83, 108-135, 152-181` | **match** for the recursion (52 of 52 (circuit, n) pairs equal the unmodified header run in C++, section 4); the **closed forms are derived here, not in the code**, and are checked against the code for n = 2..14 in `tradeoff_test.py` |
+| (6) | T_wire = 10 x L_frame / baud, L_frame = request + response = 10 bytes per request (4 + 6) | `analysis/phase4/offload_band.py:31-33` (`t_wire_us`, used at the point loop), `pc/phase3_offload/sweep.py:246` (request frame 4 B), `:263` (response 6 B); 10 bit per byte = 8N1 | **match** (the pipeline uses bytes_transferred / requests of the point, which equals L_frame) |
+| (7) | T_off(n) = T_wire + T_res,b + T_pc,c(n) | `analysis/phase4/offload_band.py:60` (residual), `:65-72` (PC range), `:83-84` (band) | **differed**: T_res is the per-point residual of the board's selected session, e2e median - PC simulation median - wire (not one constant per board), and T_pc is not one value: the band is T_wire + T_res + [min, max] of the PC simulation time observed over every Phase 3 session of every board at that circuit and n; the parts are medians of one point and do not add exactly. The predicted crossover (13.3) is the exception: it uses one T_res,b per board = the median residual of the points with a PC simulation below 20 ms (`tradeoff.residual_constants`) |
+| (8) | crossover: n* = smallest in-scope n from which T_local(n) > T_off(n), as a bracket (n_lo, n_hi) of two measured n, once for T_pc min and once for T_pc max | `analysis/phase4/offload_band.py:94-109` | **differed**: the code compares the local **median** with the band edge and takes n_hi = the first measured n from which offload is faster (strictly) **at every larger measured n** (an isolated earlier crossing does not count); n_lo = the previous measured n; "below" if offload is already faster at the smallest measured n; "none" if never; no interpolation, no extrapolation |
+| (9) | MAPE = 100 x mean over held-out points of abs(T_pred - T_meas) / T_meas | `analysis/phase4/timemodel.py:138-139` | **match** (point-weighted over the non-weak held-out points) |
+| (10) | P(marked) = sin^2((2k+1) theta), theta = asin(1 / sqrt(2^n)) | `analysis/phase4/grover_diagnosis.py:49-51, 74` | **match**; k is the firmware's iteration count (float32), not the exact optimum |
+
+I did not change the analysis to match the wording of the equations; where the code differs (rows 2, 7, 8) the paper uses the code's definition.
+
+### 13.2 Shared band or one band per board?
+
+Before drawing the per-circuit figure (`F4_crossover_by_circuit`) each board's offload band (T_wire + T_res,b + [PC min, PC max]) was compared across boards at every n with at least two boards: spread of the fast and of the slow edge between boards divided by the mean band height; the tolerance is 10 % (`BAND_TOL`, `plot_crossover_by_circuit.py`). Result (`data/processed/phase4/band_check.csv`):
+
+| circuit | max over n of (spread of the band edges between boards / mean band height) | n of the maximum | drawn as |
+|---|---|---|---|
+| h_all | 4.9 | 2 | one band per board |
+| bell_ghz | 4.9 | 10 | one band per board |
+| qft | 3.3 | 2 | one band per board |
+| grover | 3.3 | 2 | one band per board |
+
+The boards differ by several band heights in every circuit (T_res and the link differ between boards by more than the PC-speed spread), so **one band per board** is drawn, in the board's colour.
+
+### 13.3 Predicted crossover (M1 and M2 plus the offload equation)
+
+For every board x circuit the local time at the measured n is taken from the model (`time_predictions.csv`: M1 and M2) and the offload band from equations (6), (7) with one T_res,b per board (13.1), then the same bracket rule (8) is applied. Compared with the measured bracket by the position of n_hi in the measured n list: **match** (same), **off by one** (one measured step), **off by more**. Rules: a series with no fit point has **no model** (ESP8266 grover); M2 is reported only where it is identifiable (the Uno is not, at held-out 3: **n/i**); weak brackets are flagged. **Added after the data were seen.**
+
+| board | circuit | bound | measured | M1 bracket | M1 vs measured | M2 bracket | M2 vs measured | model status | ends held out of the fit | ends | weak |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| ESP32 | bell_ghz | fast | 12-13 | 12-13 | match | 12-13 | match | ok | 2 | 2 | False |
+| ESP32 | bell_ghz | slow | 12-13 | none | off by one | 12-13 | match | ok | 2 | 2 | False |
+| ESP32 | grover | fast | 8-9 | 8-9 | match | 8-9 | match | ok | 0 | 2 | True |
+| ESP32 | grover | slow | 9-10 | 9-10 | match | 9-10 | match | ok | 1 | 2 | True |
+| ESP32 | h_all | fast | 12-13 | 12-13 | match | 12-13 | match | ok | 2 | 2 | False |
+| ESP32 | h_all | slow | none | none | match | none | match | ok | 0 | 0 | False |
+| ESP32 | qft | fast | 11-12 | 11-12 | match | 11-12 | match | ok | 2 | 2 | False |
+| ESP32 | qft | slow | 12-13 | 11-12 | off by one | 12-13 | match | ok | 2 | 2 | False |
+| ESP8266 | bell_ghz | fast | 9-10 | 9-10 | match | 10-11 | off by one | ok | 1 | 2 | False |
+| ESP8266 | bell_ghz | slow | 10-11 | 9-10 | off by one | 10-11 | match | ok | 2 | 2 | False |
+| ESP8266 | grover | fast | 3-4 | 4-5 | off by one | 4-5 | off by one | no model | 0 | 2 | True |
+| ESP8266 | grover | slow | 4-5 | 5-6 | off by one | 4-5 | match | no model | 0 | 2 | True |
+| ESP8266 | h_all | fast | 7-8 | 9-10 | off by more | 7-8 | match | ok | 0 | 2 | False |
+| ESP8266 | h_all | slow | 7-8 | 9-10 | off by more | 7-8 | match | ok | 0 | 2 | False |
+| ESP8266 | qft | fast | 6-7 | 7-8 | off by one | 6-7 | match | ok | 0 | 2 | False |
+| ESP8266 | qft | slow | 7-8 | 8-9 | off by one | 7-8 | match | ok | 0 | 2 | False |
+| Uno R3 | bell_ghz | fast | 5-6 | 4-5 | off by one | 5-6 | match | not identifiable | 2 | 2 | False |
+| Uno R3 | bell_ghz | slow | 6-7 | 5-6 | off by one | 6-7 | match | not identifiable | 2 | 2 | False |
+| Uno R3 | grover | fast | <=2 | 2-3 | off by one | 2-3 | off by one | not identifiable | 0 | 1 | False |
+| Uno R3 | grover | slow | 2-3 | 2-3 | match | 2-3 | match | not identifiable | 0 | 2 | False |
+| Uno R3 | h_all | fast | 4-5 | 4-5 | match | 4-5 | match | not identifiable | 1 | 2 | False |
+| Uno R3 | h_all | slow | 4-5 | 5-6 | off by one | 4-5 | match | not identifiable | 1 | 2 | False |
+| Uno R3 | qft | fast | 3-4 | 4-5 | off by one | 3-4 | match | not identifiable | 0 | 2 | False |
+| Uno R3 | qft | slow | 3-4 | 4-5 | off by one | 3-4 | match | not identifiable | 0 | 2 | False |
+
+OBSERVED: over the 7 series with an identifiable M2 (14 bracket comparisons: fast and slow bound), M2 matches the measured bracket in 13, is off by one in 1 and off by more in 0; M1 matches in 7, off by one in 5, off by more in 2. Caveat (INTERPRETATION): the bracket ends are mostly measured points that were **in the fit** (14 of 26 ends are held-out points), so this checks how well the fitted model reproduces the crossover where it was fitted, not an extrapolation; one T_res,b per board is an approximation (the measured residual varies between points); the Uno is not identifiable and ESP8266 grover has no model.
+
+### 13.4 Decision map
+
+`F6_decision_map` colours every (board, n) of each circuit from the same crossover table as Table III of the paper (`tradeoff.cells`, one source function; `tradeoff_test.py` checks the map against the printed table for every board x circuit x n). Classes: local faster under both PC bounds; offload faster under both; depends on PC speed (the bounds disagree); within noise (an end of a bracket labelled within noise); not runnable on board (n at or beyond the wall, or beyond the local time limit); not measured. Cells per class and circuit:
+
+| circuit | depends on PC speed (bounds disagree) | local faster (both PC bounds) | within noise | not measured | not runnable on board (beyond wall / time-limited) | offload faster (both PC bounds) |
+|---|---|---|---|---|---|---|
+| h_all | 0 | 18 | 4 | 0 | 10 | 7 |
+| bell_ghz | 0 | 22 | 5 | 0 | 10 | 2 |
+| qft | 1 | 15 | 4 | 0 | 10 | 9 |
+| grover | 2 | 9 | 2 | 2 | 11 | 13 |
+
+### 13.5 Figures
+
+`F4_crossover_by_circuit` (paper): per circuit, local median and IQR of the three boards (Phase 2) with the offload band of each board (Phase 3), memory walls, crossover brackets and weak points; the 12 board x circuit versions are in `data/figures/phase4/crossover/` (not in the paper). `F6_decision_map` (paper). `F7_ratio` (T_local / T_offload with the fast-to-slow range) and `F8_breakdown` (share of wire, residual and PC simulation of the ESP32 round trip, chosen over absolute bars because the parts span five decades and the question is which dominates) are supplementary: `figures/phase4/F7_ratio`, `figures/phase4/F8_breakdown`. All are added after the data were seen.

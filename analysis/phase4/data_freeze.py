@@ -250,6 +250,10 @@ def build_doc(ent):
          "any implausible pair makes the point unusable", f"`0ac49da` {cd('0ac49da')}", "**after** the data were seen, and it **conditions on agreement** with micros(): statistics of the points that pass are not independent of the filter"),
         ("Offload band and brackets", "band = wire + residual + [min, max] observed PC simulation time per circuit x n over every Phase 3 session; crossover = bracket of two measured n for the fast and for the slow bound; "
          f"labels *within noise* (IQRs overlap) and *weak* (< {W.WEAK_MIN})", f"`448f67c` {cd('448f67c')}", "**after** the data and scores (a single offload line hid the ~2x spread of the PC simulation time between sessions)"),
+        ("Trade-off views (equations, per-circuit crossover figure, band check, decision map, ratio and breakdown figures, predicted crossover)",
+         "equations (1)-(10) restated from the code (docs/phase4_report.md section 13); per-board offload bands drawn because the boards differ by more than 10 % of the band height (band check); decision-map cells from the Table III crossover table; "
+         "predicted crossover = M1 / M2 + offload equation with one residual constant per board, compared by the position of n_hi", f"`783d90a` {cd('783d90a')}",
+         "**added after the data were seen** (existing data only; no number of the earlier analysis changed): the band-height tolerance, the cell classes, the one-residual-per-board approximation and the match / off-by-one / off-by-more comparison were chosen after the crossover table was known"),
         ("Held-out sensitivity", "held-out = largest 2, 3, 4 reported in full; 3 stays primary", f"`9a7de1a` {cd('9a7de1a')}", "after the first scores; reported so that the primary choice is not the only number"),
     ]
     a(md_table(["rule", "definition (constants read from the code)", "set in commit", "relative to the data / scores"], rows))

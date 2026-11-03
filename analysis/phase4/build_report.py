@@ -653,6 +653,75 @@ Unchanged: memory predictions and walls, gate counts, Phase 1 raw table.
 
 `.venv/bin/python analysis/reproduce.py` (about 2 min; `--full` also re-runs the PC grover builds against Aer). Details, environment, wiring and per-figure commands: `README_REPRODUCE.md`. Tests: `for f in $(git ls-files '*_test.py'); do .venv/bin/python $f; done`.
 """
+
+# ---------------- section 13: trade-off equations, band check, predicted crossover, decision map (added after the data were seen)
+import tradeoff as TO
+_bc = rd("band_check.csv")
+_bcm = _bc.groupby("circuit").ratio.max()
+_bc_tbl = md(pd.DataFrame([{"circuit": c, "max over n of (spread of the band edges between boards / mean band height)": f"{_bcm[c]:.1f}",
+                            "n of the maximum": int(_bc[(_bc.circuit == c)].sort_values("ratio").n.iloc[-1]),
+                            "drawn as": "one band per board" if _bcm[c] > 0.10 else "one shared band"} for c in C.CIRCUITS]))
+_cp = rd("crossover_predicted.csv")
+_cp_tbl = md(_cp.assign(board=_cp.board.map(BL))[["board", "circuit", "bound", "measured", "pred_M1", "cmp_M1", "pred_M2", "cmp_M2", "model_status", "bracket_ends_held_out", "bracket_ends", "weak"]]
+             .rename(columns={"pred_M1": "M1 bracket", "cmp_M1": "M1 vs measured", "pred_M2": "M2 bracket", "cmp_M2": "M2 vs measured", "model_status": "model status",
+                              "bracket_ends_held_out": "ends held out of the fit", "bracket_ends": "ends"}))
+_ok = _cp[_cp.model_status == "ok"]
+_cnt = lambda mod, v: int((_ok["cmp_" + mod] == v).sum())
+_dc = rd("decision_cells.csv")
+_dc_tbl = md(_dc.groupby(["circuit", "cell"]).size().unstack(fill_value=0).reindex(C.CIRCUITS).reset_index().rename(columns=TO.CELL_LABEL))
+_baud = float(pd.read_csv(os.path.join(_sdir(3, "esp32", "h_all", 2), "points.csv")).baud.iloc[0])
+_wire_bytes = round(float(pd.read_csv(os.path.join(D, "offload_band.csv")).wire_us.median()) * _baud / 1e6 / TO.BITS_PER_BYTE, 3)
+R13 = f"""
+## 13. Trade-off equations, per-circuit crossover figure, decision map and predicted crossover (added after the data were seen)
+
+**Status.** Everything in this section was added **after the data were seen** (made after the data freeze of `docs/DATA_FREEZE.md`; it uses existing data only and changes no number of sections 1-12): the equations are a restatement of what the code computes, the per-circuit crossover figure, the decision map, the ratio and breakdown figures and the predicted crossover are new views of the same crossover table. Code: `analysis/phase4/tradeoff.py` (tests: `analysis/phase4/tradeoff_test.py`), `plot_crossover_by_circuit.py`, `plot_decision_map.py`, `plot_supporting.py`.
+
+### 13.1 Equations, checked against the code that computes them
+
+Notation: n qubits, board b, circuit c; B = bytes available for the state; G_c(n) = gate calls; N_(c,k)(n) = gate calls of kind k in H, CNOT, CPHASE.
+
+| no. | equation | code (file:line) | check |
+|---|---|---|---|
+| (1) | M(n) = {TO.AMP_BYTES} x 2^n bytes (complex float32 = two 4-byte floats) | `firmware/common/qsim.hpp:30-33` (struct Cplx), `analysis/phase4/model.py:58-63` | **match** |
+| (2) | n_max = floor(log2(B / {TO.AMP_BYTES})) | `analysis/phase4/model.py:58` | **differed in B**: B is not "the largest contiguous free block" on every board. Uno: B = 2048 B minus the compiler-reported static use (`model.py:51`); ESP8266: total free heap read after the allocation at n = 2 (`model.py:53`); ESP32: two candidates, the total free heap and the largest free block (`model.py:55-56`); only the largest block matches the wall, the total free heap is one qubit too high (section 3). The formula itself matches |
+| (3) | M1: T_local(n) = c_b x G_c(n) x 2^n | `analysis/phase4/timemodel.py:102-106` (fit), `:153` (prediction), `analysis/phase4/gatecount.py:76-78` (work) | **match**; G_c counts every gate call of every kind, the init sweep is not counted; c_b is fitted per board on relative error and shared by the circuits |
+| (4) | M2: T_local(n) = sum_k c_(b,k) N_(c,k)(n) 2^n + a_b G_c(n), k in H, CNOT, CPHASE | `analysis/phase4/timemodel.py:108-114` (columns x_h, x_cn, x_cp, x_g), `:154` | **match**; the coefficients are non-negative (NNLS) on relative error, shared by the circuits of a board; the per-call term is a_b times the total number of gate calls G_c = N_H + N_CNOT + N_CPHASE |
+| (5) | gate counts: h_all: G = n; bell_ghz: 1 H + (n-1) CNOT, G = n; qft: n H + n(n-1)/2 CPHASE; grover: n H + k(n) x [2 G_mcp(n-1) + 6n H + 2n CPHASE], G_mcp(1) = 1, G_mcp(k) = 8 x 3^(k-2) - 3 for k >= 2, so G_grover = n + k(n) (16 x 3^(n-3) + 8n - 6) for n >= 3; k(n) = max(floor(pi/4 sqrt(2^n)), 1) in float32 | `analysis/phase4/gatecount.py:35-73` (recursion, `mc_phase`, `mc_x`), `:50-54` (k), `firmware/common/circuits.hpp:20-25, 33-39, 53-61, 80-83, 108-135, 152-181` | **match** for the recursion (52 of 52 (circuit, n) pairs equal the unmodified header run in C++, section 4); the **closed forms are derived here, not in the code**, and are checked against the code for n = 2..14 in `tradeoff_test.py` |
+| (6) | T_wire = {TO.BITS_PER_BYTE} x L_frame / baud, L_frame = request + response = {_wire_bytes:g} bytes per request (4 + 6) | `analysis/phase4/offload_band.py:31-33` (`t_wire_us`, used at the point loop), `pc/phase3_offload/sweep.py:246` (request frame 4 B), `:263` (response 6 B); {TO.BITS_PER_BYTE} bit per byte = 8N1 | **match** (the pipeline uses bytes_transferred / requests of the point, which equals L_frame) |
+| (7) | T_off(n) = T_wire + T_res,b + T_pc,c(n) | `analysis/phase4/offload_band.py:60` (residual), `:65-72` (PC range), `:83-84` (band) | **differed**: T_res is the per-point residual of the board's selected session, e2e median - PC simulation median - wire (not one constant per board), and T_pc is not one value: the band is T_wire + T_res + [min, max] of the PC simulation time observed over every Phase 3 session of every board at that circuit and n; the parts are medians of one point and do not add exactly. The predicted crossover (13.3) is the exception: it uses one T_res,b per board = the median residual of the points with a PC simulation below {TO.SMALL_SIM_US / 1000:.0f} ms (`tradeoff.residual_constants`) |
+| (8) | crossover: n* = smallest in-scope n from which T_local(n) > T_off(n), as a bracket (n_lo, n_hi) of two measured n, once for T_pc min and once for T_pc max | `analysis/phase4/offload_band.py:94-109` | **differed**: the code compares the local **median** with the band edge and takes n_hi = the first measured n from which offload is faster (strictly) **at every larger measured n** (an isolated earlier crossing does not count); n_lo = the previous measured n; "below" if offload is already faster at the smallest measured n; "none" if never; no interpolation, no extrapolation |
+| (9) | MAPE = 100 x mean over held-out points of abs(T_pred - T_meas) / T_meas | `analysis/phase4/timemodel.py:138-139` | **match** (point-weighted over the non-weak held-out points) |
+| (10) | P(marked) = sin^2((2k+1) theta), theta = asin(1 / sqrt(2^n)) | `analysis/phase4/grover_diagnosis.py:49-51, 74` | **match**; k is the firmware's iteration count (float32), not the exact optimum |
+
+I did not change the analysis to match the wording of the equations; where the code differs (rows 2, 7, 8) the paper uses the code's definition.
+
+### 13.2 Shared band or one band per board?
+
+Before drawing the per-circuit figure (`F4_crossover_by_circuit`) each board's offload band (T_wire + T_res,b + [PC min, PC max]) was compared across boards at every n with at least two boards: spread of the fast and of the slow edge between boards divided by the mean band height; the tolerance is 10 % (`BAND_TOL`, `plot_crossover_by_circuit.py`). Result (`data/processed/phase4/band_check.csv`):
+
+{_bc_tbl}
+
+The boards differ by several band heights in every circuit (T_res and the link differ between boards by more than the PC-speed spread), so **one band per board** is drawn, in the board's colour.
+
+### 13.3 Predicted crossover (M1 and M2 plus the offload equation)
+
+For every board x circuit the local time at the measured n is taken from the model (`time_predictions.csv`: M1 and M2) and the offload band from equations (6), (7) with one T_res,b per board (13.1), then the same bracket rule (8) is applied. Compared with the measured bracket by the position of n_hi in the measured n list: **match** (same), **off by one** (one measured step), **off by more**. Rules: a series with no fit point has **no model** (ESP8266 grover); M2 is reported only where it is identifiable (the Uno is not, at held-out 3: **n/i**); weak brackets are flagged. **Added after the data were seen.**
+
+{_cp_tbl}
+
+OBSERVED: over the {int(_ok.drop_duplicates(['board', 'circuit']).shape[0])} series with an identifiable M2 ({len(_ok)} bracket comparisons: fast and slow bound), M2 matches the measured bracket in {_cnt('M2', 'match')}, is off by one in {_cnt('M2', 'off by one')} and off by more in {_cnt('M2', 'off by more')}; M1 matches in {_cnt('M1', 'match')}, off by one in {_cnt('M1', 'off by one')}, off by more in {_cnt('M1', 'off by more')}. Caveat (INTERPRETATION): the bracket ends are mostly measured points that were **in the fit** ({int(_ok.bracket_ends_held_out.sum())} of {int(_ok.bracket_ends.sum())} ends are held-out points), so this checks how well the fitted model reproduces the crossover where it was fitted, not an extrapolation; one T_res,b per board is an approximation (the measured residual varies between points); the Uno is not identifiable and ESP8266 grover has no model.
+
+### 13.4 Decision map
+
+`F6_decision_map` colours every (board, n) of each circuit from the same crossover table as Table III of the paper (`tradeoff.cells`, one source function; `tradeoff_test.py` checks the map against the printed table for every board x circuit x n). Classes: local faster under both PC bounds; offload faster under both; depends on PC speed (the bounds disagree); within noise (an end of a bracket labelled within noise); not runnable on board (n at or beyond the wall, or beyond the local time limit); not measured. Cells per class and circuit:
+
+{_dc_tbl}
+
+### 13.5 Figures
+
+`F4_crossover_by_circuit` (paper): per circuit, local median and IQR of the three boards (Phase 2) with the offload band of each board (Phase 3), memory walls, crossover brackets and weak points; the 12 board x circuit versions are in `data/figures/phase4/crossover/` (not in the paper). `F6_decision_map` (paper). `F7_ratio` (T_local / T_offload with the fast-to-slow range) and `F8_breakdown` (share of wire, residual and PC simulation of the ESP32 round trip, chosen over absolute bars because the parts span five decades and the question is which dominates) are supplementary: `figures/phase4/F7_ratio`, `figures/phase4/F8_breakdown`. All are added after the data were seen.
+"""
+R = R + R13
 os.makedirs(os.path.join(ROOT, "docs"), exist_ok=True)
 open(os.path.join(ROOT, "docs", "phase4_report.md"), "w").write(R)
 print("wrote docs/phase4_report.md", len(R.splitlines()), "lines")
