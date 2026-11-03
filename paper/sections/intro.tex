@@ -1,5 +1,5 @@
 \section{Introduction}
-A dense statevector simulation of $n$ qubits stores $2^n$ complex amplitudes~\cite{TODO-statevector-memory}. On a microcontroller the state competes with the program and the runtime for kilobytes of RAM, and the arithmetic runs on 8-bit or soft-float cores. Whether a given circuit can be simulated on such a device, and whether it is better to send it to a PC, is a practical question for embedded and educational quantum tooling~\cite{TODO-embedded-quantum-sim}.
+A dense statevector simulation of $n$ qubits stores $2^n$ complex amplitudes~\cite{haener2017}. On a microcontroller the state competes with the program and the runtime for kilobytes of RAM, and the arithmetic runs on 8-bit or soft-float cores. Whether a given circuit can be simulated on such a device, and whether it is better to send it to a PC, is a practical question for embedded and educational quantum tooling~\cite{carney2023}.
 
 We ask: \emph{what limits statevector circuit simulation on microcontrollers (Arduino \uno, \espA, \espB), how accurately can those limits be predicted, and where is the local-versus-offload trade-off?} This is a characterisation study: the analysis rules were refined while the data were being examined, and every such choice is disclosed in Sections~\ref{sec:method} and~\ref{sec:limits}; we do not present it as a pre-registered hypothesis test.
 
