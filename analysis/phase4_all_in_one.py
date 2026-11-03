@@ -47,7 +47,7 @@ def main():
             ax.text(x, k + 0.2, f"≤ {k}" if r.flag == "at_or_below_first_n" else f"{k}", ha="center", va="bottom",
                     fontsize=9)
     ax.set_xticks([bi * (nc + 1) + (nc - 1) / 2 for bi in range(nb)], [ps.BOARD_LABEL[b] for b in ps.BOARD_ORDER])
-    ax.set_ylabel("First qubit count $n$ at which offload is faster than local")
+    ax.set_ylabel("Number of qubits $n$ at which offload becomes faster\n(axis ends at the last $n$ that runs before the memory wall)")
     top = max(int(str(r.common_n).split("..")[1]) for r in df.itertuples() if str(r.common_n).count("..") == 1)      # the largest n measured before a memory wall
     ax.set_ylim(0, top + 1.3)
     ax.set_yticks(sorted(set(range(0, top + 1, 2 if top > 8 else 1)) | {top}))      # the last tick is the largest n before a wall
