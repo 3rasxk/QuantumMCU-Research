@@ -31,25 +31,29 @@ def main():
     house.apply_style()
     cv = pd.read_csv(HERE.parent / "data" / "derived" / "counter_validity.csv")
     cv = cv[cv.selected.astype(bool) & (cv.usable.astype(bool) | (cv.n == 2)) & (cv.counter_median_us > 0)]      # as analysis/algorithm_house_plots.py
-    nb, nc = len(C.BOARDS), len(C.CIRCUITS)
+    nb = len(C.BOARDS)
     fig, ax = plt.subplots(constrained_layout=True)
-    handles, top = [], 0
+    handles, top, centres, x = [], 0, [], 0
     for bi, b in enumerate(C.BOARDS):
+        first = x
         for ci, c in enumerate(C.CIRCUITS):
-            col = house.family(bi)[ci]
-            x = bi * (nc + 1) + ci
-            handles.append(Patch(color=col, label=f"{SHORT[b]} {c}"))
             g = cv[(cv.phase == 2) & (cv.board == b) & (cv.circuit == c)].sort_values("n")
             o = cv[(cv.phase == 3) & (cv.board == b) & (cv.circuit == c)].sort_values("n")
             pts = crossings(g.n, g.counter_median_us, o.n, o.counter_median_us)
-            if not pts:
-                ax.text(x, 0.2, "no crossing", ha="center", va="bottom", fontsize=8.5, rotation=90)
+            if not pts:                                  # the lines do not cross: the circuit is left out of the chart
                 continue
+            col = house.family(bi)[ci]
+            handles.append(Patch(color=col, label=f"{SHORT[b]} {c}"))
             k = math.ceil(pts[-1][0] - 1e-9)           # first whole n at which offload is faster than local
             ax.bar(x, k, color=col, zorder=3)
             ax.text(x, k + 0.2, f"{k}", ha="center", va="bottom", fontsize=9)
             top = max(top, k)
-    ax.set_xticks([bi * (nc + 1) + (nc - 1) / 2 for bi in range(nb)], [LABEL[b] for b in C.BOARDS])
+            x += 1
+        while len(handles) % len(C.CIRCUITS):             # blank legend entry so every board keeps its own legend column
+            handles.append(Patch(color="none", label=" "))
+        centres.append((first + x - 1) / 2)
+        x += 1                                           # gap between boards
+    ax.set_xticks(centres, [LABEL[b] for b in C.BOARDS])
     ax.set_ylabel("Number of qubits $n$ at the crossover")
     ax.set_ylim(0, top + 2.5)
     ax.set_yticks(range(0, top + 1))                    # equal spacing: a tick at every whole n
