@@ -24,3 +24,8 @@ paper-figs:
 paper: paper-numbers paper-figs
 	@if command -v latexmk >/dev/null 2>&1; then cd paper && latexmk -pdf -interaction=nonstopmode main.tex; \
 	else cd paper && tectonic -X compile --keep-logs --keep-intermediates main.tex; fi
+
+# make freeze : write docs/DATA_FREEZE.md and data/derived/MANIFEST.sha256 (run after paper-figures; the tag is created by hand, see the file)
+.PHONY: freeze
+freeze:
+	$(PY) analysis/phase4/data_freeze.py
