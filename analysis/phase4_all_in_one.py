@@ -50,7 +50,7 @@ def main():
             ax.text(x, k + 0.2, f"{k}", ha="center", va="bottom", fontsize=9)
             top = max(top, k)
     ax.set_xticks([bi * (nc + 1) + (nc - 1) / 2 for bi in range(nb)], [LABEL[b] for b in C.BOARDS])
-    ax.set_ylabel("Crossover point (number of qubits $n$, rounded up)")
+    ax.set_ylabel("Number of qubits $n$ at the crossover (rounded up)")
     ax.set_ylim(0, top + 2.5)
     ax.set_yticks(range(0, top + 1))                    # equal spacing: a tick at every whole n
     leg = ax.legend(handles=handles, loc="upper left", ncol=nb)
