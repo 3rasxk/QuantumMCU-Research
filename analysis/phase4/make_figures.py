@@ -46,7 +46,7 @@ def save(fig, name):
     plt.close(fig)
 
 
-WEAK_NOTE = f"Hollow markers: weak evidence (fewer than {C.SMALL_REPS} repetitions or requests); not fitted, not in the primary error."
+WEAK_NOTE = f"Hollow markers: weak evidence (fewer than {C.SMALL_REPS} independent repetitions or requests); not fitted, not in the primary error."
 
 
 def footnote(fig, text=WEAK_NOTE):
@@ -105,7 +105,7 @@ def f1_timing(loc, mem):
 # ------------------------------------------------------------------------------------------------ F2
 def f2_parity(P):
     fig, axs = plt.subplots(1, 2, figsize=(W2, 3.5))
-    lim = (30, 5e7)
+    lim = (30, 1e10)
     for ax, (mod, title) in zip(axs, [("M1", "(a) $t=c_{\\rm board}\\,W(n)$"), ("M2", "(b) per-gate-kind costs")]):
         col = "pred_" + mod
         for b in C.BOARDS:
