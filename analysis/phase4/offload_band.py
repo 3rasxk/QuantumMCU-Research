@@ -25,6 +25,13 @@ from common import weak as W  # noqa: E402
 import p4common as C  # noqa: E402
 
 DER = os.path.join(C.ROOT, "data", "derived")
+BITS_PER_BYTE = 10       # 8N1 serial frame: start + 8 data + stop (the wire time counts every byte as 10 bits)
+
+
+def t_wire_us(bytes_per_request, baud):
+    """(E6) serial time of one request: every byte is BITS_PER_BYTE bits on the wire; bytes_per_request = request frame (4 B) + response frame (6 B)"""
+    return float(bytes_per_request) * float(BITS_PER_BYTE) / float(baud) * 1e6
+
 
 
 def p3_all_sessions():
@@ -46,7 +53,7 @@ def p3_all_sessions():
                         continue
                     p = pts[pts.n == n].iloc[-1]                   # several ok records of one n inside a bucket: the last one (its pc_sim, bytes)
                     x = g.e2e_latency_us.to_numpy(float)
-                    wire = float(p.bytes_transferred) / len(g) * 10.0 / float(p.baud) * 1e6
+                    wire = t_wire_us(float(p.bytes_transferred) / len(g), float(p.baud))
                     sim = float(p.pc_sim_s_median) * 1e6
                     med = float(np.median(x))
                     rows.append(dict(board=b, circuit=c, n=n, session=s, requests=len(x), e2e_us=med, e2e_q1_us=float(np.percentile(x, 25)),
