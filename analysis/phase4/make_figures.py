@@ -242,7 +242,7 @@ def f4_offload(m, X):
                             Line2D([], [], color="gray", marker="o", mfc="white", ls="", ms=5, label=f"weak: $<{C.SMALL_REPS}$ reps / requests")]
     fig.legend(handles=hs, loc="upper center", ncol=5, frameon=False, bbox_to_anchor=(0.5, 1.0), columnspacing=0.9, handletextpad=0.4)
     fig.tight_layout(rect=(0, 0.07, 1, 0.90))
-    footnote(fig, "The offload band reflects the speed of the host PC (the Aer simulation time varies about 2x between sessions).\n"
+    footnote(fig, "The offload band reflects the speed of the host PC (the Aer simulation time varies between sessions).\n"
                   "Bars: bracket between two measured n; arrow: offload already faster at the smallest measured n; no bar: no crossover up to the largest measured n.")
     save(fig, "F4_offload_crossover")
 
