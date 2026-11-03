@@ -1,4 +1,5 @@
-# Vendored copy of the graph-create house plotting style (scripts/plot_style.py), so the analysis does not depend on ~/.claude. Unmodified apart from this line.
+# Vendored copy of the graph-create house plotting style (scripts/plot_style.py), so the analysis does not depend on ~/.claude. Modified: x ticks at every whole x
+# from the first to the last (equal spacing on the whole axis, also where no series has a point).
 #!/usr/bin/env python3
 """Grouped log-scale line chart in the "Phase 2 -- all boards, all circuits" house style.
 
@@ -225,8 +226,11 @@ def plot_grouped_lines(
             ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"{v:g}"))
     elif integer_x:
         ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
-        if len(xs) <= 20:
-            ax.set_xticks(xs)  # every x value gets a tick, as in the reference
+        # every whole x from the first to the last gets a tick, evenly spaced, also where a series has no point (house rule: equal spacing on the whole axis)
+        if all(float(v).is_integer() for v in xs) and (max(xs) - min(xs)) <= 25:
+            ax.set_xticks(list(range(int(min(xs)), int(max(xs)) + 1)))
+        elif len(xs) <= 20:
+            ax.set_xticks(xs)
 
     if title:
         ax.set_title(title)
