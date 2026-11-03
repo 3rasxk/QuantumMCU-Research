@@ -142,6 +142,11 @@ def main():
     check("decision map: every (board, circuit, n) of the grid has exactly one cell", len(cells) == len(C.BOARDS) * len(C.CIRCUITS) * len(TO.GRID_N) and not cells.duplicated(["board", "circuit", "n"]).any())
     check("decision map: n at or beyond a board's wall is never coloured as measured",
           all(r.cell in (TO.NORUN, TO.NOMEAS) for r in cells.itertuples() if r.n >= TO.SES.wall_n(r.board)))
+    cg = cells[(cells.board == "esp32") & (cells.circuit == "grover")].set_index("n")
+    check("decision map: ESP32 grover n=14 (no wall evidence, no data) is 'not measured', n=13 (offload only, local skipped) is 'not runnable'",
+          cg.loc[14, "cell"] == TO.NOMEAS and cg.loc[13, "cell"] == TO.NORUN)
+    c8 = cells[(cells.board == "uno") & (cells.circuit == "h_all")].set_index("n")
+    check("decision map: Uno h_all n=8..14 (wall with positive evidence at n=8) are 'not runnable'", all(c8.loc[n, "cell"] == TO.NORUN for n in range(8, 15)))
 
     # ---------------- predicted crossover on a synthetic exact model
     ns = list(range(2, 12))

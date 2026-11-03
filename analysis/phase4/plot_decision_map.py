@@ -25,6 +25,7 @@ plt = MF.plt
 # Okabe-Ito based, colour-blind safe; the two "no" classes are neutral greys with different lightness
 PAL = {TO.LOCAL: "#0072B2", TO.OFFLOAD: "#D55E00", TO.DEPENDS: "#F0E442", TO.NOISE: "#CC79A7", TO.NORUN: "#4D4D4D", TO.NOMEAS: "#E6E6E6"}
 ORDER = [TO.LOCAL, TO.OFFLOAD, TO.DEPENDS, TO.NOISE, TO.NORUN, TO.NOMEAS]
+HATCH = {TO.LOCAL: "", TO.OFFLOAD: "\\\\\\", TO.DEPENDS: "..", TO.NOISE: "xx", TO.NORUN: "", TO.NOMEAS: "//"}      # a hatch per class so the map reads in greyscale
 
 
 def main():
@@ -38,6 +39,8 @@ def main():
             for xi, n in enumerate(ns):
                 cl = g.loc[n, "cell"]
                 ax.add_patch(plt.Rectangle((xi - 0.5, yi - 0.5), 1, 1, facecolor=PAL[cl], edgecolor="white", lw=0.8))
+                if HATCH[cl]:
+                    ax.add_patch(plt.Rectangle((xi - 0.5, yi - 0.5), 1, 1, facecolor="none", edgecolor="white", lw=0, hatch=HATCH[cl], alpha=0.9))
         ax.set_xlim(-0.5, len(ns) - 0.5)
         ax.set_ylim(len(C.BOARDS) - 0.5, -0.5)
         ax.set_xticks(range(len(ns)))
@@ -49,7 +52,7 @@ def main():
     for ax in axs[1]:
         ax.set_xlabel("Qubits $n$", fontsize=8)
     from matplotlib.patches import Patch
-    hs = [Patch(facecolor=PAL[k], edgecolor="0.5", lw=0.4, label=TO.CELL_LABEL[k]) for k in ORDER]
+    hs = [Patch(facecolor=PAL[k], edgecolor="0.5", lw=0.4, hatch=HATCH[k], label=TO.CELL_LABEL[k]) for k in ORDER]
     fig.legend(handles=hs, loc="lower center", ncol=3, frameon=False, bbox_to_anchor=(0.5, 0.0), columnspacing=1.0, handletextpad=0.5, fontsize=7.5)
     fig.tight_layout(rect=(0, 0.17, 1, 1))
     MF.save(fig, "F6_decision_map")

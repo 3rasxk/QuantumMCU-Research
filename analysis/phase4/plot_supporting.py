@@ -53,7 +53,7 @@ def f7_ratio(m):
     from matplotlib.patches import Patch
     hs = MF.board_handles() + [Line2D([], [], color="k", lw=0.8, label="ratio 1 (crossover)"),
                                Patch(facecolor="gray", alpha=0.3, label="range: slow to fast PC bound"),
-                               Line2D([], [], color="gray", marker="o", mfc="white", ls="", ms=5, label=f"weak: $<{C.SMALL_REPS}$ reps / requests")]
+                               Line2D([], [], color="gray", marker="o", mfc="white", ls="", ms=5, label=f"weak: $<{C.SMALL_REPS}$ independent reps / requests")]
     fig.legend(handles=hs, loc="upper center", ncol=6, frameon=False, bbox_to_anchor=(0.5, 1.0), columnspacing=0.9, handletextpad=0.4)
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     MF.save(fig, "F7_ratio")

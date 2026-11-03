@@ -75,7 +75,7 @@ def draw_series(ax, b, c, loc, m, X, walls, bar_slot, label_noise=True):
         else:
             right = None
         if right is not None and mark and label_noise:
-            ax.text(right + 0.12, y, mark, transform=tr, fontsize=6.5, color=COL[b], va="center", ha="left")
+            ax.text(right + 0.12, y, mark, transform=tr, fontsize=7.5, color=COL[b], va="center", ha="left")
 
 
 def style_axes(ax, c):
@@ -95,7 +95,7 @@ def handles(per_board_band):
         Line2D([], [], color="gray", ls=":", label="memory wall"),
         Line2D([], [], color="gray", lw=2.2, label="crossover bracket, fast PC"),
         Line2D([], [], color="gray", lw=2.2, ls=":", label="crossover bracket, slow PC"),
-        Line2D([], [], color="gray", marker="o", mfc="white", ls="", ms=5, label=f"weak: $<{C.SMALL_REPS}$ reps / requests")]
+        Line2D([], [], color="gray", marker="o", mfc="white", ls="", ms=5, label=f"weak: $<{C.SMALL_REPS}$ independent reps / requests")]
 
 
 def main():

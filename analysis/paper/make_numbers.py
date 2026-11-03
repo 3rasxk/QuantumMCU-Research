@@ -376,7 +376,22 @@ for mod, tag in (("M2", "Two"), ("M1", "One")):
     put("PredOffOne" + tag, int((ok_["cmp_" + mod] == "off by one").sum()))
     put("PredOffMore" + tag, int((ok_["cmp_" + mod] == "off by more").sum()))
 put("PredEnds", int(ok_.bracket_ends.sum()))
+_roles = {"test": 0, "fit": 0, "not_fitted_weak": 0, "not_fitted_hash": 0}
+for _r in ok_.itertuples():
+    _xr = xo[(xo.board == _r.board) & (xo.circuit == _r.circuit)].iloc[0]
+    for _n in (_xr[f"n_{_r.bound}_lo"], _xr[f"n_{_r.bound}_hi"]):
+        if _n == _n:
+            _roles[pred[(pred.board == _r.board) & (pred.circuit == _r.circuit) & (pred.n == int(_n))].role.iloc[0]] += 1
+put("PredEndsFit", _roles["fit"])
+put("PredEndsWeak", _roles["not_fitted_weak"] + _roles["not_fitted_hash"])
+_nw = ok_[~ok_.weak]
+put("PredNonWeak", len(_nw))
+put("PredNonWeakMatch", int((_nw.cmp_M2 == "match").sum()))
 put("PredEndsHeld", int(ok_.bracket_ends_held_out.sum()))
+_ob = rd(P, "offload_band.csv")
+_rc = _ob[_ob.pc_sim_us < 20000].groupby("board").residual_us.median()       # same cut as tradeoff.residual_constants (SMALL_SIM_US)
+for _b, _t in (("uno", "Uno"), ("esp8266", "EspLo"), ("esp32", "EspHi")):
+    put("ResidBoard" + _t, f"{_rc[_b] / 1000:.2f}")
 # band check and decision map
 bc = rd(P, "band_check.csv")
 put("BandRatioMin", f"{bc.groupby('circuit').ratio.max().min():.1f}")
@@ -386,6 +401,9 @@ dc = rd(P, "decision_cells.csv")
 for k, tag in (("local", "Local"), ("offload", "Offload"), ("depends", "Depends"), ("noise", "Noise"), ("norun", "NoRun"), ("nomeas", "NoMeas")):
     put("MapN" + tag, int((dc.cell == k).sum()))
 put("MapNCells", len(dc))
+_dis = dc[dc.fast_off.notna() & (dc.fast_off != dc.slow_off)]
+put("MapNDisagree", len(_dis))
+put("MapNDisagreeNoise", int((_dis.cell == "noise").sum()))
 # offload breakdown (ESP32): shares of the round trip
 bk = rd(P, "offload_band.csv")
 bk = bk[bk.board == "esp32"].assign(res0=lambda d: d.residual_us.clip(lower=0))

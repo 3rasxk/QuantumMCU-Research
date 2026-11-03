@@ -7,7 +7,7 @@ One place for what the figures, the decision map, Table III and the tests share:
   (6) wire time           T_wire = BITS_PER_BYTE * L_frame / baud                    t_wire_us()      (used by offload_band.py)
   (8) crossover bracket   offload_band.bracket (unchanged); cells(): which side is faster under each PC bound, per (board, circuit, n), from the crossover table
       predicted crossover bracket from a local model plus the offload equation      predicted_table()
-(equation numbers as in docs/phase4_report.md section 13 and the paper)
+(equation numbers (1)-(10) as in the first column of docs/phase4_report.md section 13.1; the paper numbers differ, see the column 'paper Eq.')
 
 The crossover bracket rule itself is offload_band.bracket (unchanged). Local statistics come from analysis/common/sessions.py through p4common /
 offload_band; nothing here reads data/raw directly.
@@ -89,14 +89,15 @@ def _noise_ns(X_row):
 def cells(m=None, X=None, allp=None):
     """DataFrame board, circuit, n, cell (LOCAL / OFFLOAD / DEPENDS / NOISE / NORUN / NOMEAS) for n in GRID_N, plus the per-bound flags.
     Both-measured cells follow the crossover table (m, X); NOISE overrides at the two ends of a bracket labelled within noise;
-    offload-only n (local missing) and every n at or beyond the board's wall are NORUN; the rest is NOMEAS."""
+    offload-only n (local missing) and every n at or beyond a wall that has positive evidence for this (board, circuit) are NORUN; the rest is NOMEAS
+    (so grover on the ESP boards, whose wall was never reached, shows NOMEAS beyond its last measured n, not NORUN)."""
     if m is None or allp is None:
         m, allp, _ = OB.band_table()
     X = X if X is not None else OB.crossover_table(m)
     sel = allp[allp.selected]
+    wall_seen = {(r.board, r.circuit): int(r.n) for r in C.load_walls().itertuples()}
     rows = []
     for b in C.BOARDS:
-        wall = SES.wall_n(b)
         for c in C.CIRCUITS:
             xr = X[(X.board == b) & (X.circuit == c)].iloc[0]
             g = m[(m.board == b) & (m.circuit == c)]
@@ -116,7 +117,7 @@ def cells(m=None, X=None, allp=None):
                         cell = DEPENDS
                     rows.append(dict(board=b, circuit=c, n=n, cell=cell, fast_off=fast[n], slow_off=slow[n]))
                 else:
-                    cell = NORUN if (n >= wall or n in off) else NOMEAS
+                    cell = NORUN if (n in off or ((b, c) in wall_seen and n >= wall_seen[(b, c)])) else NOMEAS
                     rows.append(dict(board=b, circuit=c, n=n, cell=cell, fast_off=None, slow_off=None))
     return pd.DataFrame(rows)
 

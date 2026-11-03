@@ -21,8 +21,8 @@ paper-figs:
 	@for f in F2_parity F3_memory_wall F4_crossover_by_circuit F5_phase1_accuracy F6_decision_map; do ln -sf ../../figures/phase4/$$f.pdf paper/figures/$$f.pdf; done
 
 paper: paper-numbers paper-figs
-	@if command -v latexmk >/dev/null 2>&1; then cd paper && latexmk -pdf -interaction=nonstopmode main.tex; \
-	else cd paper && tectonic -X compile --keep-logs --keep-intermediates main.tex; fi
+	@if command -v latexmk >/dev/null 2>&1; then cd paper && SOURCE_DATE_EPOCH=1767225600 latexmk -pdf -interaction=nonstopmode main.tex; \
+	else cd paper && SOURCE_DATE_EPOCH=1767225600 tectonic -X compile --keep-logs --keep-intermediates main.tex; fi
 
 # make freeze : write docs/DATA_FREEZE.md and data/derived/MANIFEST.sha256 (run after paper-figures; the tag is created by hand, see the file)
 .PHONY: freeze
