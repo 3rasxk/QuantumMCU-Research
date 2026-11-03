@@ -369,6 +369,11 @@ put("PoneGroverLastPass", int(okg.n.max()))
 put("PoneGroverFirstFail", int(a[~a["pass_1e-3"]].n.min()))
 put("PoneGroverMaxPass", sci(okg.infidelity.max(), 2))
 put("PoneGate", "$10^{-3}$")
+# sensitivity of the gate: last passing grover n and whether the other circuits still pass at a tighter and a looser threshold
+for tag, thr, txt in (("Lo", 1e-4, "$10^{-4}$"), ("Hi", 1e-2, "$10^{-2}$")):
+    put("PoneThresh" + tag, txt)
+    put("PoneGroverLastPass" + tag, int(a[a.infidelity <= thr].n.max()))
+    assert (p1[p1.circuit != "grover"].infidelity <= thr).all(), "the other circuits must pass at every threshold shown"
 g = gf.set_index("n")
 put("GroverTwelveRaw", f"{g.loc[12].f32_infid_vs_ideal_raw:.3f}")
 put("GroverTwelvePm", f2(g.loc[12].f32_p_marked_raw))
