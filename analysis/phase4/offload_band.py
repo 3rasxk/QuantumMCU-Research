@@ -4,7 +4,7 @@ Phase 3 point (board, circuit, n, session): e2e = wire + residual + pc_sim (medi
   wire      = frame bytes per request x 10 bit / baud  (bytes_transferred / requests, points.csv)
   pc_sim    = pc_sim_s_median  (Aer build + run + sample on the PC, logged per point; it depends on circuit and n, NOT on the board, but on the PC state of the session)
   residual  = e2e - pc_sim - wire  (board compute, USB-serial latency, host scheduling)
-PC simulation time varies about 2x between sessions on the same PC (docs/phase4_report.md), so a single offload line would hide that. The band:
+PC simulation time varies between sessions on the same PC (spread: docs/phase4_report.md) (docs/phase4_report.md), so a single offload line would hide that. The band:
   pc_sim_min / pc_sim_max of a circuit x n = observed min / max of pc_sim over EVERY Phase 3 session on EVERY board, replaced sessions included, in-scope n only;
   offload band of (board, circuit, n) = wire + residual(board, selected session) + [pc_sim_min, pc_sim_max].
 Crossover per board x circuit, against the Phase 2 local median of the same n (both selected sessions, in-scope n >= 2, Phase 3 up to the board's Phase 2 wall):
