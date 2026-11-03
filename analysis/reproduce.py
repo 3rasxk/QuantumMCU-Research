@@ -56,6 +56,7 @@ def main():
     run([PY, os.path.join(P4, "plot_crossover_by_circuit.py")], env=env)
     run([PY, os.path.join(ROOT, "analysis", "crossover_house_plots.py")], env=env)           # the 12 board x circuit charts in the house style
     run([PY, os.path.join(P4, "plot_decision_map.py")], env=env)
+    run([PY, os.path.join(P4, "plot_equations.py")], env=env)
     run([PY, os.path.join(P4, "plot_supporting.py")], env=env)
     run([PY, os.path.join(P4, "recollection_plan.py")], stdout=subprocess.DEVNULL)
     run([PY, os.path.join(ROOT, "analysis", "phase2", "plot_timer_vs_counter.py")], stdout=subprocess.DEVNULL)
