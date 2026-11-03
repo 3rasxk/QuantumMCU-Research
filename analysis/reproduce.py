@@ -8,7 +8,8 @@
 Steps (each is a script that can be run alone, see README_REPRODUCE.md):
   1 Phase 1  data/raw/phase1 -> data/derived/phase1 via analysis/phase4/audit.py (infidelity table), F5 below
   2 Phase 2/3 coverage, counter validity table and flag explanation, firmware hash audit, session provenance
-  3 Phase 4  gate counts (C++ cross-check), grover diagnosis summary, models, figures F1-F5, tables/phase4_memory_wall.tex
+  3 Phase 4  gate counts (C++ cross-check), grover diagnosis summary, models, figures F1-F5, tables/phase4_memory_wall.tex,
+             trade-off: band check, decision cells, predicted crossover, figures F4_crossover_by_circuit, F6_decision_map, F7_ratio, F8_breakdown
   4 legacy micros()-vs-counter charts (usable counter points only)
   5 docs/phase4_report.md
 The grover diagnosis table keeps the rows it does not recompute: without --full the committed rows n = 9..12 (and 13, 14 if present) are reused
@@ -51,6 +52,10 @@ def main():
     run([PY, os.path.join(P4, "provenance.py")])
     run([PY, os.path.join(P4, "counter_report.py")], stdout=subprocess.DEVNULL)
     run([PY, os.path.join(P4, "make_figures.py")], env=env)
+    run([PY, os.path.join(P4, "tradeoff.py")])                                          # band check, decision cells, predicted crossover (after the data were seen)
+    run([PY, os.path.join(P4, "plot_crossover_by_circuit.py")], env=env)
+    run([PY, os.path.join(P4, "plot_decision_map.py")], env=env)
+    run([PY, os.path.join(P4, "plot_supporting.py")], env=env)
     run([PY, os.path.join(P4, "recollection_plan.py")], stdout=subprocess.DEVNULL)
     run([PY, os.path.join(ROOT, "analysis", "phase2", "plot_timer_vs_counter.py")], stdout=subprocess.DEVNULL)
     run([PY, os.path.join(ROOT, "analysis", "phase2", "plot_timer_vs_counter.py"), "--phase", "3"], stdout=subprocess.DEVNULL)

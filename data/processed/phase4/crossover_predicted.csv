@@ -1,0 +1,25 @@
+board,circuit,bound,measured,model_status,n_fit_points,pred_M1,cmp_M1,pred_M2,cmp_M2,bracket_ends_held_out,bracket_ends,measured_labels,weak
+esp32,bell_ghz,fast,12-13,ok,3,12-13,match,12-13,match,2,2,,False
+esp32,bell_ghz,slow,12-13,ok,3,none,off by one,12-13,match,2,2,,False
+esp32,grover,fast,8-9,ok,6,8-9,match,8-9,match,0,2,weak,True
+esp32,grover,slow,9-10,ok,6,9-10,match,9-10,match,1,2,weak,True
+esp32,h_all,fast,12-13,ok,3,12-13,match,12-13,match,2,2,within noise,False
+esp32,h_all,slow,none,ok,3,none,match,none,match,0,0,no crossover up to the largest measured n; within noise at the largest measured n,False
+esp32,qft,fast,11-12,ok,5,11-12,match,11-12,match,2,2,,False
+esp32,qft,slow,12-13,ok,5,11-12,off by one,12-13,match,2,2,,False
+esp8266,bell_ghz,fast,9-10,ok,5,9-10,match,10-11,off by one,1,2,within noise,False
+esp8266,bell_ghz,slow,10-11,ok,5,9-10,off by one,10-11,match,2,2,within noise,False
+esp8266,grover,fast,3-4,no model,0,4-5,off by one,4-5,off by one,0,2,weak point beyond the bracket,True
+esp8266,grover,slow,4-5,no model,0,5-6,off by one,4-5,match,0,2,weak point beyond the bracket,True
+esp8266,h_all,fast,7-8,ok,6,9-10,off by more,7-8,match,0,2,within noise,False
+esp8266,h_all,slow,7-8,ok,6,9-10,off by more,7-8,match,0,2,,False
+esp8266,qft,fast,6-7,ok,7,7-8,off by one,6-7,match,0,2,within noise,False
+esp8266,qft,slow,7-8,ok,7,8-9,off by one,7-8,match,0,2,,False
+uno,bell_ghz,fast,5-6,not identifiable,3,4-5,off by one,5-6,match,2,2,,False
+uno,bell_ghz,slow,6-7,not identifiable,3,5-6,off by one,6-7,match,2,2,within noise,False
+uno,grover,fast,<=2,not identifiable,3,2-3,off by one,2-3,off by one,0,1,offload faster at the smallest measured n; within noise at the smallest measured n,False
+uno,grover,slow,2-3,not identifiable,3,2-3,match,2-3,match,0,2,within noise,False
+uno,h_all,fast,4-5,not identifiable,3,4-5,match,4-5,match,1,2,,False
+uno,h_all,slow,4-5,not identifiable,3,5-6,off by one,4-5,match,1,2,,False
+uno,qft,fast,3-4,not identifiable,3,4-5,off by one,3-4,match,0,2,,False
+uno,qft,slow,3-4,not identifiable,3,4-5,off by one,3-4,match,0,2,within noise,False

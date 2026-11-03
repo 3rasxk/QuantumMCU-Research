@@ -8,7 +8,7 @@
 #   data/figures/phase2/algorithms/<circuit>.png  Phase 2 only: local time per run
 #   data/figures/phase3/algorithms/<circuit>.png  Phase 3 only: offload round trip per request
 #   data/figures/phase4/algorithms/<circuit>.png  Phase 4: Phase 2 local with Phase 3 offload, at the n where both are usable
-# Weak points, IQR and crossover brackets are not drawn (the style has no markers or bands); see figures/phase4/F4_offload_crossover.pdf for those.
+# Weak points, IQR and crossover brackets are not drawn (the style has no markers or bands); see figures/phase4/F4_crossover_by_circuit.pdf for those.
 # Reads data/processed/phase4/offload_band.csv (read-only). Output: data/figures/phase2/<circuit>_local_vs_offload.png
 #   Use:  .venv/bin/python analysis/phase4_algorithm_house_plots.py
 import glob

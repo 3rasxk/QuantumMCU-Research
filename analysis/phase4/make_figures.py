@@ -257,20 +257,6 @@ def f4_offload(m, X):
     save(fig, "F4_offload_crossover")
 
 
-def f4_per_circuit(m, X):
-    """one figure per circuit (Phase 2 local vs Phase 3 offload, three boards): figures/phase4/F4_crossover_<circuit>.{pdf,png}"""
-    series = f4_series(m)
-    for c in C.CIRCUITS:
-        fig, ax = plt.subplots(figsize=(W1 * 1.6, 3.3))
-        _f4_panel(ax, c, series, X)
-        ax.set_xlabel("Qubits $n$")
-        ax.set_ylabel(r"Time per run ($\mu$s)")
-        fig.legend(handles=_f4_handles(), loc="upper center", ncol=3, frameon=False, bbox_to_anchor=(0.5, 1.0), columnspacing=0.9, handletextpad=0.4)
-        fig.tight_layout(rect=(0, 0.1, 1, 0.85))
-        footnote(fig, F4_NOTE)
-        save(fig, f"F4_crossover_{c}")
-
-
 # ------------------------------------------------------------------------------------------------ F5
 def f5_accuracy(p1, gd=None):
     fig, ax = plt.subplots(figsize=(W1, 2.5))
@@ -310,7 +296,6 @@ def main():
     R = f3_memory(mem)
     memory_table(mem, R)
     f4_offload(m, X)
-    f4_per_circuit(m, X)
     f5_accuracy(p1, gd)
     print("wrote", sorted(os.listdir(C.FIG)))
 
