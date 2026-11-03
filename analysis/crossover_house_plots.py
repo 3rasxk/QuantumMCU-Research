@@ -2,8 +2,11 @@
 # crossover_house_plots.py (added after the data were seen; existing data only, selected sessions, in-scope n)
 # One chart per board x circuit (12 files) in the house line-chart style of the graph-create skill (analysis/vendor/plot_style.py): log-y lines, no title,
 # no markers except one dot per crossing. Exactly two lines:
-#   Local   (blue)   median execution time per run, Phase 2 (board micros())
-#   Offload (orange) median round-trip time per request of the selected Phase 3 session (wire + board and link + PC simulation of that session)
+#   Local   (blue)   Phase 2: the ESP32 reference counter's median pulse width per run (the data of data/figures/phase2/algorithms)
+#   Offload (orange) Phase 3: the ESP32 reference counter's median pulse width per request (the data of data/figures/phase3/algorithms)
+# Same points as analysis/algorithm_house_plots.py: selected sessions, counter pairs that passed the validity rules (counter_validity.csv `usable`) plus the
+# n = 2 points whose counter pair failed only on the pair count or one outlier pair; the board's micros() and the PC-side round trip are NOT used here, so the
+# crossing of these lines is NOT the crossover of Table III (which uses micros() and the round trip with the PC-speed bounds).
 # The dot (named in the legend) marks where the two DRAWN lines cross (straight segments between measured n, in the log-y plot): an interpolated point of the picture, not a measured
 # value; the reported crossover is the bracket of two measured n (Table III, docs/phase4_report.md section 5), which these charts do not show.
 # No crossing of the drawn lines = no dot. IQR, weak points, PC-speed bounds (fast / slow band), memory walls and brackets are in figures/phase4/F4_crossover_by_circuit.pdf.
@@ -21,7 +24,6 @@ sys.path.insert(0, os.path.join(HERE, "vendor"))          # vendored graph-creat
 sys.path.insert(0, os.path.join(HERE, "phase4"))
 from plot_style import plot_grouped_lines, save_figure  # noqa: E402
 import p4common as C  # noqa: E402
-import offload_band as OB  # noqa: E402
 
 OUT = os.path.join(ROOT, "data", "figures", "phase4", "crossover")
 
@@ -42,22 +44,21 @@ def crossings(nl, tl, no, to):
 
 
 def main():
-    m, _, _ = OB.band_table()
-    loc = C.load_local()
+    cv = pd.read_csv(os.path.join(ROOT, "data", "derived", "counter_validity.csv"))
+    cv = cv[cv.selected.astype(bool) & (cv.usable.astype(bool) | (cv.n == 2)) & (cv.counter_median_us > 0)]      # as analysis/algorithm_house_plots.py
     os.makedirs(OUT, exist_ok=True)
     for b in C.BOARDS:
         for c in C.CIRCUITS:
-            g = loc[(loc.board == b) & (loc.circuit == c)].sort_values("n")
-            o = m[(m.board == b) & (m.circuit == c)].sort_values("n")
-            rows = [{"n": int(n), "time_us": float(t), "path": "Local", "series": "line"} for n, t in zip(g.n, g.median_us)]
-            rows += [{"n": int(n), "time_us": float(t), "path": "Offload", "series": "line"} for n, t in zip(o.n, o.e2e_us)]
+            g = cv[(cv.phase == 2) & (cv.board == b) & (cv.circuit == c)].sort_values("n")
+            o = cv[(cv.phase == 3) & (cv.board == b) & (cv.circuit == c)].sort_values("n")
+            rows = [{"n": int(n), "time_us": float(t), "path": "Local", "series": "line"} for n, t in zip(g.n, g.counter_median_us)]
+            rows += [{"n": int(n), "time_us": float(t), "path": "Offload", "series": "line"} for n, t in zip(o.n, o.counter_median_us)]
             df = pd.DataFrame(rows)
-            df = df[df.time_us > 0]
             fig, ax = plot_grouped_lines(df, "n", "time_us", "path", "series", title="", xlabel="Number of qubits, $n$",
                                          ylabel="Time per run (µs, log scale)", group_order=["Local", "Offload"], series_order=["line"])
             for t in ax.get_legend().get_texts():
                 t.set_text("Local (Phase 2)" if t.get_text().startswith("Local") else "Offload (Phase 3)")
-            cross = crossings(g.n, g.median_us, o.n, o.e2e_us)
+            cross = crossings(g.n, g.counter_median_us, o.n, o.counter_median_us)
             for x, y in cross:
                 ax.plot([x], [y], "o", color="black", markersize=9, markeredgecolor="white", markeredgewidth=1.2, zorder=5)
             if cross:                                                   # name the dot in the legend (same position and look as the house legend)
