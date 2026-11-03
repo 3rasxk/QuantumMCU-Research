@@ -369,6 +369,10 @@ put("PoneGroverLastPass", int(okg.n.max()))
 put("PoneGroverFirstFail", int(a[~a["pass_1e-3"]].n.min()))
 put("PoneGroverMaxPass", sci(okg.infidelity.max(), 2))
 put("PoneGate", "$10^{-3}$")
+tr = (p1.tvd / p1.infidelity)
+put("TvdRatioMin", f4(tr.min()))
+put("TvdRatioMax", f4(tr.max()))
+assert 0.49 < tr.min() and tr.max() < 0.51, "the paper says TVD equals half of the infidelity in the Phase 1 data"
 # sensitivity of the gate: last passing grover n and whether the other circuits still pass at a tighter and a looser threshold
 for tag, thr, txt in (("Lo", 1e-4, "$10^{-4}$"), ("Hi", 1e-2, "$10^{-2}$")):
     put("PoneThresh" + tag, txt)
