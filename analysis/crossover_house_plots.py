@@ -4,7 +4,7 @@
 # no markers except one dot per crossing. Exactly two lines:
 #   Local   (blue)   median execution time per run, Phase 2 (board micros())
 #   Offload (orange) median round-trip time per request of the selected Phase 3 session (wire + board and link + PC simulation of that session)
-# The dot marks where the two DRAWN lines cross (straight segments between measured n, in the log-y plot): an interpolated point of the picture, not a measured
+# The dot (named in the legend) marks where the two DRAWN lines cross (straight segments between measured n, in the log-y plot): an interpolated point of the picture, not a measured
 # value; the reported crossover is the bracket of two measured n (Table III, docs/phase4_report.md section 5), which these charts do not show.
 # No crossing of the drawn lines = no dot. IQR, weak points, PC-speed bounds (fast / slow band), memory walls and brackets are in figures/phase4/F4_crossover_by_circuit.pdf.
 # Output: data/figures/phase4/crossover/<board>_<circuit>.png     Use:  .venv/bin/python analysis/crossover_house_plots.py
@@ -57,8 +57,17 @@ def main():
                                          ylabel="Time per run (µs, log scale)", group_order=["Local", "Offload"], series_order=["line"])
             for t in ax.get_legend().get_texts():
                 t.set_text("Local (Phase 2)" if t.get_text().startswith("Local") else "Offload (Phase 3)")
-            for x, y in crossings(g.n, g.median_us, o.n, o.e2e_us):
+            cross = crossings(g.n, g.median_us, o.n, o.e2e_us)
+            for x, y in cross:
                 ax.plot([x], [y], "o", color="black", markersize=9, markeredgecolor="white", markeredgewidth=1.2, zorder=5)
+            if cross:                                                   # name the dot in the legend (same position and look as the house legend)
+                from matplotlib.lines import Line2D
+                leg = ax.get_legend()
+                texts = [t.get_text() for t in leg.get_texts()]
+                handles = [h for h in ax.get_legend_handles_labels()[0]]
+                handles.append(Line2D([], [], marker="o", color="black", markersize=9, markeredgecolor="white", markeredgewidth=1.2, linestyle=""))
+                leg = ax.legend(handles, texts + ["Crossover (where the two lines cross)"], loc=leg._loc, ncol=len(handles))
+                leg.set_zorder(2.4)
             # y axis fitted to the data (a label at every decade, as in the other house charts)
             lo_e = int(np.floor(np.log10(df.time_us.min())))
             hi_l = np.log10(df.time_us.max())
