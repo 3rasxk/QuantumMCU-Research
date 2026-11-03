@@ -101,8 +101,8 @@ esp8266,grover,9,offload,True,True
 esp8266,grover,10,offload,True,True
 esp8266,grover,11,nomeas,,
 esp8266,grover,12,nomeas,,
-esp8266,grover,13,norun,,
-esp8266,grover,14,norun,,
+esp8266,grover,13,nomeas,,
+esp8266,grover,14,nomeas,,
 esp32,h_all,2,local,False,False
 esp32,h_all,3,local,False,False
 esp32,h_all,4,local,False,False
@@ -154,4 +154,4 @@ esp32,grover,10,offload,True,True
 esp32,grover,11,offload,True,True
 esp32,grover,12,offload,True,True
 esp32,grover,13,norun,,
-esp32,grover,14,norun,,
+esp32,grover,14,nomeas,,
