@@ -47,7 +47,7 @@ def add_threshold(ax):
     ax.axhline(THRESH, color="0.35", lw=1.2, ls="--", zorder=1)
     hs, ls = ax.get_legend_handles_labels()
     hs.append(Line2D([], [], color="0.35", lw=1.2, ls="--"))
-    ls.append(r"project acceptance threshold ($10^{-3}$)")
+    ls.append(r"pass threshold ($10^{-3}$)")
     ax.legend(hs, ls, loc="upper left", ncol=3, fontsize=9, framealpha=0.9)
 
 
@@ -67,11 +67,7 @@ d = d.sort_values(["circuit", "n"])
 one_series(d, "depth", "infidelity", "Circuit depth (gate layers, log scale)", "Infidelity, $1-F$ (log scale)", "infidelity_vs_depth.png",
            x_scale="log10", threshold=True)
 one_series(d, "depth", "tvd", "Circuit depth (gate layers, log scale)", "Total variation distance, TVD (log scale)", "tvd_vs_depth.png", x_scale="log10")
-# phase1_accuracy also shows the infidelity of grover's NORMALISED float32 state (its direction): from n = 6 on, below that it is double-precision rounding (< 1e-11)
-gfind = pd.read_csv(os.path.join(ROOT, "data", "derived", "grover_findings.csv"))
-gnorm = gfind[gfind.n >= 6][["n", "f32_direction_infidelity"]].rename(columns={"f32_direction_infidelity": "infidelity"}).assign(circuit="grover_norm", depth=np.nan, tvd=np.nan)
-one_series(pd.concat([d, gnorm]), "n", "infidelity", "Number of qubits, $n$", "Infidelity, $1-F$ (log scale)", "phase1_accuracy.png",
-           threshold=True, order=ORDER_ACC)
+one_series(d, "n", "infidelity", "Number of qubits, $n$", "Infidelity, $1-F$ (log scale)", "phase1_accuracy.png", threshold=True)
 
 for c, g in d.groupby("circuit"):
     rows = []
