@@ -66,7 +66,7 @@ def main():
                 texts = [t.get_text() for t in leg.get_texts()]
                 handles = [h for h in ax.get_legend_handles_labels()[0]]
                 handles.append(Line2D([], [], marker="o", color="black", markersize=9, markeredgecolor="white", markeredgewidth=1.2, linestyle=""))
-                leg = ax.legend(handles, texts + ["Crossover (where the two lines cross)"], loc=leg._loc, ncol=len(handles))
+                leg = ax.legend(handles, texts + ["Crossover"], loc=leg._loc, ncol=len(handles))
                 leg.set_zorder(2.4)
             # y axis fitted to the data (a label at every decade, as in the other house charts)
             lo_e = int(np.floor(np.log10(df.time_us.min())))
