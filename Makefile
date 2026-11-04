@@ -28,3 +28,8 @@ paper: paper-numbers paper-figs
 .PHONY: freeze
 freeze:
 	$(PY) analysis/phase4/data_freeze.py
+
+# make paper-6p : 6-page A4 IEEE conference version (10 pt Times New Roman, blind) -> paper_6p/main.pdf; figures come straight from data/figures/phase1-4
+.PHONY: paper-6p
+paper-6p: paper-numbers
+	cd paper_6p && SOURCE_DATE_EPOCH=1767225600 tectonic -X compile --keep-logs main.tex
